@@ -51,8 +51,8 @@ Not in version 1 but on the future wishlist:
     just do things like map functions on lists. Version 1 might call it a day with,
     for example, the [Rayon](https://github.com/rayon-rs/rayon) package.
 
-This code will build on the [ElectionGuard Reference Rust Implementation](https://github.com/microsoft/ElectionGuard-SDK-Reference-Verifier)
-in Rust, which itself was built with its primary goal as *correctness* and other goals
+This code will build on the [ElectionGuard Reference Rust Implementation](https://github.com/microsoft/ElectionGuard-SDK-Reference-Verifier),
+which itself was built with its primary goal as *correctness* and other goals
 like performance being secondary. Still, by using Rust rather than C, we eliminate a
 variety of concerns like buffer overflows.
 
