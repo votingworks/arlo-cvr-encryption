@@ -1,0 +1,3 @@
+[submodule "electionguard-python"]
+	path = electionguard-python
+	url = git@github.com:votingworks/electionguard-python
