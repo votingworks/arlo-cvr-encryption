@@ -1,9 +1,11 @@
 import csv
-from typing import Optional, Tuple, Any
+from io import StringIO
 from math import floor, isnan
+from typing import Optional, Tuple, Any, Dict, List, Union
 
 import pandas as pd
 from pandas.errors import ParserError
+
 
 # Arlo-e2e support for CVR files from Dominion ballot scanners.
 
@@ -39,10 +41,12 @@ def fix_strings(s: Any) -> Any:
     Otherwise, it's an identity function.
     """
     if isinstance(s, str):
-        if s == "":
-            return 0
+        if s.startswith("="):
+            s = s[1:]  # strip off leading = character
         if s.startswith('"') and s.endswith('"'):
             s = s[1:-1]  # strip off the quotation marks
+        if s == "":
+            return 0
         try:
             return int(s)
         except ValueError:
@@ -55,30 +59,81 @@ def fix_strings(s: Any) -> Any:
     return s
 
 
-def read_dominion_csv(filename: str) -> Optional[Tuple[str, pd.DataFrame]]:
+CONTEST_MAP = Dict[str, Dict[str, str]]
+
+
+def row_to_uid(row: pd.Series, election_title: str, fields: List[str]) -> str:
     """
-    Given a filename of a Dominion CSV, tries to read it. If successful, you get
-    back a tuple with the name of the election and a Pandas DataFrame with the
-    processed contents of the file.
+    We want to derive a UID for each row of data. We're doing this with all
+    the metadata fields, concatenated together with a vertical bar and spaces
+    separating them. We also include the `election_title`, which should hopefully
+    make these UIDs *globally* unique.
+    """
+    sep = " | "
+    row_entries = [str(row[x]) for x in fields]
+    result = f"{election_title}{sep}{sep.join(row_entries)}"
+    return result
+
+
+def read_dominion_csv(
+    file: Union[str, StringIO]
+) -> Optional[Tuple[str, CONTEST_MAP, pd.DataFrame]]:
+    """
+    Given a filename of a Dominion CSV (or a StringIO buffer with the same data), tries
+    to read it. If successful, you get back a tuple with the name of the election, a
+    "contest map", and a Pandas DataFrame with the processed contents of the file.
+
+    The contest map is a dictionary. The keys are the titles of the contests, and the
+    values are a second level of dictionary, mapping from the name of each choice to
+    the ultimate string that's used as a column identifier in the Pandas dataframe.
+
+    The Pandas dataframe will have all the columns in the original data plus one new
+    one, "UID", which is a concatenation of the various ballot metadata fields along
+    with the name of the election. No two ballots should ever have the same UID.
     """
     try:
-        df = pd.read_csv(
-            filename, header=[0, 1, 2, 3], escapechar="=", quoting=csv.QUOTE_NONE
-        )
+        df = pd.read_csv(file, header=[0, 1, 2, 3], quoting=csv.QUOTE_NONE)
     except FileNotFoundError:
         return None
     except ParserError:
         return None
     filtered_columns = [
-        [e for e in c if (not e.startswith("Unnamed:") and not e == '""')]
+        [fix_strings(e) for e in c if (not e.startswith("Unnamed:") and not e == '""')]
         for c in df.columns
     ]
-    df = df.applymap(fix_strings)
     election_name = filtered_columns[0][0]
+
+    contests = [x for x in filtered_columns[2:] if len(x) > 1]
+
+    contest_map: CONTEST_MAP = {}
+    for contest in contests:
+        title = contest[0]
+        choice = " | ".join(contest[1:])
+        key = " | ".join(contest)
+
+        if title not in contest_map:
+            contest_map[title] = {}
+
+        contest_map[title][choice] = key
+
+    # The first two columns have the election name and a version number in them, so we have to treat those specially,
+    # otherwise, we're looking for columns with only one thing in them, which says that they're not a contest (with
+    # choices) but instead they're one of the metadata columns.
+    ballot_id_fields = (
+        filtered_columns[0][1:]
+        + filtered_columns[1][1:]
+        + [x[0] for x in filtered_columns[2:] if len(x) == 1]
+    )
+
+    df = df.applymap(fix_strings)
     final_columns = [
         filtered_columns[0][1:],
         filtered_columns[1][1:],
     ] + filtered_columns[2:]
-    df.columns = [" | ".join([fix_strings(y) for y in x]) for x in final_columns]
 
-    return fix_strings(election_name), df
+    df.columns = [" | ".join([y for y in x]) for x in final_columns]
+    df["UID"] = df.apply(
+        lambda row: row_to_uid(row, election_name, ballot_id_fields), axis=1
+    )
+
+    return fix_strings(election_name), contest_map, df
