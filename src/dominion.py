@@ -4,7 +4,6 @@ from math import floor, isnan
 from typing import Optional, Tuple, Any, Dict, List, Union
 
 import pandas as pd
-from pandas.errors import ParserError
 
 
 # Arlo-e2e support for CVR files from Dominion ballot scanners.
@@ -95,8 +94,12 @@ def read_dominion_csv(
         df = pd.read_csv(file, header=[0, 1, 2, 3], quoting=csv.QUOTE_NONE)
     except FileNotFoundError:
         return None
-    except ParserError:
+    except pd.errors.ParserError:
         return None
+
+    # TODO: At this point, we know the file is a valid CSV and we're *assuming* it's a valid Dominion file.
+    #   We shouldn't make that assumption, but checking for it would be really tricky.
+
     filtered_columns = [
         [fix_strings(e) for e in c if (not e.startswith("Unnamed:") and not e == '""')]
         for c in df.columns

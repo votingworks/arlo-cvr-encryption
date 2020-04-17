@@ -89,3 +89,7 @@ class TestDominion(unittest.TestCase):
             "2018 Test Election | 1 | 1 | 1 | 1 | 1-1-1 | Mail | 12345 - STR5 (12345 - STR5) | STR5",
             x["UID"],
         )
+
+    def test_read_dominion_csv_failures(self):
+        self.assertIsNone(read_dominion_csv("no-such-file.csv"))
+        self.assertIsNone(read_dominion_csv(StringIO('{ "json": 0 }')))

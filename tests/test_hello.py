@@ -44,8 +44,7 @@ class ElGamalTest(unittest.TestCase):
         keypair: ElGamalKeyPair,
     ):
         c1 = unwrap_optional(elgamal_encrypt(plaintext, nonce1, keypair.public_key))
-        c2 = elgamal_reencrypt(keypair.public_key, nonce2, c1)
-
+        c2 = unwrap_optional(elgamal_reencrypt(keypair.public_key, nonce2, c1))
         self.assertEqual(plaintext, c1.decrypt(keypair.secret_key))
         self.assertNotEqual(c1, c2)
         self.assertEqual(plaintext, c2.decrypt(keypair.secret_key))
