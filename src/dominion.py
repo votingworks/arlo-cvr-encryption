@@ -134,7 +134,7 @@ def read_dominion_csv(
         filtered_columns[1][1:],
     ] + filtered_columns[2:]
 
-    df.columns = [" | ".join([y for y in x]) for x in final_columns]
+    df.columns = [" | ".join(x) for x in final_columns]
     df["UID"] = df.apply(
         lambda row: row_to_uid(row, election_name, ballot_id_fields), axis=1
     )
