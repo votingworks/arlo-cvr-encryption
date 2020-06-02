@@ -7,8 +7,8 @@ from io import StringIO
 
 class TestDominion(unittest.TestCase):
     def test_fix_strings(self):
-        self.assertEqual(0, fix_strings(""))
-        self.assertEqual(0, fix_strings('""'))
+        self.assertEqual(None, fix_strings(""))
+        self.assertEqual(None, fix_strings('""'))
         self.assertEqual(0, fix_strings("0"))
         self.assertEqual(0, fix_strings(float("nan")))
         self.assertEqual(0, fix_strings('"0"'))
@@ -32,7 +32,7 @@ class TestDominion(unittest.TestCase):
             "Race 1 | REP": 0,
             "Race 2 | DEM": 0,
             "Race 2 | REP": 1,
-            "Race 3 | DEM": 0,
+            "Race 3 | DEM": 1,
             "Race 3 | REP": 1,
         }
         metadata_fields = [
@@ -63,7 +63,7 @@ class TestDominion(unittest.TestCase):
         result = read_dominion_csv(StringIO(input_str))
         self.assertNotEqual(result, None)
 
-        election_name, contest_map, df = result
+        election_name, ballot_types, style_map, contest_map, df = result
         self.assertEqual("2018 Test Election", election_name)
         self.assertEqual(2, len(contest_map.keys()))
         self.assertIn("Representative - District X (Vote For=1)", contest_map)
@@ -93,3 +93,17 @@ class TestDominion(unittest.TestCase):
     def test_read_dominion_csv_failures(self):
         self.assertIsNone(read_dominion_csv("no-such-file.csv"))
         self.assertIsNone(read_dominion_csv(StringIO('{ "json": 0 }')))
+
+    def test_read_with_holes(self):
+        input_str = """
+2018 Test County General Election,5.2.16.1,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,Race 1,Race 1,Race 2,Race 2,Race 2,Race 3,Race 3
+,,,,,,,Alice,Bob,Charlie,Dorothy,Eve,Frank,Gary
+CvrNumber,TabulatorNum,BatchId,RecordId,ImprintedId,PrecinctPortion,BallotType,PURPLE,GREEN,PURPLE,GREEN,ORANGE,PURPLE,GREEN
+1,1,1,1,1-1-1,3065904004 - CNTY (3065904004 - CNTY),CNTY,0,0,0,0,0,,
+2,1,1,2,1-1-2,3065904003 (3065904003),50JT,1,0,0,0,1,,
+3,1,1,3,1-1-3,3065904002 (3065904002),50JT,0,1,0,1,0,,
+4,1,1,4,1-1-4,3065904001 (3065904001),50JT,1,0,1,0,0,,
+5,1,1,5,1-1-6,XYZZY,FPD,,,,,,1,0
+6,1,2,1,1-2-1,XYZZY,FPD,,,,,,0,1
+        """

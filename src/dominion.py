@@ -1,7 +1,7 @@
 import csv
 from io import StringIO
 from math import floor, isnan
-from typing import Optional, Tuple, Any, Dict, List, Union
+from typing import Optional, Tuple, Any, Dict, List, Union, NamedTuple, Set
 
 import pandas as pd
 
@@ -36,29 +36,28 @@ import pandas as pd
 def fix_strings(s: Any) -> Any:
     """
     In the case where a string is really a quoted number, this returns the number.
-    In the case where it's an empty-string, this returns a zero.
+    In the case where it's an empty-string, this returns `None`.
     Otherwise, it's an identity function.
     """
-    if isinstance(s, str):
-        if s.startswith("="):
-            s = s[1:]  # strip off leading = character
-        if s.startswith('"') and s.endswith('"'):
-            s = s[1:-1]  # strip off the quotation marks
-        if s == "":
-            return 0
-        try:
-            return int(s)
-        except ValueError:
-            return s
+    if isinstance(s, int):
+        return s
     elif isinstance(s, float):
         if isnan(s):
             return 0
         if abs(floor(s) - s) < 0.01:
             return int(floor(s))
+    elif isinstance(s, str):
+        if s.startswith("="):
+            s = s[1:]  # strip off leading = character
+        if s.startswith('"') and s.endswith('"'):
+            s = s[1:-1]  # strip off the quotation marks
+        if s == "":
+            return None  # we're treating empty-string as None, so we can infer ballot styles
+        try:
+            return int(s)
+        except ValueError:
+            return s
     return s
-
-
-CONTEST_MAP = Dict[str, Dict[str, str]]
 
 
 def row_to_uid(row: pd.Series, election_title: str, fields: List[str]) -> str:
@@ -74,21 +73,57 @@ def row_to_uid(row: pd.Series, election_title: str, fields: List[str]) -> str:
     return result
 
 
-def read_dominion_csv(
-    file: Union[str, StringIO]
-) -> Optional[Tuple[str, CONTEST_MAP, pd.DataFrame]]:
+CONTEST_MAP = Dict[str, Dict[str, str]]
+STYLE_MAP = Dict[str, Set[str]]
+
+
+class DominionCSV(NamedTuple):
+    election_name: str
+    """
+    Name of the election (as provided by the election administrator).
+    """
+
+    contests: List[str]
+    """
+    List of every contest name (i.e., list of every column name in the data). Not every ballot
+    will have every contest.
+    """
+
+    ballot_types: Set[str]
+    """
+    Set of the different "ballot type" names (as provided by the election administrator).
+    """
+
+    style_map: STYLE_MAP
+    """
+    A dictionary mapping ballot-type names to the set of associated contest titles.
+    """
+
+    contest_map: CONTEST_MAP
+    """
+    A nested dictionary. The first key has every contest title (e.g., "Governor"). The
+    second key has all of the candidates associated with that contest (e.g., "Alice (Dem)"
+    and "Bob (Rep)"). The resulting value is the name of the dataframe column having all
+    of the votes for this specific race.
+    """
+
+    data: pd.DataFrame
+    """
+    A Pandas DataFrame, having all the columns in the original data plus one new
+    one, "UID", which is a concatenation of the various ballot metadata fields along
+    with the name of the election. No two ballots should ever have the same UID.
+    """
+
+
+def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     """
     Given a filename of a Dominion CSV (or a StringIO buffer with the same data), tries
-    to read it. If successful, you get back a tuple with the name of the election, a
-    "contest map", and a Pandas DataFrame with the processed contents of the file.
+    to read it. If successful, you get back a named-tuple which describes the election.
 
     The contest map is a dictionary. The keys are the titles of the contests, and the
     values are a second level of dictionary, mapping from the name of each choice to
     the ultimate string that's used as a column identifier in the Pandas dataframe.
 
-    The Pandas dataframe will have all the columns in the original data plus one new
-    one, "UID", which is a concatenation of the various ballot metadata fields along
-    with the name of the election. No two ballots should ever have the same UID.
     """
     try:
         df = pd.read_csv(file, header=[0, 1, 2, 3], quoting=csv.QUOTE_NONE)
@@ -105,19 +140,6 @@ def read_dominion_csv(
         for c in df.columns
     ]
     election_name = filtered_columns[0][0]
-
-    contests = [x for x in filtered_columns[2:] if len(x) > 1]
-
-    contest_map: CONTEST_MAP = {}
-    for contest in contests:
-        title = contest[0]
-        choice = " | ".join(contest[1:])
-        key = " | ".join(contest)
-
-        if title not in contest_map:
-            contest_map[title] = {}
-
-        contest_map[title][choice] = key
 
     # The first two columns have the election name and a version number in them, so we have to treat those specially,
     # otherwise, we're looking for columns with only one thing in them, which says that they're not a contest (with
@@ -139,4 +161,44 @@ def read_dominion_csv(
         lambda row: row_to_uid(row, election_name, ballot_id_fields), axis=1
     )
 
-    return fix_strings(election_name), contest_map, df
+    if "BallotType" not in df:
+        return None
+
+    # Now we're going to extract a mapping from contest titles to all the choices. That's straightforward.
+    # The harder part is inferring the mapping from a ballot style to the list of non-empty contests, which
+    # will require looking through every ballot.
+    contests = [x for x in filtered_columns[2:] if len(x) > 1]
+    contest_keys = []
+
+    contest_map: CONTEST_MAP = {}
+    for contest in contests:
+        title = contest[0]
+        choice = " | ".join(contest[1:])
+        key = " | ".join(contest)
+        contest_keys.append(key)
+
+        if title not in contest_map:
+            contest_map[title] = {}
+
+        contest_map[title][choice] = key
+
+    style_map: STYLE_MAP = {}
+
+    for _, series in df.iterrows():
+        print("Series: " + str(series))
+        ballot_type = series["BallotType"]
+        present_contests = {k for k in contest_keys if series[k] is not None}
+
+        if ballot_type not in style_map:
+            style_map[ballot_type] = present_contests
+        else:
+            style_map[ballot_type] = style_map[ballot_type].union(present_contests)
+
+    return DominionCSV(
+        fix_strings(election_name),
+        contest_keys,
+        set(df["BallotType"]),
+        style_map,
+        contest_map,
+        df,
+    )
