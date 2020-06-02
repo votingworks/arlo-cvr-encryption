@@ -6,7 +6,8 @@ from electionguard.elgamal import (
     elgamal_add,
     ElGamalCiphertext,
 )
-from electionguard.group import ElementModP, ElementModQ, flatmap_optional
+from electionguard.group import ElementModP, ElementModQ
+from electionguard.utils import flatmap_optional
 
 
 def fib(n: int) -> int:

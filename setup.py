@@ -76,7 +76,7 @@ setup(
     install_requires=[
         "gmpy2==2.1.0b4",
         "numpy==1.18.2",
-        "pandas==1.0.3",
+        "pandas==1.0.4",
         # eg: 'aspectlib==1.1.1', 'six>=1.7',
     ],
     extras_require={
