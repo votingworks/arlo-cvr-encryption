@@ -73,11 +73,8 @@ def _fix_party_string(s: Any) -> str:
     trickier, because not all races have parties. If we have one, we'll return that as a string,
     otherwise empty-string.
     """
-    if s is None:
+    if s is None or (isinstance(s, float) and isnan(s)):
         return ""
-    elif isinstance(s, float):
-        if isnan(s):
-            return ""
     else:
         return str(s)
 
