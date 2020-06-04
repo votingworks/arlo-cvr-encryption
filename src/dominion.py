@@ -203,23 +203,21 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     # The first two columns have the election name and a version number in them, so we have to treat those specially,
     # otherwise, we're looking for columns with only one thing in them, which says that they're not a contest (with
     # choices) but instead they're one of the metadata columns.
-    ballot_id_fields = (
-        filtered_columns[0][
-            1:
-        ]  # this column is "CvrNumber", which is absorbed as the "index" by Pandas
+    ballot_metadata_fields = (
+        filtered_columns[0][1:]
         + filtered_columns[1][1:]
         + [x[0] for x in filtered_columns[2:] if len(x) == 1]
     )
 
     df = df.applymap(_fix_strings)
-    final_columns = [
+    column_names = [
         filtered_columns[0][1:],
         filtered_columns[1][1:],
     ] + filtered_columns[2:]
 
-    df.columns = [" | ".join(x) for x in final_columns]
+    df.columns = [" | ".join(x) for x in column_names]
     df["UID"] = df.apply(
-        lambda row: _row_to_uid(row, election_name, ballot_id_fields), axis=1
+        lambda row: _row_to_uid(row, election_name, ballot_metadata_fields), axis=1
     )
 
     if "BallotType" not in df:
