@@ -24,7 +24,7 @@ jobs:
       - run:
           name: Test with tox
           command: |
-            tox
+            sudo tox
 workflows:
   version: 2
   build-and-test:
