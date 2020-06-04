@@ -1,7 +1,7 @@
 import csv
 from io import StringIO
 from math import floor, isnan
-from typing import Optional, Any, Dict, List, Union, NamedTuple, Set
+from typing import Optional, Any, Dict, List, Union, NamedTuple, Set, Tuple
 
 import pandas as pd
 
@@ -31,9 +31,13 @@ import pandas as pd
 # - A write-in slot is still just voted as 1 or 0. This means tons of extra work for an election official
 #   if a write-in actually wins.
 # - Undervotes are sometimes indicated as an empty-string as distinct from a 0. We'll just map these to zeros.
+# - BallotType appears to be an identifier of a ballot style, i.e., every row in this sheet having the
+#   same BallotType represents a voter who was given the same choices on their ballot.
 
 # Also, just to be annoying, the way that Pandas indicates that it has no value in a numeric cell? NaN.
 # Even when we explicitly set it to None, what we get back is NaN.
+from electionguard.ballot import PlaintextBallot
+from electionguard.election import ElectionDescription
 
 
 def _fix_strings(s: Any) -> Any:
@@ -61,6 +65,21 @@ def _fix_strings(s: Any) -> Any:
         except ValueError:
             return s
     return s
+
+
+def _fix_party_string(s: Any) -> str:
+    """
+    Specifically converting something from the 4th line of input to a "party" is a little bit
+    trickier, because not all races have parties. If we have one, we'll return that as a string,
+    otherwise empty-string.
+    """
+    if s is None:
+        return ""
+    elif isinstance(s, float):
+        if isnan(s):
+            return ""
+    else:
+        return str(s)
 
 
 def _row_to_uid(row: pd.Series, election_title: str, fields: List[str]) -> str:
@@ -92,17 +111,22 @@ def _nonempty_elem(row: pd.Series, key: str) -> bool:
         return val is not None
 
 
-CONTEST_MAP = Dict[str, Dict[str, str]]
+CONTEST_MAP = Dict[str, Dict[Tuple[str, str], str]]
 STYLE_MAP = Dict[str, Set[str]]
 
 
 class DominionCSV(NamedTuple):
+    """
+    This data structure represents everything we parse out of a Dominion CSV file. It's
+    produced by `read_dominion_csv`.
+    """
+
     election_name: str
     """
     Name of the election (as provided by the election administrator).
     """
 
-    contests: List[str]
+    contests: Set[str]
     """
     List of every contest name (i.e., list of every column name in the data). Not every ballot
     will have every contest.
@@ -113,6 +137,11 @@ class DominionCSV(NamedTuple):
     Set of the different "ballot type" names (as provided by the election administrator).
     """
 
+    all_parties: Set[str]
+    """
+    Set of political parties (typically three-letter codes).
+    """
+
     style_map: STYLE_MAP
     """
     A dictionary mapping ballot-type names to the set of associated contest titles.
@@ -121,9 +150,9 @@ class DominionCSV(NamedTuple):
     contest_map: CONTEST_MAP
     """
     A nested dictionary. The first key has every contest title (e.g., "Governor"). The
-    second key has all of the candidates associated with that contest (e.g., "Alice (Dem)"
-    and "Bob (Rep)"). The resulting value is the name of the dataframe column having all
-    of the votes for this specific race.
+    second key is a tuple with the candidates associated with that contest (e.g., "Alice"
+    or "Bob") and the party (e.g., "REP" or "DEM"; empty-string if there is no party).
+    The resulting value is the name of the dataframe column having all of the votes for this specific race.
     """
 
     data: pd.DataFrame
@@ -132,6 +161,17 @@ class DominionCSV(NamedTuple):
     one, "UID", which is a concatenation of the various ballot metadata fields along
     with the name of the election. No two ballots should ever have the same UID.
     """
+
+    def to_election_description(
+        self,
+    ) -> Tuple[ElectionDescription, List[PlaintextBallot]]:
+        """
+        Converts this data to a ElectionGuard `ElectionDescription` (having all of the metadata
+        describing the election) and a list of `PlaintextBallot` (corresponding to each of the
+        rows in the Dominion CVR).
+        """
+        # TODO: implement me!
+        pass
 
 
 def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
@@ -173,9 +213,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
 
     df = df.applymap(_fix_strings)
     final_columns = [
-        filtered_columns[0][
-            1:
-        ],  # this column is "CvrNumber", which is absorbed as the "index" by Pandas
+        filtered_columns[0][1:],
         filtered_columns[1][1:],
     ] + filtered_columns[2:]
 
@@ -187,16 +225,23 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     if "BallotType" not in df:
         return None
 
-    # Now we're going to extract a mapping from contest titles to all the choices. That's straightforward.
+    # Now we're going to extract a mapping from contest titles to all the choices.
     contests = [x for x in filtered_columns[2:] if len(x) > 1]
-    contest_keys = []
+    contest_keys = set()
 
+    all_parties: Set[str] = set()
     contest_map: CONTEST_MAP = {}
     for contest in contests:
         title = contest[0]
-        choice = " | ".join(contest[1:])
+        candidate = contest[1]
+        party = _fix_party_string(contest[2]) if len(contest) > 2 else ""
+
+        if party not in all_parties and party != "":
+            all_parties.add(party)
+
+        choice = (candidate, party)
         key = " | ".join(contest)
-        contest_keys.append(key)
+        contest_keys.add(key)
 
         if title not in contest_map:
             contest_map[title] = {}
@@ -212,7 +257,9 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     # Potential degenerate result: in a race with very few ballots cast, it's conceivable that
     # every single ballot will undervote in at least one contest. In this specific circumstance,
     # the style map will be "wrong", which would mean that that specific candidate would be
-    # completely missing from subsequent e2e crypto results.
+    # completely missing from subsequent e2e crypto results. Hopefully, actual Dominion CVRs
+    # will have zeros rather than blank cells to represent these undervotes, and then this case
+    # will never occur.
 
     for index, row in df.iterrows():
         ballot_type = row["BallotType"]
@@ -227,6 +274,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
         _fix_strings(election_name),
         contest_keys,
         set(df["BallotType"]),
+        all_parties,
         style_map,
         contest_map,
         df,

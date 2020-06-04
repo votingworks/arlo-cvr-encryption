@@ -67,14 +67,17 @@ class TestDominion(unittest.TestCase):
         else:
             self.assertEqual("2018 Test Election", result.election_name)
             self.assertEqual(2, len(result.contest_map.keys()))
-            self.assertIn("Representative - District X (Vote For=1)", result.contest_map)
+            self.assertIn(
+                "Representative - District X (Vote For=1)", result.contest_map
+            )
             self.assertIn("Referendum", result.contest_map)
             rep_map = result.contest_map["Representative - District X (Vote For=1)"]
-            self.assertIn("Alice | DEM", rep_map)
-            self.assertIn("Bob | REP", rep_map)
+            self.assertIsNotNone(rep_map)
+            self.assertIn(("Alice", "DEM"), rep_map)
+            self.assertIn(("Bob", "REP"), rep_map)
             self.assertEqual(
                 "Representative - District X (Vote For=1) | Alice | DEM",
-                rep_map["Alice | DEM"],
+                rep_map[("Alice", "DEM")],
             )
             self.assertIn(
                 "Representative - District X (Vote For=1) | Alice | DEM", result.data
@@ -82,6 +85,14 @@ class TestDominion(unittest.TestCase):
             self.assertIn(
                 "Representative - District X (Vote For=1) | Bob | REP", result.data
             )
+            referendum_map = result.contest_map["Referendum"]
+            self.assertIsNotNone(referendum_map)
+            self.assertIn(("For", ""), referendum_map)
+            self.assertIn(("Against", ""), referendum_map)
+            self.assertEqual("Referendum | For", referendum_map[("For", "")])
+            self.assertEqual("Referendum | Against", referendum_map[("Against", "")])
+
+            self.assertEqual({"REP", "DEM"}, result.all_parties)
 
             rows = list(result.data.iterrows())
             self.assertEqual(2, len(rows))
