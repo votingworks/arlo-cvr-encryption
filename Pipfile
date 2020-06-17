@@ -4,7 +4,13 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [dev-packages]
-hypothesis = "==5.9.0"
+black = "*"
+coverage = "*"
+docutils = "*"
+mypy = "*"
+pylint = "*"
+pytest = "*"
+pydocstyle = "*"
 
 [packages]
 gmpy2 = "==2.1.0b4"
@@ -13,6 +19,10 @@ pandas = '==1.0.4'
 hypothesis = "==5.15.1"
 typish = '*'
 jsons = '==1.1.2'
+electionguard = {git = "https://github.com/microsoft/electionguard-python.git", ref = "main"}
 
 [requires]
 python_version = "3.8"
+
+[pipenv]
+allow_prereleases = true
