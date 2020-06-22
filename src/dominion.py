@@ -1,7 +1,19 @@
 import csv
+import datetime
 from io import StringIO
 from math import floor, isnan
-from typing import Optional, Any, Dict, List, Union, NamedTuple, Set, Tuple
+from typing import (
+    Optional,
+    Any,
+    Dict,
+    List,
+    Union,
+    NamedTuple,
+    Set,
+    Tuple,
+    Sequence,
+    Iterable,
+)
 
 import pandas as pd
 
@@ -37,7 +49,22 @@ import pandas as pd
 # Also, just to be annoying, the way that Pandas indicates that it has no value in a numeric cell? NaN.
 # Even when we explicitly set it to None, what we get back is NaN.
 from electionguard.ballot import PlaintextBallot
-from electionguard.election import ElectionDescription
+from electionguard.election import (
+    ElectionDescription,
+    ElectionType,
+    Party,
+    InternationalizedText,
+    Language,
+    Candidate,
+    GeopoliticalUnit,
+    ReportingUnitType,
+    BallotStyle,
+    ContestDescription,
+    VoteVariationType,
+    SelectionDescription,
+)
+
+from utils import flatmap, UidMaker
 
 
 def _fix_strings(s: Any) -> Any:
@@ -108,6 +135,10 @@ def _nonempty_elem(row: pd.Series, key: str) -> bool:
         return val is not None
 
 
+def _str_to_internationalized_text_en(input: str) -> InternationalizedText:
+    return InternationalizedText([Language(input, language="en")])
+
+
 CONTEST_MAP = Dict[str, Dict[Tuple[str, str], str]]
 STYLE_MAP = Dict[str, Set[str]]
 
@@ -159,6 +190,74 @@ class DominionCSV(NamedTuple):
     with the name of the election. No two ballots should ever have the same UID.
     """
 
+    def _all_parties_for_contests(self, contests: Iterable[str]) -> Set[str]:
+        parties = [t[1] for t in flatmap(lambda c: self.contest_map[c], contests)]
+        return set(parties)
+
+    def _ballot_style_from_id(
+        self,
+        dominion_ballot_style_id: str,
+        new_ballot_style_object_id: str,
+        party_map: Dict[str, Party],
+        gpunit_map: Dict[str, GeopoliticalUnit],
+    ) -> BallotStyle:
+
+        contest_titles = self.style_map[dominion_ballot_style_id]
+        gp_ids = [gpunit_map[ct].object_id for ct in contest_titles]
+        party_ids = [
+            party_map[p].object_id
+            for p in self._all_parties_for_contests(contest_titles)
+        ]
+        return BallotStyle(
+            object_id=new_ballot_style_object_id,
+            geopolitical_unit_ids=gp_ids if gp_ids else None,
+            party_ids=party_ids if party_ids else None,
+        )
+
+    def _contest_name_to_selections(
+        self,
+        contest_name: str,
+        selection_uid_maker: UidMaker,
+        candidate_map: Dict[str, Candidate],
+    ) -> List[SelectionDescription]:
+
+        candidates = self.contest_map[contest_name]
+        results: List[SelectionDescription] = []
+
+        for c in candidates:
+            id_number, id_str = selection_uid_maker.next_int()
+            results.append(
+                SelectionDescription(
+                    object_id=id_str,
+                    candidate_id=candidate_map[c[0]].object_id,
+                    sequence_order=id_number,
+                )
+            )
+
+        return results
+
+    def _contest_name_to_description(
+        self,
+        name: str,
+        contest_uid_maker: UidMaker,
+        selection_uid_maker: UidMaker,
+        candidate_map: Dict[str, Candidate],
+        gpunit_map: Dict[str, GeopoliticalUnit],
+    ) -> ContestDescription:
+
+        id_number, id_str = contest_uid_maker.next_int()
+        return ContestDescription(
+            object_id=id_str,
+            electoral_district_id=gpunit_map[name].object_id,
+            sequence_order=id_number,
+            vote_variation=VoteVariationType.one_of_m,  # for now
+            number_elected=1,
+            votes_allowed=None,
+            name=name,
+            ballot_selections=self._contest_name_to_selections(name, selection_uid_maker, candidate_map),
+            ballot_title=_str_to_internationalized_text_en(name),
+        )
+
     def to_election_description(
         self,
     ) -> Tuple[ElectionDescription, List[PlaintextBallot]]:
@@ -167,7 +266,76 @@ class DominionCSV(NamedTuple):
         describing the election) and a list of `PlaintextBallot` (corresponding to each of the
         rows in the Dominion CVR).
         """
-        # TODO: implement me!
+
+        ballots: List[PlaintextBallot] = list()
+        date = datetime.date.today()  # we don't know any better
+
+        # Map from party string to Party object; the hack in here is that we're using an object-id
+        # equal to the party string. We could generate random uuids, but unclear that has any
+        # meaningful benefit.
+        party_uids = UidMaker("party")
+        party_map = {
+            p: Party(
+                object_id=party_uids.next(),
+                ballot_name=_str_to_internationalized_text_en(p),
+            )
+            for p in self.all_parties
+        }
+
+        # "Geopolitical units" are going to map one-to-one with the contest names that we've seen.
+        gpunit_uids = UidMaker("gpunit")
+        gpunit_map = {
+            x: GeopoliticalUnit(
+                object_id=gpunit_uids.next(), name=x, type=ReportingUnitType.unknown
+            )
+            for x in self.contest_map.keys()
+        }
+
+        # A ballot style is a subset of all of the geopolitical units that are under consideration.
+        ballotstyle_uids = UidMaker("ballotstyle")
+        ballotstyle_map = {
+            bt: self._ballot_style_from_id(
+                bt, ballotstyle_uids.next(), party_map, gpunit_map,
+            )
+            for bt in self.ballot_types
+        }
+
+        all_candidates: Sequence[Tuple[str, str]] = flatmap(
+            lambda x: x.keys(), list(self.contest_map.values())
+        )
+
+        candidate_uids = UidMaker("candidate")
+        candidates = [
+            Candidate(
+                object_id=candidate_uids.next(),
+                ballot_name=_str_to_internationalized_text_en(c[0]),
+                party_id=c[1] if c[1] != "" else None,
+                image_uri=None,
+            )
+            for c in all_candidates
+        ]
+
+        contest_uids = UidMaker("contest")
+        contest_map = {
+            name: ContestDescription(
+                object_id=contest_uids.next(), electoral_district_id=""
+            )
+            for name in self.contest_map.keys()
+        }
+
+        return (
+            ElectionDescription(
+                election_scope_id=self.election_name,
+                type=ElectionType.unknown,
+                start_date=date,
+                end_date=date,
+                geopolitical_units=gpunit_map.values(),
+                parties=party_map.values(),
+                candidates=candidates,
+                ballot_styles=ballotstyle_map.values(),
+            ),
+            ballots,
+        )
         pass
 
 
