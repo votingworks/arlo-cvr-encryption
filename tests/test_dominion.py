@@ -5,6 +5,15 @@ import pandas as pd
 from dominion import _fix_strings, _row_to_uid, read_dominion_csv, DominionCSV
 from io import StringIO
 
+_good_dominion_cvrs = """
+"2018 Test Election","5.2.16.1","","","","","","","","","",""
+"","","","","","","","","Representative - District X (Vote For=1)","Representative - District X (Vote For=1)","Referendum","Referendum"
+"","","","","","","","","Alice","Bob","For","Against"
+"CvrNumber","TabulatorNum","BatchId","RecordId","ImprintedId","CountingGroup","PrecinctPortion","BallotType","DEM","REP","",""
+="1",="1",="1",="1",="1-1-1","Mail","12345 - STR5 (12345 - STR5)","STR5","1","0","0","0"
+="2",="1",="1",="3",="1-1-3","Mail","12345 - STSF (12345 - STSF)","STSF","0","1","0","0"
+        """
+
 
 class TestDominion(unittest.TestCase):
     def test_fix_strings(self) -> None:
@@ -53,15 +62,7 @@ class TestDominion(unittest.TestCase):
         )
 
     def test_read_dominion_csv(self) -> None:
-        input_str = """
-"2018 Test Election","5.2.16.1","","","","","","","","","",""
-"","","","","","","","","Representative - District X (Vote For=1)","Representative - District X (Vote For=1)","Referendum","Referendum"
-"","","","","","","","","Alice","Bob","For","Against"
-"CvrNumber","TabulatorNum","BatchId","RecordId","ImprintedId","CountingGroup","PrecinctPortion","BallotType","DEM","REP","",""
-="1",="1",="1",="1",="1-1-1","Mail","12345 - STR5 (12345 - STR5)","STR5","1","0","0","0"
-="2",="1",="1",="3",="1-1-3","Mail","12345 - STSF (12345 - STSF)","STSF","0","1","0","0"
-        """
-        result: Optional[DominionCSV] = read_dominion_csv(StringIO(input_str))
+        result: Optional[DominionCSV] = read_dominion_csv(StringIO(_good_dominion_cvrs))
         if result is None:
             self.fail("Expected not none")
         else:
@@ -104,6 +105,18 @@ class TestDominion(unittest.TestCase):
             self.assertEqual(
                 "2018 Test Election | 1 | 1 | 1 | 1 | 1-1-1 | Mail | 12345 - STR5 (12345 - STR5) | STR5",
                 x["UID"],
+            )
+
+    def test_electionguard_extraction(self) -> None:
+        result: Optional[DominionCSV] = read_dominion_csv(StringIO(_good_dominion_cvrs))
+        if result is None:
+            self.fail("Expected not none")
+        else:
+            election_description, ballots = result.to_election_description()
+            self.assertEqual(2, len(ballots))
+            self.assertEqual(
+                {"Representative - District X (Vote For=1)", "Referendum"},
+                set([x.name for x in election_description.geopolitical_units]),
             )
 
     def test_read_dominion_csv_failures(self) -> None:

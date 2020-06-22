@@ -11,43 +11,11 @@ from typing import (
     NamedTuple,
     Set,
     Tuple,
-    Sequence,
     Iterable,
 )
 
 import pandas as pd
 
-
-# Arlo-e2e support for CVR files from Dominion ballot scanners.
-
-# Each data file looks something like this:
-# Line 1: Name of election,unknown field (probably a version number),lots of blank fields
-# Line 2: Seven commas,contest title,contest title,... [titles repeat; columns represent a specific candidate or choice]
-# Line 3: Seven commas,candidate-or-choice text,... [for yes/no votes, the text here will be "yes" or "no",
-#         or sometimes "yes/for" and "no/against"]
-# Line 4: Column identifiers (for the first seven columns), then optional party identifiers
-#     CvrNumber,TabulatorNum,BatchId,RecordId,ImprintedId,PrecinctPortion,BallotType,...
-# Lines 5+: First seven columns correspond to the identifiers, then a sequence of 1/0's
-
-# Notes:
-# - Sometimes, there are quotation marks around the entries, other times, not.
-# - Sometimes there are equals signs before the quotation marks, so sometimes <<<="3">>> and other times <<<3>>>
-# - The number of column identifiers above isn't fixed. Sometimes it's seven, sometimes eight.
-#   - Eight entry: CvrNumber,TabulatorNum,BatchId,RecordId,ImprintedId,CountingGroup,PrecinctPortion,BallotType
-#   - Seven entry: CvrNumber,TabulatorNum,BatchId,RecordId,ImprintedId,PrecinctPortion,BallotType
-#   - The CvrNumber appears to be sequential and always starts with 1.
-#   - We can probably treat "CountingGroup" as an empty-string when we don't have it, otherwise make a ballot UID
-#     from an 8-tuple of all these strings.
-#   - The "CountingGroup" can be "Regular", "Provisional", "Mail", "Election Day", "In Person", or other strings.
-#     - We might want special handling for Provisional ballots.
-# - A write-in slot is still just voted as 1 or 0. This means tons of extra work for an election official
-#   if a write-in actually wins.
-# - Undervotes are sometimes indicated as an empty-string as distinct from a 0. We'll just map these to zeros.
-# - BallotType appears to be an identifier of a ballot style, i.e., every row in this sheet having the
-#   same BallotType represents a voter who was given the same choices on their ballot.
-
-# Also, just to be annoying, the way that Pandas indicates that it has no value in a numeric cell? NaN.
-# Even when we explicitly set it to None, what we get back is NaN.
 from electionguard.ballot import PlaintextBallot
 from electionguard.election import (
     ElectionDescription,
@@ -65,6 +33,35 @@ from electionguard.election import (
 )
 
 from utils import flatmap, UidMaker
+
+
+# Arlo-e2e support for CVR files from Dominion ballot scanners.
+# Each data file looks something like this:
+# Line 1: Name of election,unknown field (probably a version number),lots of blank fields
+# Line 2: Seven commas,contest title,contest title,... [titles repeat; columns represent a specific candidate or choice]
+# Line 3: Seven commas,candidate-or-choice text,... [for yes/no votes, the text here will be "yes" or "no",
+#         or sometimes "yes/for" and "no/against"]
+# Line 4: Column identifiers (for the first seven columns), then optional party identifiers
+#     CvrNumber,TabulatorNum,BatchId,RecordId,ImprintedId,PrecinctPortion,BallotType,...
+# Lines 5+: First seven columns correspond to the identifiers, then a sequence of 1/0's
+# Notes:
+# - Sometimes, there are quotation marks around the entries, other times, not.
+# - Sometimes there are equals signs before the quotation marks, so sometimes <<<="3">>> and other times <<<3>>>
+# - The number of column identifiers above isn't fixed. Sometimes it's seven, sometimes eight.
+#   - Eight entry: CvrNumber,TabulatorNum,BatchId,RecordId,ImprintedId,CountingGroup,PrecinctPortion,BallotType
+#   - Seven entry: CvrNumber,TabulatorNum,BatchId,RecordId,ImprintedId,PrecinctPortion,BallotType
+#   - The CvrNumber appears to be sequential and always starts with 1.
+#   - We can probably treat "CountingGroup" as an empty-string when we don't have it, otherwise make a ballot UID
+#     from an 8-tuple of all these strings.
+#   - The "CountingGroup" can be "Regular", "Provisional", "Mail", "Election Day", "In Person", or other strings.
+#     - We might want special handling for Provisional ballots.
+# - A write-in slot is still just voted as 1 or 0. This means tons of extra work for an election official
+#   if a write-in actually wins.
+# - Undervotes are sometimes indicated as an empty-string as distinct from a 0. We'll just map these to zeros.
+# - BallotType appears to be an identifier of a ballot style, i.e., every row in this sheet having the
+#   same BallotType represents a voter who was given the same choices on their ballot.
+# Also, just to be annoying, the way that Pandas indicates that it has no value in a numeric cell? NaN.
+# Even when we explicitly set it to None, what we get back is NaN.
 
 
 def _fix_strings(s: Any) -> Any:
@@ -214,48 +211,61 @@ class DominionCSV(NamedTuple):
             party_ids=party_ids if party_ids else None,
         )
 
-    def _contest_name_to_selections(
+    def _contest_name_to_description(
         self,
-        contest_name: str,
+        name: str,
+        candidate_uid_maker: UidMaker,
+        contest_uid_maker: UidMaker,
         selection_uid_maker: UidMaker,
-        candidate_map: Dict[str, Candidate],
-    ) -> List[SelectionDescription]:
+        gpunit_map: Dict[str, GeopoliticalUnit],
+    ) -> Tuple[ContestDescription, List[Candidate]]:
 
-        candidates = self.contest_map[contest_name]
-        results: List[SelectionDescription] = []
+        selections: List[SelectionDescription] = []
+        candidates: List[Candidate] = []
 
-        for c in candidates:
+        # We're collecting the candidates at the same time that we're collecting the selections
+        # to make sure that the object_id's are properly synchronized. Consider the case where
+        # we ended up with two candidates with identical names. In the Dominion CSV, we'd have
+        # no way to tell if they were actually the same person running in two separate contests,
+        # or whether they were distinct. This solution ensures that we create a fresh Candidate
+        # one-to-one with every SelectionDescription.
+
+        # This method will be called separately for every contest name, and the resulting lists
+        # of candidates should be merged to make the complete list that goes into an
+        # ElectionDescription.
+
+        for c in self.contest_map[name]:
             id_number, id_str = selection_uid_maker.next_int()
-            results.append(
+
+            candidate = Candidate(
+                object_id=candidate_uid_maker.next(),
+                ballot_name=_str_to_internationalized_text_en(c[0]),
+                party_id=c[1] if c[1] != "" else None,
+                image_uri=None,
+            )
+            candidates.append(candidate)
+            selections.append(
                 SelectionDescription(
                     object_id=id_str,
-                    candidate_id=candidate_map[c[0]].object_id,
+                    candidate_id=candidate.object_id,
                     sequence_order=id_number,
                 )
             )
 
-        return results
-
-    def _contest_name_to_description(
-        self,
-        name: str,
-        contest_uid_maker: UidMaker,
-        selection_uid_maker: UidMaker,
-        candidate_map: Dict[str, Candidate],
-        gpunit_map: Dict[str, GeopoliticalUnit],
-    ) -> ContestDescription:
-
         id_number, id_str = contest_uid_maker.next_int()
-        return ContestDescription(
-            object_id=id_str,
-            electoral_district_id=gpunit_map[name].object_id,
-            sequence_order=id_number,
-            vote_variation=VoteVariationType.one_of_m,  # for now
-            number_elected=1,
-            votes_allowed=None,
-            name=name,
-            ballot_selections=self._contest_name_to_selections(name, selection_uid_maker, candidate_map),
-            ballot_title=_str_to_internationalized_text_en(name),
+        return (
+            ContestDescription(
+                object_id=id_str,
+                electoral_district_id=gpunit_map[name].object_id,
+                sequence_order=id_number,
+                vote_variation=VoteVariationType.one_of_m,  # for now
+                number_elected=1,
+                votes_allowed=None,
+                name=name,
+                ballot_selections=selections,
+                ballot_title=_str_to_internationalized_text_en(name),
+            ),
+            candidates,
         )
 
     def to_election_description(
@@ -268,11 +278,8 @@ class DominionCSV(NamedTuple):
         """
 
         ballots: List[PlaintextBallot] = list()
-        date = datetime.date.today()  # we don't know any better
+        date = datetime.datetime.now()
 
-        # Map from party string to Party object; the hack in here is that we're using an object-id
-        # equal to the party string. We could generate random uuids, but unclear that has any
-        # meaningful benefit.
         party_uids = UidMaker("party")
         party_map = {
             p: Party(
@@ -300,28 +307,23 @@ class DominionCSV(NamedTuple):
             for bt in self.ballot_types
         }
 
-        all_candidates: Sequence[Tuple[str, str]] = flatmap(
-            lambda x: x.keys(), list(self.contest_map.values())
-        )
-
         candidate_uids = UidMaker("candidate")
-        candidates = [
-            Candidate(
-                object_id=candidate_uids.next(),
-                ballot_name=_str_to_internationalized_text_en(c[0]),
-                party_id=c[1] if c[1] != "" else None,
-                image_uri=None,
-            )
-            for c in all_candidates
-        ]
-
         contest_uids = UidMaker("contest")
-        contest_map = {
-            name: ContestDescription(
-                object_id=contest_uids.next(), electoral_district_id=""
+        selection_uids = UidMaker("selection")
+
+        contest_map: Dict[str, ContestDescription] = {}
+        all_candidates: List[Candidate] = []
+
+        for name in self.contest_map.keys():
+            contest_description, candidates = self._contest_name_to_description(
+                name=name,
+                candidate_uid_maker=candidate_uids,
+                contest_uid_maker=contest_uids,
+                selection_uid_maker=selection_uids,
+                gpunit_map=gpunit_map,
             )
-            for name in self.contest_map.keys()
-        }
+            contest_map[name] = contest_description
+            all_candidates = all_candidates + candidates
 
         return (
             ElectionDescription(
@@ -329,10 +331,11 @@ class DominionCSV(NamedTuple):
                 type=ElectionType.unknown,
                 start_date=date,
                 end_date=date,
-                geopolitical_units=gpunit_map.values(),
-                parties=party_map.values(),
-                candidates=candidates,
-                ballot_styles=ballotstyle_map.values(),
+                geopolitical_units=list(gpunit_map.values()),
+                parties=list(party_map.values()),
+                candidates=all_candidates,
+                contests=list(contest_map.values()),
+                ballot_styles=list(ballotstyle_map.values()),
             ),
             ballots,
         )
