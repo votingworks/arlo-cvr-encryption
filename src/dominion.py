@@ -188,32 +188,43 @@ class DominionCSV(NamedTuple):
     """
 
     def _all_parties_for_contests(self, contests: Iterable[str]) -> Set[str]:
-        parties = [t[1] for t in flatmap(lambda c: self.contest_map[c], contests)]
+        # The tuple we get back from the contest_map has a contest name (t[0]) and maybe a party
+        # (t[1]), which will be "" if there's no party at all, so we want to filter those out.
+
+        parties = [t[1] for t in flatmap(lambda c: self.contest_map[c], contests) if t[1] != ""]
         return set(parties)
 
     def _ballot_style_from_id(
         self,
         dominion_ballot_style_id: str,
-        new_ballot_style_object_id: str,
+        bs_uids: UidMaker,
+        gp_uids: UidMaker,
         party_map: Dict[str, Party],
-        gpunit_map: Dict[str, GeopoliticalUnit],
-    ) -> BallotStyle:
+    ) -> Tuple[BallotStyle, GeopoliticalUnit]:
 
         contest_titles = self.style_map[dominion_ballot_style_id]
-        gp_ids = [gpunit_map[ct].object_id for ct in contest_titles]
+        gp_id = gp_uids.next()
+        bs_id = bs_uids.next()
+
         party_ids = [
             party_map[p].object_id
             for p in self._all_parties_for_contests(contest_titles)
         ]
+
         return BallotStyle(
-            object_id=new_ballot_style_object_id,
-            geopolitical_unit_ids=gp_ids if gp_ids else None,
+            object_id=bs_id,
+            geopolitical_unit_ids=[gp_id],
             party_ids=party_ids if party_ids else None,
+        ), GeopoliticalUnit(
+            object_id=bs_id,
+            name=dominion_ballot_style_id,
+            type=ReportingUnitType.unknown
         )
 
     def _contest_name_to_description(
         self,
         name: str,
+        ballot_style_name: str,
         candidate_uid_maker: UidMaker,
         contest_uid_maker: UidMaker,
         selection_uid_maker: UidMaker,
@@ -256,7 +267,7 @@ class DominionCSV(NamedTuple):
         return (
             ContestDescription(
                 object_id=id_str,
-                electoral_district_id=gpunit_map[name].object_id,
+                electoral_district_id=gpunit_map[ballot_style_name].object_id,
                 sequence_order=id_number,
                 vote_variation=VoteVariationType.one_of_m,  # for now
                 number_elected=1,
@@ -289,23 +300,30 @@ class DominionCSV(NamedTuple):
             for p in self.all_parties
         }
 
-        # "Geopolitical units" are going to map one-to-one with the contest names that we've seen.
-        gpunit_uids = UidMaker("gpunit")
-        gpunit_map = {
-            x: GeopoliticalUnit(
-                object_id=gpunit_uids.next(), name=x, type=ReportingUnitType.unknown
-            )
-            for x in self.contest_map.keys()
-        }
+        # A ballot style is a subset of all of the contests on the ballot. Luckily, we have a column
+        # in the data ("ballot type"), which is exactly what we need.
 
-        # A ballot style is a subset of all of the geopolitical units that are under consideration.
+        # "Geopolitical units" are meant to be their own thing (cities, counties, precincts, etc.),
+        # but we don't have any data at all about them in the Dominion CVR file. After some discussion,
+        # we decided to have them map one-to-one with ballot styles. It's a little more work than
+        # just having a singular geopolitical unit for everything, but it also makes it easier for
+        # us, later on, if and when we have "real" geopolitical units to deal with.
+
+        # We're thus making them all at the same time.
+
         ballotstyle_uids = UidMaker("ballotstyle")
-        ballotstyle_map = {
-            bt: self._ballot_style_from_id(
-                bt, ballotstyle_uids.next(), party_map, gpunit_map,
-            )
-            for bt in self.ballot_types
-        }
+        gpunit_uids = UidMaker("gpunit")
+        ballotstyle_map: Dict[str, BallotStyle] = {}
+        gpunit_map: Dict[str, GeopoliticalUnit] = {}
+        # ballotstyle_to_gpunit: Dict[BallotStyle, GeopoliticalUnit] = {}
+        # gpunit_to_ballotstyle: Dict[GeopoliticalUnit, BallotStyle] = {}
+
+        for bt in self.ballot_types:
+            bs, gp = self._ballot_style_from_id(bt, ballotstyle_uids, gpunit_uids, party_map)
+            gpunit_map[bt] = gp
+            ballotstyle_map[bt] = bs
+            # ballotstyle_to_gpunit[bs] = gp
+            # gpunit_to_ballotstyle[gp] = bs
 
         candidate_uids = UidMaker("candidate")
         contest_uids = UidMaker("contest")
@@ -397,6 +415,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
 
     all_parties: Set[str] = set()
     contest_map: CONTEST_MAP = {}
+    contest_key_to_title: Dict[str, str] = {}
     for contest in contests:
         title = contest[0]
         candidate = contest[1]
@@ -412,7 +431,11 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
         if title not in contest_map:
             contest_map[title] = {}
 
+        # goes from ["Representative - District 1"][("Alice", "DEM")] to "Representative - District 1 | Alice | DEM"
         contest_map[title][choice] = key
+
+        # goes from "Representative - District 1 | Alice | DEM" to "Representative - District 1"
+        contest_key_to_title[key] = title
 
     style_map: STYLE_MAP = {}
 
@@ -429,7 +452,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
 
     for index, row in df.iterrows():
         ballot_type = row["BallotType"]
-        present_contests = {k for k in contest_keys if _nonempty_elem(row, k)}
+        present_contests = {contest_key_to_title[k] for k in contest_keys if _nonempty_elem(row, k)}
 
         if ballot_type not in style_map:
             style_map[ballot_type] = present_contests
