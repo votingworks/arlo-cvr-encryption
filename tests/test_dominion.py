@@ -113,11 +113,10 @@ class TestDominion(unittest.TestCase):
             self.fail("Expected not none")
         else:
             election_description, ballots = result.to_election_description()
+            self.assertEqual(2, len(election_description.ballot_styles))
+            self.assertEqual(2, len(election_description.contests))
+            self.assertEqual(4, len(election_description.candidates))
             self.assertEqual(2, len(ballots))
-            self.assertEqual(
-                {"Representative - District X (Vote For=1)", "Referendum"},
-                set([x.name for x in election_description.geopolitical_units]),
-            )
 
     def test_read_dominion_csv_failures(self) -> None:
         self.assertIsNone(read_dominion_csv("no-such-file.csv"))

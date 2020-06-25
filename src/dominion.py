@@ -15,8 +15,7 @@ from typing import (
 )
 
 import pandas as pd
-
-from electionguard.ballot import PlaintextBallot
+from electionguard.ballot import PlaintextBallot, PlaintextBallotContest
 from electionguard.election import (
     ElectionDescription,
     ElectionType,
@@ -31,6 +30,7 @@ from electionguard.election import (
     VoteVariationType,
     SelectionDescription,
 )
+from electionguard.encrypt import selection_from
 
 from utils import flatmap, UidMaker
 
@@ -192,16 +192,18 @@ class DominionCSV(NamedTuple):
         # (t[1]), which will be "" if there's no party at all, so we want to filter those out.
 
         parties = [
-            t[1] for t in flatmap(lambda c: self.contest_map[c], contests) if t[1] != ""
+            t[1]
+            for t in flatmap(lambda c: self.contest_map[c].keys(), contests)
+            if t[1] != ""
         ]
         return set(parties)
 
     def _ballot_style_from_id(
         self,
-        gp: GeopoliticalUnit,
         dominion_ballot_style_id: str,
         bs_uids: UidMaker,
         party_map: Dict[str, Party],
+        cd_map: Dict[str, ContestDescription],
     ) -> BallotStyle:
 
         contest_titles = self.style_map[dominion_ballot_style_id]
@@ -212,11 +214,22 @@ class DominionCSV(NamedTuple):
             for p in self._all_parties_for_contests(contest_titles)
         ]
 
+        gp_ids = [cd_map[t].electoral_district_id for t in contest_titles]
+
         return BallotStyle(
             object_id=bs_id,
-            geopolitical_unit_ids=[gp.object_id],
+            geopolitical_unit_ids=gp_ids,
             party_ids=party_ids if party_ids else None,
         )
+
+    def _selection_description_to_data_column(
+        self,
+        sd: SelectionDescription,
+        cd_map: Dict[str, Candidate],
+        column_map: Dict[Candidate, str],
+    ) -> str:
+        # will raise an error if anything is missing, but will that ever happen?
+        return column_map[cd_map[sd.candidate_id]]
 
     def _contest_name_to_description(
         self,
@@ -224,8 +237,8 @@ class DominionCSV(NamedTuple):
         candidate_uid_maker: UidMaker,
         contest_uid_maker: UidMaker,
         selection_uid_maker: UidMaker,
-        gp: GeopoliticalUnit,
-    ) -> Tuple[ContestDescription, List[Candidate]]:
+        gp_uid_maker: UidMaker,
+    ) -> Tuple[ContestDescription, List[Candidate], GeopoliticalUnit, Dict[str, str]]:
 
         selections: List[SelectionDescription] = []
         candidates: List[Candidate] = []
@@ -240,6 +253,8 @@ class DominionCSV(NamedTuple):
         # This method will be called separately for every contest name, and the resulting lists
         # of candidates should be merged to make the complete list that goes into an
         # ElectionDescription.
+
+        candidate_to_column: Dict[str, str] = {}
 
         for c in self.contest_map[name]:
             id_number, id_str = selection_uid_maker.next_int()
@@ -259,6 +274,12 @@ class DominionCSV(NamedTuple):
                 )
             )
 
+            candidate_to_column[candidate.object_id] = self.contest_map[name][c]
+
+        gp = GeopoliticalUnit(
+            object_id=gp_uid_maker.next(), name=name, type=ReportingUnitType.unknown,
+        )
+
         id_number, id_str = contest_uid_maker.next_int()
         return (
             ContestDescription(
@@ -273,6 +294,8 @@ class DominionCSV(NamedTuple):
                 ballot_title=_str_to_internationalized_text_en(name),
             ),
             candidates,
+            gp,
+            candidate_to_column,
         )
 
     def to_election_description(
@@ -284,7 +307,6 @@ class DominionCSV(NamedTuple):
         rows in the Dominion CVR).
         """
 
-        ballots: List[PlaintextBallot] = list()
         date = datetime.datetime.now()
 
         party_uids = UidMaker("party")
@@ -301,38 +323,89 @@ class DominionCSV(NamedTuple):
 
         # "Geopolitical units" are meant to be their own thing (cities, counties, precincts, etc.),
         # but we don't have any data at all about them in the Dominion CVR file. Our current hack
-        # is that we have a singular geopolitical unit that we use everywhere. This is wrong, but
-        # it's tolerable.
-
-        gp = GeopoliticalUnit(
-            "gpunit-singleton",
-            "Global Geopolitical Unit",
-            type=ReportingUnitType.unknown,
-        )
-        ballotstyle_uids = UidMaker("ballotstyle")
-
-        ballotstyle_map = {
-            bt: self._ballot_style_from_id(gp, bt, ballotstyle_uids, party_map)
-            for bt in self.ballot_types
-        }
+        # is that we're making them one-to-one with contests.
 
         candidate_uids = UidMaker("candidate")
         contest_uids = UidMaker("contest")
         selection_uids = UidMaker("selection")
+        gp_uids = UidMaker("gpunit")
 
         contest_map: Dict[str, ContestDescription] = {}
         all_candidates: List[Candidate] = []
+        all_gps: List[GeopoliticalUnit] = []
+
+        all_candidate_ids_to_columns: Dict[str, str] = {}
 
         for name in self.contest_map.keys():
-            contest_description, candidates = self._contest_name_to_description(
+            (
+                contest_description,
+                candidates,
+                gp,
+                candidate_id_to_column,
+            ) = self._contest_name_to_description(
                 name=name,
                 candidate_uid_maker=candidate_uids,
                 contest_uid_maker=contest_uids,
                 selection_uid_maker=selection_uids,
-                gp=gp,
+                gp_uid_maker=gp_uids,
             )
             contest_map[name] = contest_description
             all_candidates = all_candidates + candidates
+            all_gps.append(gp)
+            for c in candidate_id_to_column.keys():
+                all_candidate_ids_to_columns[c] = candidate_id_to_column[c]
+
+        ballotstyle_uids = UidMaker("ballotstyle")
+
+        ballotstyle_map: Dict[str, BallotStyle] = {
+            bt: self._ballot_style_from_id(bt, ballotstyle_uids, party_map, contest_map)
+            for bt in self.ballot_types
+        }
+
+        # And now, for the ballots
+        ballots: List[PlaintextBallot] = list()
+        ballot_uids = UidMaker("ballot")
+        plaintext_contest_uids = UidMaker("pballot")
+
+        for index, row in self.data.iterrows():
+            ballot_type = row["BallotType"]
+            pbcontests: List[PlaintextBallotContest] = []
+
+            contest_titles: Set[str] = self.style_map[ballot_type]
+            for title in contest_titles:
+                # This is insanely complicated. The challenge is that we have the Dominion data structures,
+                # which has its own column names, but we have to connect that with all of the ElectionGuard
+                # structures, which don't just let you follow from one to the other. Instead, it's a twisty
+                # world of object_ids. Thus, we need mappings to go from one to the next, and have to do all
+                # this extra bookkeeping, in Python dictionaries, to make all the connections.
+
+                contest = contest_map[title]
+                candidate_ids = [s.candidate_id for s in contest.ballot_selections]
+                column_names = [all_candidate_ids_to_columns[c] for c in candidate_ids]
+                voter_intents = [row[x] > 0 for x in column_names]
+                selections: List[SelectionDescription] = contest.ballot_selections
+                plaintexts = [
+                    selection_from(
+                        description=selections[i],
+                        is_placeholder=False,
+                        is_affirmative=voter_intents[i],
+                    )
+                    for i in range(0, len(selections))
+                ]
+                pbcontests.append(
+                    PlaintextBallotContest(
+                        object_id=plaintext_contest_uids.next(),
+                        ballot_selections=plaintexts,
+                    )
+                )
+
+            ballots.append(
+                PlaintextBallot(
+                    object_id=ballot_uids.next(),
+                    ballot_style=ballotstyle_map[ballot_type].object_id,
+                    contests=pbcontests,
+                )
+            )
 
         return (
             ElectionDescription(
@@ -341,7 +414,7 @@ class DominionCSV(NamedTuple):
                 type=ElectionType.unknown,
                 start_date=date,
                 end_date=date,
-                geopolitical_units=[gp],
+                geopolitical_units=all_gps,
                 parties=list(party_map.values()),
                 candidates=all_candidates,
                 contests=list(contest_map.values()),
