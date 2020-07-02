@@ -11,6 +11,8 @@ from hypothesis.strategies import (
     tuples,
 )
 
+from utils import flatmap
+
 
 @composite
 def counting_groups(draw: _DrawType):
@@ -18,7 +20,9 @@ def counting_groups(draw: _DrawType):
     Some Dominion CVRs don't use counting groups at all, but when they do, it's a string like
     "Regular", "Provisional", "Mail", and so forth. This strategy returns one of these common strings.
     """
-    return draw(sampled_from(["Regular", "Provisional", "Mail", "Election Day", "In Person"]))
+    return draw(
+        sampled_from(["Regular", "Provisional", "Mail", "Election Day", "In Person"])
+    )
 
 
 def _encode_list_as_csv(
@@ -37,11 +41,16 @@ def _encode_list_as_csv(
     encoded_line: List[str] = []
     for s in line:
         if quotation_style == 0:
+            # no quotation marks at all, even for strings
             encoded_line.append(str(s))
         elif quotation_style == 1:
             encoded_line.append(f'"{str(s)}"')
         else:
-            encoded_line.append(f'"={str(s)}"')
+            if isinstance(s, int) or (s != "" and s[0].isdigit()):
+                # equal-sign prefix before quotation marks seems to only happen on numeric digits
+                encoded_line.append(f'="{str(s)}"')
+            else:
+                encoded_line.append(f'"{str(s)}"')
     return ",".join(encoded_line)
 
 
@@ -59,7 +68,6 @@ def dominion_cvrs(draw: _DrawType):
     in the output of this strategy.
     """
     num_cvrs: int = draw(integers(1, 300))
-    num_human_contests: int = draw(integers(1, 10))
     num_referenda: int = draw(integers(1, 5))
     max_candidates_per_contest: int = draw(integers(1, 5))
     num_candidates_per_contest: List[int] = draw(
@@ -81,12 +89,12 @@ def dominion_cvrs(draw: _DrawType):
         )
         for n in num_candidates_per_contest
     ]
+    num_human_contests = len(candidates_and_parties)
 
     contest_names = [f"Contest{i}" for i in range(1, num_human_contests + 1)]
     referenda_names = [f"Referendum{i}" for i in range(1, num_referenda + 1)]
 
-    min_ballot_styles = 2
-    num_ballot_styles: int = draw(integers(2, 10))
+    num_ballot_styles: int = draw(integers(1, 10))
     total_voter_choice_slots: int = sum(num_candidates_per_contest) + 2 * num_referenda
 
     # 0 = straight numbers
@@ -95,12 +103,9 @@ def dominion_cvrs(draw: _DrawType):
     quotation_style: int = draw(integers(0, 2))
     counting_group_present: bool = draw(booleans())
 
-    total_csv_columns = (
-        7 + total_voter_choice_slots + 1 if counting_group_present else 0
-    )
-    ballot_style_strings = [
-        f"BALLOTSTYLE{i}" for i in range(min_ballot_styles, num_ballot_styles + 1)
-    ]
+    total_metadata_columns = 7 + (1 if counting_group_present else 0)
+    total_csv_columns = total_metadata_columns + total_voter_choice_slots
+    ballot_style_strings = [f"BALLOTSTYLE{i}" for i in range(0, num_ballot_styles + 1)]
     # header row 1: only two fields, plus a bunch of blanks
     # header row 2: a bunch of blanks, then the contest/referenda names
 
@@ -115,19 +120,28 @@ def dominion_cvrs(draw: _DrawType):
         )
     )
 
+    # We need both the "for" and "against" for each referendum.
+    repeated_referenda_names = flatmap(lambda name: [name, name], referenda_names)
+
+    # Different contests have different numbers of candidates, so we need different repetition.
+    repeated_contest_names = flatmap(
+        lambda n: [contest_names[n]] * len(candidates_and_parties[n]),
+        range(0, num_human_contests),
+    )
+
     # header row 2: a bunch of blanks, then the contest/referenda names
     rows.append(
         _encode_list_as_csv(
-            [""] * (7 + 1 if counting_group_present else 0)
-            + contest_names
-            + referenda_names,
+            [""] * total_metadata_columns
+            + repeated_contest_names
+            + repeated_referenda_names,
             quotation_style,
             total_csv_columns,
         )
     )
 
     # header row 3: candidate names, or FOR/AGAINST for referenda
-    output: List[str] = [""] * (7 + 1 if counting_group_present else 0)
+    output: List[str] = [""] * total_metadata_columns
     for contest in candidates_and_parties:
         for c in contest:
             output.append(c[0])
@@ -191,6 +205,7 @@ def dominion_cvrs(draw: _DrawType):
                 draw(integers(0, 3)),
                 draw(integers(0, 3)),
                 draw(integers(0, 3)),
+                draw(counting_groups()),
                 draw(integers(0, 3)),
                 ballot_style_strings[bs],
             ]
@@ -201,7 +216,6 @@ def dominion_cvrs(draw: _DrawType):
                 draw(integers(0, 3)),
                 draw(integers(0, 3)),
                 draw(integers(0, 3)),
-                draw(counting_groups()),
                 draw(integers(0, 3)),
                 ballot_style_strings[bs],
             ]

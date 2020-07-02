@@ -1,9 +1,12 @@
 import unittest
+from io import StringIO
 from typing import Optional
 
 import pandas as pd
+from hypothesis import given
+
 from dominion import _fix_strings, _row_to_uid, read_dominion_csv, DominionCSV
-from io import StringIO
+from tests.dominion_hypothesis import dominion_cvrs
 
 _good_dominion_cvrs = """
 "2018 Test Election","5.2.16.1","","","","","","","","","",""
@@ -15,7 +18,7 @@ _good_dominion_cvrs = """
         """
 
 
-class TestDominion(unittest.TestCase):
+class TestDominionBasics(unittest.TestCase):
     def test_fix_strings(self) -> None:
         self.assertEqual(None, _fix_strings(""))
         self.assertEqual(None, _fix_strings('""'))
@@ -151,3 +154,13 @@ class TestDominion(unittest.TestCase):
             self.assertSetEqual(
                 {"Referendum | Against", "Referendum | For"}, result.style_map["T2"]
             )
+
+
+class TestDominionHypotheses(unittest.TestCase):
+    @given(dominion_cvrs())
+    def test_sanity(self, cvrs):
+        parsed = read_dominion_csv(StringIO(cvrs))
+        if parsed is None:
+            print("Input that failed: \n" + cvrs + "\n")
+            again = read_dominion_csv(StringIO(cvrs))
+        self.assertIsNotNone(parsed)
