@@ -1,12 +1,25 @@
 import unittest
 from io import StringIO
-from typing import Optional
+from typing import Optional, Dict
 
 import pandas as pd
+from electionguard.ballot_box import BallotBox
+from electionguard.ballot_store import BallotStore
+from electionguard.election import InternalElectionDescription
+from electionguard.encrypt import encrypt_ballot, EncryptionDevice
+from electionguard.group import ElementModQ
+from electionguard.nonces import Nonces
+from electionguard.tally import CiphertextTally, tally_ballots
+from electionguardtest.group import elements_mod_q
 from hypothesis import given
 
 from dominion import _fix_strings, _row_to_uid, read_dominion_csv, DominionCSV
-from tests.dominion_hypothesis import dominion_cvrs
+from tests.dominion_hypothesis import (
+    dominion_cvrs,
+    ballots_and_context,
+    DominionBallotsAndContext,
+)
+from tests.group import electionguard_crypto_weak_params
 
 _good_dominion_cvrs = """
 "2018 Test Election","5.2.16.1","","","","","","","","","",""
@@ -115,7 +128,7 @@ class TestDominionBasics(unittest.TestCase):
         if result is None:
             self.fail("Expected not none")
         else:
-            election_description, ballots = result.to_election_description()
+            election_description, ballots, id_map = result.to_election_description()
             self.assertEqual(2, len(election_description.ballot_styles))
             self.assertEqual(2, len(election_description.contests))
             self.assertEqual(4, len(election_description.candidates))
@@ -156,11 +169,50 @@ class TestDominionBasics(unittest.TestCase):
             )
 
 
+def _decrypt_with_secret(
+    tally: CiphertextTally, secret_key: ElementModQ
+) -> Dict[str, int]:
+    """
+        Copied from test_tally.py
+        """
+    plaintext_selections: Dict[str, int] = {}
+    for _, contest in tally.cast.items():
+        for object_id, selection in contest.tally_selections.items():
+            plaintext = selection.message.decrypt(secret_key)
+            plaintext_selections[object_id] = plaintext
+
+    return plaintext_selections
+
+
 class TestDominionHypotheses(unittest.TestCase):
     @given(dominion_cvrs())
-    def test_sanity(self, cvrs):
+    def test_sanity(self, cvrs: str):
         parsed = read_dominion_csv(StringIO(cvrs))
-        if parsed is None:
-            print("Input that failed: \n" + cvrs + "\n")
-            again = read_dominion_csv(StringIO(cvrs))
         self.assertIsNotNone(parsed)
+
+    @given(ballots_and_context(), elements_mod_q())
+    def test_eg_conversion(self, state: DominionBallotsAndContext, seed: ElementModQ):
+        ied = InternalElectionDescription(state.ed)
+        ballot_box = BallotBox(ied, state.cec)
+
+        store = BallotStore()
+        seed_hash = EncryptionDevice("Location").get_hash()
+        nonces = Nonces(seed)[0 : len(state.ballots)]
+
+        for b, n in zip(state.ballots, nonces):
+            eb = encrypt_ballot(b, ied, state.cec, seed_hash, n)
+            self.assertIsNotNone(eb)
+            self.assertGreater(len(eb.contests), 0)
+            cast_result = ballot_box.cast(eb)
+            self.assertIsNotNone(cast_result)
+
+        tally = tally_ballots(ballot_box._store, ied, state.cec)
+        self.assertIsNotNone(tally)
+        results = _decrypt_with_secret(tally, state.secret_key)
+
+        self.assertEqual(len(results.keys()), len(state.id_map.keys()))
+        for obj_id in results.keys():
+            self.assertIn(obj_id, state.id_map)
+            cvr_sum = int(state.dominion_cvrs.data[state.id_map[obj_id]].sum())
+            decryption = results[obj_id]
+            self.assertEqual(cvr_sum, decryption)

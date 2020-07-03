@@ -1,7 +1,11 @@
 # Hypothesis "strategies" to generate Dominion ballots
-from typing import List, Union, Tuple, Dict, Sequence
+from io import StringIO
+from typing import List, Union, Tuple, Dict, Sequence, NamedTuple, Optional
 
-from electionguardtest.election import human_names, _DrawType
+from electionguard.ballot import PlaintextBallot
+from electionguard.election import ElectionDescription, CiphertextElectionContext
+from electionguard.group import ElementModQ
+from electionguardtest.election import human_names, _DrawType, ciphertext_elections
 from hypothesis.strategies import (
     composite,
     booleans,
@@ -11,6 +15,7 @@ from hypothesis.strategies import (
     tuples,
 )
 
+from dominion import DominionCSV, read_dominion_csv
 from utils import flatmap
 
 
@@ -188,13 +193,20 @@ def dominion_cvrs(draw: _DrawType):
     # specific contests that are not part of any given ballot style.
 
     num_contests = num_human_contests + num_referenda
-    contest_in_bs: Dict[int, Dict[int, bool]] = {}
+    contest_in_bs: Dict[int, List[bool]] = {}
 
     for bs in range(0, num_ballot_styles):
-        contest_in_bs[bs] = {}
-        for c in range(0, num_contests):
-            included: bool = draw(booleans())
-            contest_in_bs[bs][c] = included
+        # If every bool is False, that means we have a ballot style with zero contests, which is unhelpful.
+        # Also, generates warnings from ElectionGuard. Solution? Generate all at random, then forcibly set
+        # one of them to True.
+
+        contest_in_style = draw(
+            lists(booleans(), min_size=num_contests, max_size=num_contests)
+        )
+        contest_in_bs[bs] = contest_in_style
+        contest_in_bs[bs][
+            draw(integers(min_value=0, max_value=num_contests - 1))
+        ] = True
 
     for cvr_number in range(1, num_cvrs + 1):
         bs: int = draw(integers(0, num_ballot_styles - 1))
@@ -245,3 +257,27 @@ def dominion_cvrs(draw: _DrawType):
 
     # for now, Unix line terminators, and nothing on the last line; we could vary this if we wanted!
     return "\n".join(rows)
+
+
+class DominionBallotsAndContext(NamedTuple):
+    dominion_cvrs: DominionCSV
+    ed: ElectionDescription
+    secret_key: ElementModQ
+    id_map: Dict[str, str]
+    cec: CiphertextElectionContext
+    ballots: List[PlaintextBallot]
+
+
+@composite
+def ballots_and_context(draw: _DrawType):
+    """
+    Wrapper around ElectionGuard's own `ciphertext_elections` strategy and our `dominion_cvrs`, returns
+    an instance of `DominionBallotsAndContext` with everything you need for subsequent testing.
+    """
+    raw_cvrs = draw(dominion_cvrs())
+    parsed: Optional[DominionCSV] = read_dominion_csv(StringIO(raw_cvrs))
+    assert parsed is not None, "CVR parser shouldn't fail!"
+    ed, ballots, id_map = parsed.to_election_description()
+    secret_key, cec = draw(ciphertext_elections(ed))
+
+    return DominionBallotsAndContext(parsed, ed, secret_key, id_map, cec, ballots)

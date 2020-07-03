@@ -63,7 +63,7 @@ lint:
 	@echo 2.Black Formatting
 	pipenv run black --check .
 	@echo 3.Mypy Static Typing
-	pipenv run mypy src tests setup.py
+	pipenv run mypy src setup.py
 	@echo 4.Package Metadata
 	pipenv run python setup.py check --strict --metadata --restructuredtext
 # 	@echo 5.Docstring

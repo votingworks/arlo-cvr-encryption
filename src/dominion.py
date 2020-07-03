@@ -265,10 +265,13 @@ class DominionCSV(NamedTuple):
                 party_id=c[1] if c[1] != "" else None,
                 image_uri=None,
             )
+
+            # To make our lives easier, we're going to use identical object_ids for selections
+            # and candidates, and hopefully this won't break anything.
             candidates.append(candidate)
             selections.append(
                 SelectionDescription(
-                    object_id=id_str,
+                    object_id=candidate.object_id,
                     candidate_id=candidate.object_id,
                     sequence_order=id_number,
                 )
@@ -300,11 +303,12 @@ class DominionCSV(NamedTuple):
 
     def to_election_description(
         self,
-    ) -> Tuple[ElectionDescription, List[PlaintextBallot]]:
+    ) -> Tuple[ElectionDescription, List[PlaintextBallot], Dict[str, str]]:
         """
         Converts this data to a ElectionGuard `ElectionDescription` (having all of the metadata
-        describing the election) and a list of `PlaintextBallot` (corresponding to each of the
-        rows in the Dominion CVR).
+        describing the election), a list of `PlaintextBallot` (corresponding to each of the
+        rows in the Dominion CVR), and a dictionary from candidate object identifiers to the
+        the name of the candidate (as it appears in the Pandas column).
         """
 
         date = datetime.datetime.now()
@@ -421,6 +425,7 @@ class DominionCSV(NamedTuple):
                 ballot_styles=list(ballotstyle_map.values()),
             ),
             ballots,
+            all_candidate_ids_to_columns,
         )
         pass
 
