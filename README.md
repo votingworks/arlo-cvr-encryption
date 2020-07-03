@@ -27,6 +27,8 @@ And, of course, if you *do* happen to have voting machines that generate e2e cip
 
 ## Command-line tools
 
+*(None of these exist yet. This is where we think we're going.)*
+
 `arlo_initialize_keys`: Creates a public/private key pair for the election administrator. The private key could eventually be built with secret sharing across trustees, but for version 1 that's irrelevant, since the election administrator already has the plaintext CVRs.
 
 `arlo_encrypt_cvrs`: Input is a file full of CVRs, probably in CSV format along with the public key of the election. Output is a JSON array of whatever ElectionGuard's representation is. Lots of other formats are supported by the standard [serde library](https://serde.rs/). Crypto people would call this output the *public bulletin board*, suitable for posting on a web site.
@@ -45,9 +47,9 @@ Not in version 1 but on the future wishlist:
 - Some sort of binary file format or use of a real database to store all the encrypted CVRs.
 - Direct integration with Arlo rather than calling out to standalone compiled binaries.
 
-This code will build on the [ElectionGuard Python Implementation](https://github.com/microsoft/ElectionGuard-Python),
+This code builds on the [ElectionGuard Python Implementation](https://github.com/microsoft/ElectionGuard-Python),
 which itself was built with its primary goal as *correctness* and other goals
-like performance being secondary. Still, it uses GMP for its big-integer arithmetic, so it's fast.
+like performance being secondary.
 
 Other libraries that we're *not* using, but ostensibly could at some point:
 - [Verificatum](https://www.verificatum.org/)
