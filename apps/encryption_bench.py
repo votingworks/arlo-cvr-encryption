@@ -1,9 +1,12 @@
 # This is a benchmark that runs as a standalone program. It takes one command-line argument: the name of a "CSV"
 # file in Dominion format. It then parses and encrypts the whole thing, including computing the decrypted tallies.
+from multiprocessing import cpu_count, Pool
 from timeit import default_timer as timer
 
 import sys
+from typing import Tuple, Optional
 
+from electionguard.ballot import PlaintextBallot, CiphertextBallot
 from electionguard.ballot_box import BallotBox
 from electionguard.election import (
     CiphertextElectionContext,
@@ -11,14 +14,37 @@ from electionguard.election import (
 )
 from electionguard.elgamal import elgamal_keypair_random
 from electionguard.encrypt import EncryptionDevice, encrypt_ballot
+from electionguard.group import ElementModQ
 from electionguard.nonces import Nonces
 from electionguard.tally import tally_ballots
 
 from dominion import read_dominion_csv
 from eg_helpers import decrypt_with_secret
 
+# print(f"CPUs detected: {cpu_count()}, launching thread pool")
+# pool = Pool(cpu_count())
+
+ied: InternalElectionDescription
+cec: CiphertextElectionContext
+seed_hash: ElementModQ
+
+
+def encrypt_func(
+    input: Tuple[PlaintextBallot, ElementModQ]
+) -> Optional[CiphertextBallot]:
+    b, n = input
+    result = encrypt_ballot(b, ied, cec, seed_hash, n)
+    assert result is not None, "ballot encryption failed!"
+    print(".", flush=True, end="")
+    return result
+
 
 def run_bench(filename: str) -> None:
+    # these must be global so we can get the parallel map to work
+    global ied
+    global cec
+    global seed_hash
+
     start_time = timer()
 
     cvrs = read_dominion_csv(filename)
@@ -49,16 +75,15 @@ def run_bench(filename: str) -> None:
     nonces = Nonces(secret_key)[0 : len(ballots)]
 
     print("    Encrypting: ", end="", flush=True)
-    for b, n in zip(ballots, nonces):
-        # TODO: redo this with thread pool parallelism
-        print(".", end="", flush=True)
-        eb = encrypt_ballot(b, ied, cec, seed_hash, n)
-        assert eb is not None, "ballot encryption failed!"
+    # ebs = pool.map(encrypt_func, zip(ballots, nonces))
+    ebs = [encrypt_func(x) for x in zip(ballots, nonces)]
 
+    print("\n    Tallying: ", end="", flush=True)
+    for eb in ebs:
+        assert eb is not None, "errors should have terminated before getting here"
         cast_result = ballot_box.cast(eb)
         assert cast_result is not None, "ballot box casting failed!"
 
-    print("\n    Tallying: ", end="", flush=True)
     tally = tally_ballots(ballot_box._store, ied, cec)
     assert tally is not None, "tally failed!"
     results = decrypt_with_secret(tally, secret_key)
