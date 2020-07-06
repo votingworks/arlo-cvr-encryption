@@ -16,6 +16,7 @@ from electionguardtest.group import elements_mod_q
 from hypothesis import given, settings, HealthCheck, Phase
 
 from dominion import _fix_strings, _row_to_uid, read_dominion_csv, DominionCSV
+from eg_helpers import decrypt_with_secret
 from tests.dominion_hypothesis import (
     dominion_cvrs,
     ballots_and_context,
@@ -165,21 +166,6 @@ class TestDominionBasics(unittest.TestCase):
             self.assertSetEqual({"Referendum"}, result.style_map["T2"])
 
 
-def _decrypt_with_secret(
-    tally: CiphertextTally, secret_key: ElementModQ
-) -> Dict[str, int]:
-    """
-        Copied from test_tally.py
-        """
-    plaintext_selections: Dict[str, int] = {}
-    for _, contest in tally.cast.items():
-        for object_id, selection in contest.tally_selections.items():
-            plaintext = selection.message.decrypt(secret_key)
-            plaintext_selections[object_id] = plaintext
-
-    return plaintext_selections
-
-
 class TestDominionHypotheses(unittest.TestCase):
     @given(dominion_cvrs())
     @settings(
@@ -228,7 +214,7 @@ class TestDominionHypotheses(unittest.TestCase):
 
         tally = tally_ballots(ballot_box._store, ied, state.cec)
         self.assertIsNotNone(tally)
-        results = _decrypt_with_secret(tally, state.secret_key)
+        results = decrypt_with_secret(tally, state.secret_key)
 
         self.assertEqual(len(results.keys()), len(state.id_map.keys()))
         for obj_id in results.keys():
