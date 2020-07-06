@@ -77,8 +77,13 @@ def run_bench(filename: str) -> None:
     print("    Encrypting: ", end="", flush=True)
     # ebs = pool.map(encrypt_func, zip(ballots, nonces))
     ebs = [encrypt_func(x) for x in zip(ballots, nonces)]
+    eg_encrypt_time = timer()
+    print(f"\n    Encryption time: {eg_encrypt_time - eg_build_time: .3f} sec")
+    print(
+        f"    Encryption rate: {rows / (eg_encrypt_time - eg_build_time): .3f} ballots/sec"
+    )
 
-    print("\n    Tallying: ", end="", flush=True)
+    print("    Tallying: ", end="", flush=True)
     for eb in ebs:
         assert eb is not None, "errors should have terminated before getting here"
         cast_result = ballot_box.cast(eb)
@@ -88,7 +93,7 @@ def run_bench(filename: str) -> None:
     assert tally is not None, "tally failed!"
     results = decrypt_with_secret(tally, secret_key)
     eg_tabulate_time = timer()
-    print("\n")  # will end line and leave a blank
+    print("Done.")
 
     for obj_id in results.keys():
         assert obj_id in id_map, "object_id in results that we don't know about!"
@@ -96,9 +101,9 @@ def run_bench(filename: str) -> None:
         decryption = results[obj_id]
         assert cvr_sum == decryption, f"decryption failed for {obj_id}"
 
-    print(f"    Encryption time: {eg_tabulate_time - eg_build_time: .3f} sec")
+    print(f"    Tabulation time: {eg_tabulate_time - eg_encrypt_time: .3f} sec")
     print(
-        f"    Encryption rate: {rows / (eg_tabulate_time - eg_build_time): .3f} ballots/sec"
+        f"    Tabulation rate: {rows / (eg_tabulate_time - eg_encrypt_time): .3f} ballots/sec"
     )
 
 
