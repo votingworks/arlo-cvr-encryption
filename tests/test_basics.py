@@ -1,4 +1,5 @@
 import unittest
+from typing import Optional
 
 from hypothesis import given
 from hypothesis.strategies import integers
@@ -6,28 +7,25 @@ from hypothesis.strategies import integers
 from electionguard.elgamal import (
     elgamal_encrypt,
     ElGamalKeyPair,
+    ElGamalCiphertext,
+    elgamal_add,
 )
-from electionguard.group import ElementModQ
-from electionguard.utils import get_optional
+from electionguard.group import ElementModQ, ElementModP
+from electionguard.utils import get_optional, flatmap_optional
 from electionguardtest.elgamal import elgamal_keypairs
 from electionguardtest.group import elements_mod_q_no_zero
-from hello import fib, elgamal_reencrypt
+
+# The tests here are really just a sanity test to make sure that we can integrate with ElectionGuard.
+# If this test doesn't work, then the most likely culprit is something wrong with pipenv.
 
 
-class FibTest(unittest.TestCase):
-    def test_fib_basics(self) -> None:
-        self.assertEqual(fib(0), 0)
-        self.assertEqual(fib(1), 1)
-        self.assertEqual(fib(2), 1)
-        self.assertEqual(fib(3), 2)
-        self.assertEqual(fib(4), 3)
-        self.assertEqual(fib(5), 5)
-        self.assertEqual(fib(6), 8)
-        self.assertEqual(fib(7), 13)
-
-    @given(integers(0, 10))
-    def test_fib_is_positive(self, n: int) -> None:
-        self.assertTrue(fib(n) >= 0)
+def elgamal_reencrypt(
+    public_key: ElementModP, nonce: ElementModQ, ciphertext: ElGamalCiphertext
+) -> Optional[ElGamalCiphertext]:
+    return flatmap_optional(
+        elgamal_encrypt(0, nonce, public_key),
+        lambda zero: elgamal_add(zero, ciphertext),
+    )
 
 
 class ElGamalTest(unittest.TestCase):

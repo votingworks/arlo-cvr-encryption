@@ -369,7 +369,6 @@ class DominionCSV(NamedTuple):
         # And now, for the ballots
         ballots: List[PlaintextBallot] = list()
         ballot_uids = UidMaker("ballot")
-        plaintext_contest_uids = UidMaker("pballot")
 
         for index, row in self.data.iterrows():
             ballot_type = row["BallotType"]
@@ -398,8 +397,7 @@ class DominionCSV(NamedTuple):
                 ]
                 pbcontests.append(
                     PlaintextBallotContest(
-                        object_id=plaintext_contest_uids.next(),
-                        ballot_selections=plaintexts,
+                        object_id=contest.object_id, ballot_selections=plaintexts,
                     )
                 )
 

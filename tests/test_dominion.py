@@ -1,17 +1,19 @@
 import unittest
+from datetime import timedelta
 from io import StringIO
 from typing import Optional, Dict
 
 import pandas as pd
 from electionguard.ballot_box import BallotBox
 from electionguard.ballot_store import BallotStore
+from electionguard.decrypt import decrypt_ballot_with_secret
 from electionguard.election import InternalElectionDescription
 from electionguard.encrypt import encrypt_ballot, EncryptionDevice
 from electionguard.group import ElementModQ
 from electionguard.nonces import Nonces
 from electionguard.tally import CiphertextTally, tally_ballots
 from electionguardtest.group import elements_mod_q
-from hypothesis import given
+from hypothesis import given, settings, HealthCheck, Phase
 
 from dominion import _fix_strings, _row_to_uid, read_dominion_csv, DominionCSV
 from tests.dominion_hypothesis import (
@@ -157,16 +159,10 @@ class TestDominionBasics(unittest.TestCase):
             self.assertEqual(2, len(rows))
 
             self.assertSetEqual(
-                {
-                    "Representative - District X (Vote For=1) | Alice | DEM",
-                    "Representative - District X (Vote For=1) | Bob | REP",
-                },
-                result.style_map["T1"],
+                {"Representative - District X (Vote For=1)"}, result.style_map["T1"],
             )
 
-            self.assertSetEqual(
-                {"Referendum | Against", "Referendum | For"}, result.style_map["T2"]
-            )
+            self.assertSetEqual({"Referendum"}, result.style_map["T2"])
 
 
 def _decrypt_with_secret(
@@ -186,11 +182,25 @@ def _decrypt_with_secret(
 
 class TestDominionHypotheses(unittest.TestCase):
     @given(dominion_cvrs())
+    @settings(
+        deadline=timedelta(milliseconds=10000),
+        suppress_health_check=[HealthCheck.too_slow],
+        max_examples=5,
+        # disabling the "shrink" phase, because it runs very slowly
+        phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
+    )
     def test_sanity(self, cvrs: str):
         parsed = read_dominion_csv(StringIO(cvrs))
         self.assertIsNotNone(parsed)
 
     @given(ballots_and_context(), elements_mod_q())
+    @settings(
+        deadline=timedelta(milliseconds=10000),
+        suppress_health_check=[HealthCheck.too_slow],
+        max_examples=5,
+        # disabling the "shrink" phase, because it runs very slowly
+        phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
+    )
     def test_eg_conversion(self, state: DominionBallotsAndContext, seed: ElementModQ):
         ied = InternalElectionDescription(state.ed)
         ballot_box = BallotBox(ied, state.cec)
@@ -202,6 +212,16 @@ class TestDominionHypotheses(unittest.TestCase):
         for b, n in zip(state.ballots, nonces):
             eb = encrypt_ballot(b, ied, state.cec, seed_hash, n)
             self.assertIsNotNone(eb)
+
+            pb = decrypt_ballot_with_secret(
+                eb,
+                ied,
+                state.cec.crypto_extended_base_hash,
+                state.cec.elgamal_public_key,
+                state.secret_key,
+            )
+            self.assertEqual(b, pb)
+
             self.assertGreater(len(eb.contests), 0)
             cast_result = ballot_box.cast(eb)
             self.assertIsNotNone(cast_result)
