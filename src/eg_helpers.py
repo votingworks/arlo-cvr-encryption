@@ -5,7 +5,7 @@ from electionguard.tally import CiphertextTally
 
 
 def decrypt_with_secret(
-        tally: CiphertextTally, secret_key: ElementModQ
+    tally: CiphertextTally, secret_key: ElementModQ
 ) -> Dict[str, int]:
     """
     Given an ElectionGuard "Tally" structure, returns a dict that
