@@ -48,17 +48,22 @@ def run_bench(filename: str) -> None:
     # not cryptographically sound, but suitable for the benchmark
     nonces = Nonces(secret_key)[0 : len(ballots)]
 
+    print("    Encrypting: ", end="", flush=True)
     for b, n in zip(ballots, nonces):
+        # TODO: redo this with thread pool parallelism
+        print(".", end="", flush=True)
         eb = encrypt_ballot(b, ied, cec, seed_hash, n)
         assert eb is not None, "ballot encryption failed!"
 
         cast_result = ballot_box.cast(eb)
         assert cast_result is not None, "ballot box casting failed!"
 
+    print("\n    Tallying: ", end="", flush=True)
     tally = tally_ballots(ballot_box._store, ied, cec)
     assert tally is not None, "tally failed!"
     results = decrypt_with_secret(tally, secret_key)
     eg_tabulate_time = timer()
+    print("\n")  # will end line and leave a blank
 
     for obj_id in results.keys():
         assert obj_id in id_map, "object_id in results that we don't know about!"
