@@ -27,6 +27,7 @@ jobs:
       - run:
           name: Test
           command: |
+            export PYTHONUNBUFFERED=1
             make coverage
 
 workflows:
