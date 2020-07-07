@@ -22,7 +22,7 @@ from electionguard.nonces import Nonces
 from electionguard.tally import tally_ballots
 
 from dominion import read_dominion_csv
-from eg_helpers import decrypt_with_secret
+from eg_helpers import decrypt_with_secret, BallotStoreProgressBar
 from utils import parallel_map_with_progress
 
 
@@ -57,6 +57,8 @@ def run_bench(filename: str) -> None:
     print(f"    Parse time: {eg_build_time - start_time: .3f} sec")
 
     ed, ballots, id_map = cvrs.to_election_description()
+    assert len(ballots) > 0, "can't have zero ballots!"
+
     secret_key, public_key = elgamal_keypair_random()
     cec = CiphertextElectionContext(
         number_of_guardians=1,
@@ -74,25 +76,32 @@ def run_bench(filename: str) -> None:
 
     wrapped_func = functools.partial(encrypt_func, ied, cec, seed_hash)
 
-    print("    Encrypting: ", end="", flush=True)
+    print("    Encrypting: ")
     ebs = parallel_map_with_progress(wrapped_func, zip(ballots, nonces))
     eg_encrypt_time = timer()
-    print(f"\n    Encryption time: {eg_encrypt_time - eg_build_time: .3f} sec")
+    print(f"    Encryption time: {eg_encrypt_time - eg_build_time: .3f} sec")
     print(
         f"    Encryption rate: {(eg_encrypt_time - eg_build_time) / rows: .3f} sec/ballot"
     )
 
-    print("    Tallying: ", end="", flush=True)
-    for eb in ebs:
+    print("    Casting: ")
+    for eb in tqdm(ebs):
         assert eb is not None, "errors should have terminated before getting here"
         cast_result = ballot_box.cast(eb)
         assert cast_result is not None, "ballot box casting failed!"
+    eg_cast_time = timer()
+    print(f"    Casting time: {(eg_cast_time - eg_encrypt_time): .3f} sec")
+    print(
+        f"    Casting rate: {(eg_cast_time - eg_encrypt_time) / rows: .3f} sec/ballot"
+    )
 
-    tally = tally_ballots(ballot_box._store, ied, cec)
+    print("    Tallying: ")
+    tally = tally_ballots(BallotStoreProgressBar(ballot_box._store), ied, cec)
+    # tally = tally_ballots(ballot_box._store, ied, cec)
     assert tally is not None, "tally failed!"
     results = decrypt_with_secret(tally, secret_key)
     eg_tabulate_time = timer()
-    print("Done.")
+    print("    Decryption complete.")
 
     for obj_id in results.keys():
         assert obj_id in id_map, "object_id in results that we don't know about!"
@@ -100,9 +109,9 @@ def run_bench(filename: str) -> None:
         decryption = results[obj_id]
         assert cvr_sum == decryption, f"decryption failed for {obj_id}"
 
-    print(f"    Tabulation time: {eg_tabulate_time - eg_encrypt_time: .3f} sec")
+    print(f"    Tabulation time: {eg_tabulate_time - eg_cast_time: .3f} sec")
     print(
-        f"    Tabulation rate: {(eg_tabulate_time - eg_encrypt_time) / rows: .3f} sec/ballot"
+        f"    Tabulation rate: {(eg_tabulate_time - eg_cast_time) / rows: .3f} sec/ballot"
     )
 
 

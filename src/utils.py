@@ -51,7 +51,11 @@ def parallel_map_with_progress(f: Callable[[T], U], i: Iterable[T]) -> List[U]:
     # rather than map, which is a lot more work, since you have to collect the results yourself.
     # map_async() has a callback function, but it doesn't seem to do what we want, which is to say,
     # getting called once every time things are done. No idea why.
-    pbar = tqdm(i)
+
+    # Why are we wrapping the iterable in a list? This seems to fix a problem where the parallel
+    # mapper wants to measure how much input is in the iterable.
+    pbar = tqdm(list(i))
+    cpus = cpu_count()
     pool = Pool(cpu_count())
 
     result = pool.map(func=f, iterable=pbar)
