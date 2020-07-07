@@ -139,7 +139,7 @@ class TestDominionBasics(unittest.TestCase):
 
     def test_read_dominion_csv_failures(self) -> None:
         self.assertIsNone(read_dominion_csv("no-such-file.csv"))
-        self.assertIsNone(read_dominion_csv(StringIO('{ "json": 0 }')))
+        # TODO: more tests of "malformed" CSV data
 
     def test_read_with_holes(self) -> None:
         input_str = """

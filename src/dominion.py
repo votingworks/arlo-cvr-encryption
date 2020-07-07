@@ -440,7 +440,13 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
 
     """
     try:
-        df = pd.read_csv(file, header=[0, 1, 2, 3], quoting=csv.QUOTE_NONE)
+        df = pd.read_csv(
+            file,
+            header=[0, 1, 2, 3],
+            quoting=csv.QUOTE_MINIMAL,
+            sep=",",
+            engine="python",
+        )
     except FileNotFoundError:
         return None
     except pd.errors.ParserError:

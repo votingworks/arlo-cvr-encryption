@@ -1,10 +1,13 @@
 # This is a benchmark that runs as a standalone program. It takes one command-line argument: the name of a "CSV"
 # file in Dominion format. It then parses and encrypts the whole thing, including computing the decrypted tallies.
-from multiprocessing import cpu_count, Pool
+import functools
+from multiprocessing.dummy import Pool
+from multiprocessing import cpu_count
 from timeit import default_timer as timer
 
 import sys
-from typing import Tuple, Optional
+from typing import Tuple, Optional, TypeVar, List, Callable, Sequence, Iterator
+from tqdm import tqdm
 
 from electionguard.ballot import PlaintextBallot, CiphertextBallot
 from electionguard.ballot_box import BallotBox
@@ -20,38 +23,34 @@ from electionguard.tally import tally_ballots
 
 from dominion import read_dominion_csv
 from eg_helpers import decrypt_with_secret
-
-# print(f"CPUs detected: {cpu_count()}, launching thread pool")
-# pool = Pool(cpu_count())
-
-ied: InternalElectionDescription
-cec: CiphertextElectionContext
-seed_hash: ElementModQ
+from utils import parallel_map_with_progress
 
 
 def encrypt_func(
-    input: Tuple[PlaintextBallot, ElementModQ]
+    ied: InternalElectionDescription,
+    cec: CiphertextElectionContext,
+    seed_hash: ElementModQ,
+    input: Tuple[PlaintextBallot, ElementModQ],
 ) -> Optional[CiphertextBallot]:
     b, n = input
     result = encrypt_ballot(b, ied, cec, seed_hash, n)
     assert result is not None, "ballot encryption failed!"
-    print(".", flush=True, end="")
+    # print(".", flush=True, end="")
     return result
 
 
 def run_bench(filename: str) -> None:
     # these must be global so we can get the parallel map to work
-    global ied
-    global cec
-    global seed_hash
 
     start_time = timer()
 
+    print(f"Benchmarking: {filename}")
     cvrs = read_dominion_csv(filename)
     if cvrs is None:
         print(f"Failed to read {filename}, terminating.")
         exit(1)
     rows, cols = cvrs.data.shape
+
     print(f"{filename}: rows: {rows}, cols: {cols}")
 
     eg_build_time = timer()
@@ -70,17 +69,17 @@ def run_bench(filename: str) -> None:
     ballot_box = BallotBox(ied, cec)
 
     seed_hash = EncryptionDevice("Location").get_hash()
-
     # not cryptographically sound, but suitable for the benchmark
-    nonces = Nonces(secret_key)[0 : len(ballots)]
+    nonces: List[ElementModQ] = Nonces(secret_key)[0 : len(ballots)]
+
+    wrapped_func = functools.partial(encrypt_func, ied, cec, seed_hash)
 
     print("    Encrypting: ", end="", flush=True)
-    # ebs = pool.map(encrypt_func, zip(ballots, nonces))
-    ebs = [encrypt_func(x) for x in zip(ballots, nonces)]
+    ebs = parallel_map_with_progress(wrapped_func, zip(ballots, nonces))
     eg_encrypt_time = timer()
     print(f"\n    Encryption time: {eg_encrypt_time - eg_build_time: .3f} sec")
     print(
-        f"    Encryption rate: {rows / (eg_encrypt_time - eg_build_time): .3f} ballots/sec"
+        f"    Encryption rate: {(eg_encrypt_time - eg_build_time) / rows: .3f} sec/ballot"
     )
 
     print("    Tallying: ", end="", flush=True)
@@ -103,10 +102,12 @@ def run_bench(filename: str) -> None:
 
     print(f"    Tabulation time: {eg_tabulate_time - eg_encrypt_time: .3f} sec")
     print(
-        f"    Tabulation rate: {rows / (eg_tabulate_time - eg_encrypt_time): .3f} ballots/sec"
+        f"    Tabulation rate: {(eg_tabulate_time - eg_encrypt_time) / rows: .3f} sec/ballot"
     )
 
 
 if __name__ == "__main__":
+    print(f"CPUs detected: {cpu_count()}, launching thread pool")
+
     for arg in sys.argv[1:]:
         run_bench(arg)
