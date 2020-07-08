@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "f13ff165b44a0bc10d8a434355e0c4522d01eb4d42853abb06a63d56fdf54c10"
+            "sha256": "543debf98c93fc951508775cfb085a9b8f6f21dc350368782262e13126ae2486"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -26,7 +26,7 @@
         },
         "electionguard": {
             "git": "https://github.com/microsoft/electionguard-python.git",
-            "ref": "6e29792f9637602ba541842a5806a1bf390eba4a"
+            "ref": "a1c450a7cbdd616da11420c66d74d833ab36cd6f"
         },
         "gmpy2": {
             "hashes": [

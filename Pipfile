@@ -19,8 +19,8 @@ pandas = '==1.0.4'
 hypothesis = "==5.15.1"
 typish = '*'
 jsons = '==1.1.2'
-electionguard = {git = "https://github.com/microsoft/electionguard-python.git", ref = "main"}
 tqdm = "4.47.0"
+electionguard = {git = "https://github.com/microsoft/electionguard-python.git"}
 
 [requires]
 python_version = "3.8"

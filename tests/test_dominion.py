@@ -6,7 +6,7 @@ from typing import Optional, Dict
 import pandas as pd
 from electionguard.ballot_box import BallotBox
 from electionguard.ballot_store import BallotStore
-from electionguard.decrypt import decrypt_ballot_with_secret
+from electionguard.decrypt_with_secrets import decrypt_ballot_with_secret
 from electionguard.election import InternalElectionDescription
 from electionguard.encrypt import encrypt_ballot, EncryptionDevice
 from electionguard.group import ElementModQ
