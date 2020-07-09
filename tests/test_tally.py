@@ -1,4 +1,5 @@
 import unittest
+import coverage
 from io import StringIO
 from datetime import timedelta
 from multiprocessing import Pool, cpu_count
@@ -23,6 +24,8 @@ class TestFastTallies(unittest.TestCase):
         phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
     )
     def test_end_to_end(self, input: str, keypair: ElGamalKeyPair, use_keypair: bool):
+        coverage.process_startup()  # necessary for coverage testing to work in parallel
+
         cvrs = read_dominion_csv(StringIO(input))
         self.assertIsNotNone(cvrs)
 
