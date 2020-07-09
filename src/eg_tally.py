@@ -252,7 +252,7 @@ class FastTallyEverythingResults(NamedTuple):
         end = timer()
         _log_and_print(f"Verification time: {end - start: .3f} sec", verbose)
         _log_and_print(
-            f"Verification rate: {len(self.tally.keys()) / (end - start): .3f} selections/sec",
+            f"Verification rate: {len(self.tally.keys()) / (end - start): .3f} selection/sec",
             verbose,
         )
 
@@ -340,7 +340,7 @@ def fast_tally_everything(
         f"Decryption time: {eg_decryption_time - eg_tabulate_time: .3f} sec", verbose
     )
     _log_and_print(
-        f"Decryption rate: {rows / (eg_decryption_time - eg_tabulate_time): .3f} ballot/sec",
+        f"Decryption rate: {len(decrypted_tally.keys()) / (eg_decryption_time - eg_tabulate_time): .3f} selection/sec",
         verbose,
     )
 
