@@ -1,49 +1,26 @@
 # This is a benchmark that runs as a standalone program. It takes one command-line argument: the name of a "CSV"
 # file in Dominion format. It then parses and encrypts the whole thing, including computing the decrypted tallies.
-import functools
-from multiprocessing.dummy import Pool
-from multiprocessing import cpu_count
-from timeit import default_timer as timer
-
 import sys
-from typing import Tuple, Optional, TypeVar, List, Callable, Sequence, Iterator
-from tqdm import tqdm
+from multiprocessing import cpu_count
+from multiprocessing import Pool
+from timeit import default_timer as timer
+from typing import List
 
-from electionguard.ballot import PlaintextBallot, CiphertextBallot
-from electionguard.ballot_box import BallotBox
 from electionguard.election import (
     CiphertextElectionContext,
     InternalElectionDescription,
 )
-from electionguard.elgamal import elgamal_keypair_random
-from electionguard.encrypt import EncryptionDevice, encrypt_ballot
-from electionguard.group import ElementModQ
+from electionguard.elgamal import elgamal_keypair_random, elgamal_encrypt
+from electionguard.encrypt import EncryptionDevice
+from electionguard.group import ElementModQ, int_to_q_unchecked
 from electionguard.nonces import Nonces
-from electionguard.tally import tally_ballots
 
 from dominion import read_dominion_csv
-from eg_helpers import decrypt_with_secret, BallotStoreProgressBar
-from utils import parallel_map_with_progress
+from eg_helpers import fast_encrypt_ballots, fast_tally_ballots, fast_decrypt_tally
 
 
-def encrypt_func(
-    ied: InternalElectionDescription,
-    cec: CiphertextElectionContext,
-    seed_hash: ElementModQ,
-    input: Tuple[PlaintextBallot, ElementModQ],
-) -> Optional[CiphertextBallot]:
-    b, n = input
-    result = encrypt_ballot(b, ied, cec, seed_hash, n)
-    assert result is not None, "ballot encryption failed!"
-    # print(".", flush=True, end="")
-    return result
-
-
-def run_bench(filename: str) -> None:
-    # these must be global so we can get the parallel map to work
-
+def run_bench(filename: str, pool: Pool) -> None:
     start_time = timer()
-
     print(f"Benchmarking: {filename}")
     cvrs = read_dominion_csv(filename)
     if cvrs is None:
@@ -51,15 +28,22 @@ def run_bench(filename: str) -> None:
         exit(1)
     rows, cols = cvrs.data.shape
 
-    print(f"{filename}: rows: {rows}, cols: {cols}")
-
-    eg_build_time = timer()
-    print(f"    Parse time: {eg_build_time - start_time: .3f} sec")
+    parse_time = timer()
+    print(f"    Rows: {rows}, cols: {cols}")
+    print(f"    Parse time: {parse_time - start_time: .3f} sec")
 
     ed, ballots, id_map = cvrs.to_election_description()
     assert len(ballots) > 0, "can't have zero ballots!"
 
     secret_key, public_key = elgamal_keypair_random()
+    print(f"    Priming discrete log engine for n={len(ballots)}")
+    assert len(ballots) == elgamal_encrypt(
+        m=len(ballots), nonce=int_to_q_unchecked(3), public_key=public_key
+    ).decrypt(secret_key), "got wrong ElGamal decryption!"
+
+    dlog_prime_time = timer()
+    print(f"    DLog prime time: {dlog_prime_time - parse_time: .3f} sec")
+
     cec = CiphertextElectionContext(
         number_of_guardians=1,
         quorum=1,
@@ -68,55 +52,52 @@ def run_bench(filename: str) -> None:
     )
 
     ied = InternalElectionDescription(ed)
-    ballot_box = BallotBox(ied, cec)
-
     seed_hash = EncryptionDevice("Location").get_hash()
     # not cryptographically sound, but suitable for the benchmark
     nonces: List[ElementModQ] = Nonces(secret_key)[0 : len(ballots)]
 
-    wrapped_func = functools.partial(encrypt_func, ied, cec, seed_hash)
-
     print("    Encrypting: ")
-    ebs = parallel_map_with_progress(wrapped_func, zip(ballots, nonces))
+    cballots = fast_encrypt_ballots(ballots, ied, cec, seed_hash, nonces, pool)
     eg_encrypt_time = timer()
-    print(f"    Encryption time: {eg_encrypt_time - eg_build_time: .3f} sec")
-    print(
-        f"    Encryption rate: {(eg_encrypt_time - eg_build_time) / rows: .3f} sec/ballot"
-    )
 
-    print("    Casting: ")
-    for eb in tqdm(ebs):
-        assert eb is not None, "errors should have terminated before getting here"
-        cast_result = ballot_box.cast(eb)
-        assert cast_result is not None, "ballot box casting failed!"
-    eg_cast_time = timer()
-    print(f"    Casting time: {(eg_cast_time - eg_encrypt_time): .3f} sec")
+    print(f"    Encryption time: {eg_encrypt_time - dlog_prime_time: .3f} sec")
     print(
-        f"    Casting rate: {(eg_cast_time - eg_encrypt_time) / rows: .3f} sec/ballot"
+        f"    Encryption rate: {(eg_encrypt_time - dlog_prime_time) / rows: .3f} sec/ballot"
     )
 
     print("    Tallying: ")
-    tally = tally_ballots(BallotStoreProgressBar(ballot_box._store), ied, cec)
+    tally = fast_tally_ballots(cballots, pool)
+    eg_tabulate_time = timer()
+
+    print(f"    Tabulation time: {eg_tabulate_time - eg_encrypt_time: .3f} sec")
+    print(
+        f"    Tabulation rate: {(eg_tabulate_time - eg_encrypt_time) / rows: .3f} sec/ballot"
+    )
+
     # tally = tally_ballots(ballot_box._store, ied, cec)
     assert tally is not None, "tally failed!"
-    results = decrypt_with_secret(tally, secret_key)
-    eg_tabulate_time = timer()
-    print("    Decryption complete.")
+
+    print("    Decryption & Proofs: ")
+    results = fast_decrypt_tally(tally, public_key, secret_key, seed_hash, pool)
+    eg_decryption_time = timer()
+    print(f"    Decryption time: {eg_decryption_time - eg_tabulate_time: .3f} sec")
+    print(
+        f"    Decryption rate: {(eg_decryption_time - eg_tabulate_time) / rows: .3f} sec/ballot"
+    )
 
     for obj_id in results.keys():
         assert obj_id in id_map, "object_id in results that we don't know about!"
         cvr_sum = int(cvrs.data[id_map[obj_id]].sum())
-        decryption = results[obj_id]
+        decryption, proof = results[obj_id]
         assert cvr_sum == decryption, f"decryption failed for {obj_id}"
-
-    print(f"    Tabulation time: {eg_tabulate_time - eg_cast_time: .3f} sec")
-    print(
-        f"    Tabulation rate: {(eg_tabulate_time - eg_cast_time) / rows: .3f} sec/ballot"
-    )
+        assert proof.is_valid(
+            tally[obj_id][1], public_key
+        ), f"Chaum-Pedersen proof validation failed!"
 
 
 if __name__ == "__main__":
     print(f"CPUs detected: {cpu_count()}, launching thread pool")
+    pool = Pool(cpu_count())
 
     for arg in sys.argv[1:]:
-        run_bench(arg)
+        run_bench(arg, pool)

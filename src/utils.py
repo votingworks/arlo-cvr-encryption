@@ -35,30 +35,3 @@ def flatmap(f: Callable[[T], Iterable[U]], li: Iterable[T]) -> Sequence[U]:
         for subitem in item:
             result.append(subitem)
     return result
-
-
-def parallel_map_with_progress(f: Callable[[T], U], i: Iterable[T]) -> List[U]:
-    """
-    Applies the function `func` to the input in parallel and returns the results in the
-    same order as the input. This behaves a lot like the `pool.map` method in `multiprocessing`,
-    but it will also show a progress meter for the user.
-    """
-
-    # tqdm does our progress bar, and it wraps the input in an iterable. Unfortunately, the
-    # bar will advance at the *start* when something is drawn out of the iterable, rather than
-    # at the end when the work unit is complete. This means the progress bar hits 100% too
-    # early, but at least it advances. Trying to set up callbacks would require using apply_async
-    # rather than map, which is a lot more work, since you have to collect the results yourself.
-    # map_async() has a callback function, but it doesn't seem to do what we want, which is to say,
-    # getting called once every time things are done. No idea why.
-
-    # Why are we wrapping the iterable in a list? This seems to fix a problem where the parallel
-    # mapper wants to measure how much input is in the iterable.
-    pbar = tqdm(list(i))
-    cpus = cpu_count()
-    pool = Pool(cpu_count())
-
-    result = pool.map(func=f, iterable=pbar)
-    pool.close()
-
-    return result
