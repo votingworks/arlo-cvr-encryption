@@ -41,7 +41,7 @@ def _encrypt(
     input: Tuple[PlaintextBallot, ElementModQ],
 ) -> CiphertextBallot:
     b, n = input
-    result = encrypt_ballot(b, ied, cec, seed_hash, n)
+    result = encrypt_ballot(b, ied, cec, seed_hash, n, should_verify_proofs=False)
     assert result is not None, "ballot encryption failed!"
     return result
 
@@ -232,7 +232,7 @@ class FastTallyEverythingResults(NamedTuple):
     def all_proofs_valid(
         self, pool: Optional[Pool] = None, verbose: bool = True
     ) -> bool:
-        _log_and_print(f"Verifying proofs:", verbose)
+        _log_and_print(f"\nVerifying proofs:", verbose)
         wrapped_func = functools.partial(_proof_verify, self.public_key)
         start = timer()
 
@@ -308,12 +308,12 @@ def fast_tally_everything(
         f"Encryption time: {eg_encrypt_time - dlog_prime_time: .3f} sec", verbose
     )
     _log_and_print(
-        f"Encryption rate: {(eg_encrypt_time - dlog_prime_time) / rows: .3f} sec/ballot",
+        f"Encryption rate: {rows / (eg_encrypt_time - dlog_prime_time): .3f} ballot/sec",
         verbose,
     )
 
     if verbose:
-        print("Tallying:")
+        print("\nTallying:")
     tally = fast_tally_ballots(cballots, pool, verbose)
     eg_tabulate_time = timer()
 
@@ -329,7 +329,7 @@ def fast_tally_everything(
     assert tally is not None, "tally failed!"
 
     if verbose:
-        print("Decryption & Proofs: ")
+        print("\nDecryption & Proofs: ")
     decrypted_tally = fast_decrypt_tally(
         tally, public_key, secret_key, seed_hash, pool, verbose
     )
