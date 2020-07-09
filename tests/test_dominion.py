@@ -1,7 +1,7 @@
 import unittest
 from datetime import timedelta
 from io import StringIO
-from typing import Optional, Dict
+from typing import Optional
 
 import pandas as pd
 from electionguard.ballot_box import BallotBox
@@ -11,7 +11,7 @@ from electionguard.election import InternalElectionDescription
 from electionguard.encrypt import encrypt_ballot, EncryptionDevice
 from electionguard.group import ElementModQ
 from electionguard.nonces import Nonces
-from electionguard.tally import CiphertextTally, tally_ballots
+from electionguard.tally import tally_ballots
 from electionguardtest.group import elements_mod_q
 from hypothesis import given, settings, HealthCheck, Phase
 
@@ -22,7 +22,6 @@ from tests.dominion_hypothesis import (
     ballots_and_context,
     DominionBallotsAndContext,
 )
-from tests.group import electionguard_crypto_weak_params
 
 _good_dominion_cvrs = """
 "2018 Test Election","5.2.16.1","","","","","","","","","",""
