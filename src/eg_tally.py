@@ -232,7 +232,9 @@ class FastTallyEverythingResults(NamedTuple):
     def all_proofs_valid(
         self, pool: Optional[Pool] = None, verbose: bool = True
     ) -> bool:
-        _log_and_print(f"\nVerifying proofs:", verbose)
+        if verbose:
+            print("\nVerifying proofs:")
+
         wrapped_func = functools.partial(_proof_verify, self.public_key)
         start = timer()
 
