@@ -18,6 +18,7 @@ from electionguard.elgamal import (
     elgamal_add,
     elgamal_keypair_random,
     elgamal_encrypt,
+    elgamal_keypair_from_secret,
 )
 from electionguard.encrypt import encrypt_ballot
 from electionguard.group import (
@@ -29,6 +30,7 @@ from electionguard.group import (
 )
 from electionguard.logs import log_info, log_error
 from electionguard.nonces import Nonces
+from electionguard.utils import get_optional
 from tqdm import tqdm
 
 from dominion import DominionCSV
@@ -41,9 +43,9 @@ def _encrypt(
     input: Tuple[PlaintextBallot, ElementModQ],
 ) -> CiphertextBallot:
     b, n = input
-    result = encrypt_ballot(b, ied, cec, seed_hash, n, should_verify_proofs=False)
-    assert result is not None, "ballot encryption failed!"
-    return result
+    return get_optional(
+        encrypt_ballot(b, ied, cec, seed_hash, n, should_verify_proofs=False)
+    )
 
 
 def fast_encrypt_ballots(
@@ -123,6 +125,10 @@ def fast_tally_ballots(
                     assert (
                         s.nonce is not None
                     ), "we need the encryption nonce to generate the Chaum-Pedersen proof"
+
+                    # Technically, we don't actually need the nonces. Just knowing the secret key
+                    # is enough to produce the proofs, but we don't have a handy function in the
+                    # ElectionGuard library that knows how to do it for us.
                     messages[s.object_id].append((s.nonce, s.message))
 
     # Now, we're creating the list of tuples that will be the arguments to _accumulate,
@@ -199,10 +205,31 @@ def _log_and_print(s: str, verbose: bool) -> None:
 
 
 class SelectionInfo(NamedTuple):
+    """
+    A mapping from a selection's object_id to a the encrypted and decrypted tallies and a proof
+    of their correspondence.
+    """
+
     object_id: str
+    """
+    Selection object_id. To map from this to actual candidates in an election, you need
+    the rest of the ElectionGuard `ElectionDescription`.
+    """
+
     encrypted_tally: ElGamalCiphertext
+    """
+    Encrypted accumulation of every ciphertext counter for this particular selection.
+    """
+
     decrypted_tally: int
+    """
+    Decrypted tally.
+    """
+
     proof: ConstantChaumPedersenProof
+    """
+    Proof of the correspondence between `decrypted_tally` and `encrypted_tally`.
+    """
 
     def is_valid_proof(self, public_key: ElementModP) -> bool:
         """Returns true if the plaintext, ciphertext, and proof are valid and consistent, false if not."""
@@ -224,10 +251,32 @@ def _proof_verify(public_key: ElementModP, s: SelectionInfo) -> bool:
 
 class FastTallyEverythingResults(NamedTuple):
     election_description: ElectionDescription
+    """
+    ElectionGuard top-level data structure that describes everything about the election: 
+    the candidates, the parties, and so forth. See also, the many helpful methods
+    in `DominionCSV`.
+    """
+
     public_key: ElementModP
+    """
+    The election officials' public key. Useful for verifying the election.
+    """
+
     seed_hash: ElementModQ
+    """
+    Used to seed the randomness while encrypting the ballots.
+    """
+
     encrypted_ballots: List[CiphertextBallot]
+    """
+    All the encrypted ballots.
+    """
+
     tally: Dict[str, SelectionInfo]
+    """
+    A mapping from selection object_ids to a structure that includes the encrypted and
+    decrypted tallies and a proof of their correspondence.
+    """
 
     def all_proofs_valid(
         self, pool: Optional[Pool] = None, verbose: bool = True
@@ -261,10 +310,25 @@ class FastTallyEverythingResults(NamedTuple):
 
 def fast_tally_everything(
     cvrs: DominionCSV,
-    pool: Pool,
+    pool: Optional[Pool] = None,
     verbose: bool = True,
     seed_hash: Optional[ElementModQ] = None,
+    master_nonce: Optional[ElementModQ] = None,
+    secret_key: Optional[ElementModQ] = None,
 ) -> FastTallyEverythingResults:
+    """
+    This top-level function takes a collection of Dominion CVRs and produces everything that
+    we might want for arlo-e2e: a list of encrypted ballots, their encrypted and decrypted tally,
+    and proofs of the correctness of the whole thing. The election `secret_key` is an optional
+    parameter. If absent, a random keypair is generated and used. Similarly, if a `seed_hash` or
+    `master_nonce` is not provided, random ones are generated and used.
+
+    For parallelism, a `multiprocessing.pool.Pool` may be provided, and should result in significant
+    speedups on multicore computers. If absent, the computation will proceed sequentially.
+
+    *WARNING: The CiphertextBallots in the results will have their encryption nonces inside.
+    Be careful that you don't serialize these.*
+    """
     rows, cols = cvrs.data.shape
 
     parse_time = timer()
@@ -273,7 +337,12 @@ def fast_tally_everything(
     ed, ballots, id_map = cvrs.to_election_description()
     assert len(ballots) > 0, "can't have zero ballots!"
 
-    secret_key, public_key = elgamal_keypair_random()
+    if secret_key is None:
+        secret_key, public_key = elgamal_keypair_random()
+    else:
+        tmp = elgamal_keypair_from_secret(secret_key)
+        assert tmp is not None, "unexpected failure with keypair computation"
+        public_key = tmp.public_key
 
     # This computation exists only to cause side-effects in the DLog engine, so the lame nonce is not an issue.
     assert len(ballots) == elgamal_encrypt(
@@ -295,11 +364,13 @@ def fast_tally_everything(
 
     ied = InternalElectionDescription(ed)
 
-    # Review this: is this cryptographically sound? Is the seed_hash properly a secret? Should
-    # it go in the output?
+    # REVIEW THIS: is this cryptographically sound? Is the seed_hash properly a secret? Should
+    # it go in the output? The nonces are clearly secret. If you know them, you can decrypt.
     if seed_hash is None:
         seed_hash = rand_q()
-    nonces: List[ElementModQ] = Nonces(seed_hash)[0 : len(ballots)]
+    if master_nonce is None:
+        master_nonce = rand_q()
+    nonces: List[ElementModQ] = Nonces(master_nonce)[0 : len(ballots)]
 
     if verbose:
         print("Encrypting:")
@@ -344,13 +415,16 @@ def fast_tally_everything(
         verbose,
     )
 
+    # Sanity-checking logic: make sure we don't have any unexpected keys, and that the decrypted totals
+    # match up with the columns in the original plaintext data.
     for obj_id in decrypted_tally.keys():
         assert obj_id in id_map, "object_id in results that we don't know about!"
         cvr_sum = int(cvrs.data[id_map[obj_id]].sum())
         decryption, proof = decrypted_tally[obj_id]
         assert cvr_sum == decryption, f"decryption failed for {obj_id}"
 
-    # we need to remove the accumulation nonces before we return
+    # Assemble the data structure that we're returning. Having nonces in the ciphertext makes these
+    # structures sensitive for writing out to disk, but otherwise they're ready to go.
     reported_tally: Dict[str, SelectionInfo] = {
         k: SelectionInfo(
             object_id=k,
