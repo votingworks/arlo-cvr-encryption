@@ -41,8 +41,17 @@ def _encrypt(
     cec: CiphertextElectionContext,
     seed_hash: ElementModQ,
     input: Tuple[PlaintextBallot, ElementModQ],
-) -> CiphertextBallot:
+) -> CiphertextBallot:  # pragma: no cover
     b, n = input
+
+    # Coverage note: you'll see a directive on this method and on the other methods
+    # used for the parallel mapping. For whatever reason, the Python coverage tool
+    # can't figure out that they're running, so we'll exclude them.
+
+    # Performance note: Nearly 2x performance boost by disabling proof verification
+    # here. We do verify the tally proofs at the end, so doing all this extra work
+    # here is in the "would be nice if cycles were free" category, but this is the
+    # inner loop of the most performance-sensitive part of our code.
     return get_optional(
         encrypt_ballot(b, ied, cec, seed_hash, n, should_verify_proofs=False)
     )
@@ -68,12 +77,13 @@ def fast_encrypt_ballots(
     wrapped_func = functools.partial(_encrypt, ied, cec, seed_hash)
 
     inputs = zip(ballots, nonces)
-    if show_progress:
+    if show_progress:  # pragma: no cover
         inputs = tqdm(list(inputs))
 
     # Performance note: this will gain as much parallelism as you've got available ballots.
-    # So, if you've got millions of ballots, this function should trivially be able to use
-    # as many cores as you've got.
+    # So, if you've got millions of ballots, this function can use them. This appears to be
+    # the performance bottleneck for the whole computation, which means that this code would
+    # benefit most from being distributed on a cluster.
 
     result: List[CiphertextBallot] = [
         wrapped_func(x) for x in inputs
@@ -84,11 +94,9 @@ def fast_encrypt_ballots(
 
 def _accumulate(
     data: Tuple[str, List[Tuple[ElementModQ, ElGamalCiphertext]]]
-) -> Tuple[str, ElementModQ, ElGamalCiphertext]:
+) -> Tuple[str, ElementModQ, ElGamalCiphertext]:  # pragma: no cover
     object_id, ciphertexts = data
-    # We're doing conventional addition on the nonces, which also exist in the exponents in the ciphertext,
-    # and ElGamal accumulation on the ciphertexts themselves. We need the nonces to compute the
-    # Chaum-Pedersen proof. (Right?)
+
     return (
         object_id,
         add_q(*[x[0] for x in ciphertexts]),
@@ -96,6 +104,7 @@ def _accumulate(
     )
 
 
+# object_id -> nonce, ciphertext
 TALLY_TYPE = Dict[str, Tuple[ElementModQ, ElGamalCiphertext]]
 
 
@@ -134,14 +143,17 @@ def fast_tally_ballots(
     # Now, we're creating the list of tuples that will be the arguments to _accumulate,
     # for running in parallel.
     inputs = [(object_id, messages[object_id]) for object_id in messages.keys()]
-    if show_progress:
+    if show_progress:  # pragma: no cover
         inputs = tqdm(list(inputs))
 
-    # Performance note: as written, we'll create one task for every ballot selection. So,
-    # if there are millions of ballots but only 100 selections, there will still be only
+    # Performance note: as written, we'll create one task for every column of ballot selections. So,
+    # if there are millions of ballots but only 100 columns of selections, there will be only
     # 100-way parallelism available. The way to gain additional parallelism is to subdivide
     # these lists if they're really long. Each list can be passed to _accumulate() separately,
     # for much more parallelism, and then you have to accumulate all those intermediate results.
+
+    # The tallying process appears to run 500x faster than the encryption process, so there's less
+    # need to make this scale.
 
     result: List[Tuple[str, ElementModQ, ElGamalCiphertext]] = [
         _accumulate(x) for x in inputs
@@ -152,18 +164,21 @@ def fast_tally_ballots(
 
 # object_id, seed, nonce, ciphertext
 DECRYPT_INPUT_TYPE = Tuple[str, ElementModQ, ElementModQ, ElGamalCiphertext]
+
+# object_id, plaintext, proof
 DECRYPT_OUTPUT_TYPE = Tuple[str, int, ConstantChaumPedersenProof]
 
 
 def _decrypt(
     public_key: ElementModP, secret_key: ElementModQ, input: DECRYPT_INPUT_TYPE
-) -> Tuple[str, int, ConstantChaumPedersenProof]:
+) -> DECRYPT_OUTPUT_TYPE:  # pragma: no cover
     object_id, seed, nonce, c = input
     plaintext = c.decrypt(secret_key)
     proof = make_constant_chaum_pedersen(c, plaintext, nonce, public_key, seed)
     return object_id, plaintext, proof
 
 
+# object_id -> plaintext, proof
 DECRYPT_TALLY_OUTPUT_TYPE = Dict[str, Tuple[int, ConstantChaumPedersenProof]]
 
 
@@ -184,11 +199,15 @@ def fast_decrypt_tally(
     proof_seeds: List[ElementModQ] = Nonces(proof_seed)[0 : len(tkeys)]
     inputs = [
         (object_id, seed, tally[object_id][0], tally[object_id][1])
-        for seed, object_id in zip(proof_seeds, tally.keys())
+        for seed, object_id in zip(proof_seeds, tkeys)
     ]
 
-    if show_progress:
+    if show_progress:  # pragma: no cover
         inputs = tqdm(list(inputs))
+
+    # Performance note: at this point, the tallies have been computed, so we
+    # don't actually have all that much data left to process. There's almost
+    # certainly no benefit to distributing this on a cluster.
 
     wrapped_func = functools.partial(_decrypt, public_key, secret_key)
     result: List[DECRYPT_OUTPUT_TYPE] = [
@@ -199,7 +218,7 @@ def fast_decrypt_tally(
 
 
 def _log_and_print(s: str, verbose: bool) -> None:
-    if verbose:
+    if verbose:  # pragma: no cover
         print(f"    {s}")
     log_info(s)
 
@@ -237,7 +256,7 @@ class SelectionInfo(NamedTuple):
         same_constant: bool = self.proof.constant == self.decrypted_tally
 
         valid = same_constant and valid_proof
-        if not valid:
+        if not valid:  # pragma: no cover
             log_error(
                 f"Chaum-Pedersen proof validation failed: valid_proof: {valid_proof}, same_constant: {same_constant}, selection_info: {str(self)}"
             )
@@ -245,7 +264,9 @@ class SelectionInfo(NamedTuple):
         return valid
 
 
-def _proof_verify(public_key: ElementModP, s: SelectionInfo) -> bool:
+def _proof_verify(
+    public_key: ElementModP, s: SelectionInfo
+) -> bool:  # pragma: no cover
     return s.is_valid_proof(public_key)
 
 
@@ -281,19 +302,19 @@ class FastTallyEverythingResults(NamedTuple):
     def all_proofs_valid(
         self, pool: Optional[Pool] = None, verbose: bool = True
     ) -> bool:
-        if verbose:
+        if verbose:  # pragma: no cover
             print("\nVerifying proofs:")
 
         wrapped_func = functools.partial(_proof_verify, self.public_key)
         start = timer()
 
         inputs = self.tally.values()
-        if verbose:
+        if verbose:  # pragma: no cover
             inputs = tqdm(list(inputs))
 
-        # Performance note: this will gain as much parallelism as you've got available ballots.
-        # So, if you've got millions of ballots, this function should trivially be able to use
-        # as many cores as you've got.
+        # Performance note: at this point, the tallies have been computed, so we
+        # don't actually have all that much data left to process. There's almost
+        # certainly no benefit to distributing this on a cluster.
 
         result: List[bool] = [
             wrapped_func(x) for x in inputs
@@ -372,7 +393,7 @@ def fast_tally_everything(
         master_nonce = rand_q()
     nonces: List[ElementModQ] = Nonces(master_nonce)[0 : len(ballots)]
 
-    if verbose:
+    if verbose:  # pragma: no cover
         print("Encrypting:")
     cballots = fast_encrypt_ballots(ballots, ied, cec, seed_hash, nonces, pool, verbose)
     eg_encrypt_time = timer()
@@ -385,7 +406,7 @@ def fast_tally_everything(
         verbose,
     )
 
-    if verbose:
+    if verbose:  # pragma: no cover
         print("\nTallying:")
     tally = fast_tally_ballots(cballots, pool, verbose)
     eg_tabulate_time = timer()
@@ -398,10 +419,9 @@ def fast_tally_everything(
         verbose,
     )
 
-    # tally = tally_ballots(ballot_box._store, ied, cec)
     assert tally is not None, "tally failed!"
 
-    if verbose:
+    if verbose:  # pragma: no cover
         print("\nDecryption & Proofs: ")
     decrypted_tally = fast_decrypt_tally(
         tally, public_key, secret_key, seed_hash, pool, verbose
