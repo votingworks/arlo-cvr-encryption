@@ -95,6 +95,6 @@ coverage-xml:
 coverage-erase:
 	@pipenv run coverage erase
 
-upgrade-electionguard:
-	pipenv uninstall electionguard
-	pipenv install -e 'git+https://github.com/microsoft/electionguard-python.git#egg=electionguard'
+# upgrade-electionguard:
+# 	pipenv uninstall electionguard
+# 	pipenv install -e 'git+https://github.com/microsoft/electionguard-python.git#egg=electionguard'
