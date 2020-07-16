@@ -63,7 +63,7 @@ lint:
 	@echo 2.Black Formatting
 	pipenv run black --check .
 	@echo 3.Mypy Static Typing
-	pipenv run mypy apps src setup.py
+	pipenv run mypy apps src tests setup.py
 	@echo 4.Package Metadata
 	pipenv run python setup.py check --strict --metadata --restructuredtext
 # 	@echo 5.Docstring
@@ -76,10 +76,6 @@ validate:
 test: 
 	@echo ✅ TEST
 	pipenv run pytest . -x
-
-test-example:
-	@echo ✅ TEST Example
-	pipenv run python -m pytest -s tests/integration/test_end_to_end_election.py
 
 coverage:
 	@echo ✅ COVERAGE

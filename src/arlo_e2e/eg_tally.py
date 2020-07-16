@@ -33,7 +33,7 @@ from electionguard.nonces import Nonces
 from electionguard.utils import get_optional
 from tqdm import tqdm
 
-from dominion import DominionCSV
+from arlo_e2e.dominion import DominionCSV
 
 
 def _encrypt(

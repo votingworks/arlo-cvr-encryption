@@ -32,8 +32,8 @@ from electionguard.election import (
 )
 from electionguard.encrypt import selection_from
 
-from utils import flatmap
-from eg_helpers import UidMaker
+from arlo_e2e.utils import flatmap
+from arlo_e2e.eg_helpers import UidMaker
 
 
 # Arlo-e2e support for CVR files from Dominion ballot scanners.
@@ -65,7 +65,7 @@ from eg_helpers import UidMaker
 # Even when we explicitly set it to None, what we get back is NaN.
 
 
-def _fix_strings(s: Any) -> Any:
+def fix_strings(s: Any) -> Any:
     """
     In the case where a string is really a quoted number, this returns the number.
     In the case where it's an empty-string, this returns `None`.
@@ -92,7 +92,7 @@ def _fix_strings(s: Any) -> Any:
     return s
 
 
-def _fix_party_string(s: Any) -> str:
+def fix_party_string(s: Any) -> str:
     """
     Specifically converting something from the 4th line of input to a "party" is a little bit
     trickier, because not all races have parties. If we have one, we'll return that as a string,
@@ -104,7 +104,7 @@ def _fix_party_string(s: Any) -> str:
         return str(s)
 
 
-def _row_to_uid(row: pd.Series, election_title: str, fields: List[str]) -> str:
+def dominion_row_to_uid(row: pd.Series, election_title: str, fields: List[str]) -> str:
     """
     We want to derive a UID for each row of data. We're doing this with all
     the metadata fields, concatenated together with a vertical bar and spaces
@@ -456,7 +456,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     #   We shouldn't make that assumption, but checking for it would be really tricky.
 
     filtered_columns = [
-        [_fix_strings(e) for e in c if (not e.startswith("Unnamed:") and not e == '""')]
+        [fix_strings(e) for e in c if (not e.startswith("Unnamed:") and not e == '""')]
         for c in df.columns
     ]
     election_name = filtered_columns[0][0]
@@ -470,7 +470,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
         + [x[0] for x in filtered_columns[2:] if len(x) == 1]
     )
 
-    df = df.applymap(_fix_strings)
+    df = df.applymap(fix_strings)
     column_names = [
         filtered_columns[0][1:],
         filtered_columns[1][1:],
@@ -478,7 +478,8 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
 
     df.columns = [" | ".join(x) for x in column_names]
     df["UID"] = df.apply(
-        lambda row: _row_to_uid(row, election_name, ballot_metadata_fields), axis=1
+        lambda row: dominion_row_to_uid(row, election_name, ballot_metadata_fields),
+        axis=1,
     )
 
     if "BallotType" not in df:
@@ -494,7 +495,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     for contest in contests:
         title = contest[0]
         candidate = contest[1]
-        party = _fix_party_string(contest[2]) if len(contest) > 2 else ""
+        party = fix_party_string(contest[2]) if len(contest) > 2 else ""
 
         if party not in all_parties and party != "":
             all_parties.add(party)
@@ -537,7 +538,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
             style_map[ballot_type] = style_map[ballot_type].union(present_contests)
 
     return DominionCSV(
-        _fix_strings(election_name),
+        fix_strings(election_name),
         contest_keys,
         set(df["BallotType"]),
         all_parties,

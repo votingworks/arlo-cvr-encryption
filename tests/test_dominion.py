@@ -15,9 +15,14 @@ from electionguard.tally import tally_ballots
 from electionguardtest.group import elements_mod_q
 from hypothesis import given, settings, HealthCheck, Phase
 
-from dominion import _fix_strings, _row_to_uid, read_dominion_csv, DominionCSV
-from eg_helpers import decrypt_with_secret
-from tests.dominion_hypothesis import (
+from arlo_e2e.dominion import (
+    fix_strings,
+    dominion_row_to_uid,
+    read_dominion_csv,
+    DominionCSV,
+)
+from arlo_e2e.eg_helpers import decrypt_with_secret
+from arlo_e2e_testing.dominion_hypothesis import (
     dominion_cvrs,
     ballots_and_context,
     DominionBallotsAndContext,
@@ -35,16 +40,16 @@ _good_dominion_cvrs = """
 
 class TestDominionBasics(unittest.TestCase):
     def test_fix_strings(self) -> None:
-        self.assertEqual(None, _fix_strings(""))
-        self.assertEqual(None, _fix_strings('""'))
-        self.assertEqual(0, _fix_strings("0"))
-        self.assertEqual(None, _fix_strings(float("nan")))
-        self.assertEqual(0, _fix_strings('"0"'))
-        self.assertEqual(1, _fix_strings('="1"'))
-        self.assertEqual(0, _fix_strings(0))
-        self.assertEqual(0, _fix_strings(0.0001))
-        self.assertEqual(0.2, _fix_strings(0.2))
-        self.assertEqual("Hello", _fix_strings("Hello"))
+        self.assertEqual(None, fix_strings(""))
+        self.assertEqual(None, fix_strings('""'))
+        self.assertEqual(0, fix_strings("0"))
+        self.assertEqual(None, fix_strings(float("nan")))
+        self.assertEqual(0, fix_strings('"0"'))
+        self.assertEqual(1, fix_strings('="1"'))
+        self.assertEqual(0, fix_strings(0))
+        self.assertEqual(0, fix_strings(0.0001))
+        self.assertEqual(0.2, fix_strings(0.2))
+        self.assertEqual("Hello", fix_strings("Hello"))
 
     def test_row_to_uid(self) -> None:
         row_dict = {
@@ -76,7 +81,7 @@ class TestDominionBasics(unittest.TestCase):
         series = pd.Series(row_dict)
         self.assertEqual(
             "Testing | 1 | 1 | 1 | 1 | 1-1-1 | Mail | 4016532007 - STR5 | STR5",
-            _row_to_uid(series, "Testing", metadata_fields),
+            dominion_row_to_uid(series, "Testing", metadata_fields),
         )
 
     def test_read_dominion_csv(self) -> None:
@@ -174,7 +179,7 @@ class TestDominionHypotheses(unittest.TestCase):
         # disabling the "shrink" phase, because it runs very slowly
         phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
     )
-    def test_sanity(self, cvrs: str):
+    def test_sanity(self, cvrs: str) -> None:
         parsed = read_dominion_csv(StringIO(cvrs))
         self.assertIsNotNone(parsed)
 
@@ -186,7 +191,9 @@ class TestDominionHypotheses(unittest.TestCase):
         # disabling the "shrink" phase, because it runs very slowly
         phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
     )
-    def test_eg_conversion(self, state: DominionBallotsAndContext, seed: ElementModQ):
+    def test_eg_conversion(
+        self, state: DominionBallotsAndContext, seed: ElementModQ
+    ) -> None:
         ied = InternalElectionDescription(state.ed)
         ballot_box = BallotBox(ied, state.cec)
 

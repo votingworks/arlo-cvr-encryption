@@ -9,9 +9,9 @@ from electionguardtest.elgamal import elgamal_keypairs
 from hypothesis import settings, given, HealthCheck, Phase
 from hypothesis.strategies import booleans
 
-from dominion import read_dominion_csv
-from eg_tally import fast_tally_everything
-from tests.dominion_hypothesis import dominion_cvrs
+from arlo_e2e.dominion import read_dominion_csv
+from arlo_e2e.eg_tally import fast_tally_everything
+from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 
 
 class TestFastTallies(unittest.TestCase):
@@ -23,7 +23,9 @@ class TestFastTallies(unittest.TestCase):
         # disabling the "shrink" phase, because it runs very slowly
         phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
     )
-    def test_end_to_end(self, input: str, keypair: ElGamalKeyPair, use_keypair: bool):
+    def test_end_to_end(
+        self, input: str, keypair: ElGamalKeyPair, use_keypair: bool
+    ) -> None:
         coverage.process_startup()  # necessary for coverage testing to work in parallel
 
         cvrs = read_dominion_csv(StringIO(input))

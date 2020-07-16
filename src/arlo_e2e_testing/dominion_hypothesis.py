@@ -15,8 +15,8 @@ from hypothesis.strategies import (
     tuples,
 )
 
-from dominion import DominionCSV, read_dominion_csv
-from utils import flatmap
+from arlo_e2e.dominion import DominionCSV, read_dominion_csv
+from arlo_e2e.utils import flatmap
 
 
 @composite
@@ -146,15 +146,15 @@ def dominion_cvrs(draw: _DrawType):
     )
 
     # header row 3: candidate names, or FOR/AGAINST for referenda
-    output: List[str] = [""] * total_metadata_columns
+    row3_output: List[str] = [""] * total_metadata_columns
     for contest in candidates_and_parties:
         for c in contest:
-            output.append(c[0])
+            row3_output.append(c[0])
     for r in referenda_names:
-        output.append("FOR")
-        output.append("AGAINST")
+        row3_output.append("FOR")
+        row3_output.append("AGAINST")
 
-    rows.append(_encode_list_as_csv(output, quotation_style, total_csv_columns))
+    rows.append(_encode_list_as_csv(row3_output, quotation_style, total_csv_columns))
 
     # header row 4: column names for the CVRs, and party names for the candidates with parties
     output: List[Union[str, int]] = (
@@ -209,7 +209,7 @@ def dominion_cvrs(draw: _DrawType):
         ] = True
 
     for cvr_number in range(1, num_cvrs + 1):
-        bs: int = draw(integers(0, num_ballot_styles - 1))
+        bs_drawn: int = draw(integers(0, num_ballot_styles - 1))
         output: List[Union[str, int]] = (
             [
                 cvr_number,
@@ -219,7 +219,7 @@ def dominion_cvrs(draw: _DrawType):
                 draw(integers(0, 3)),
                 draw(counting_groups()),
                 draw(integers(0, 3)),
-                ballot_style_strings[bs],
+                ballot_style_strings[bs_drawn],
             ]
             if counting_group_present
             else [
@@ -229,12 +229,12 @@ def dominion_cvrs(draw: _DrawType):
                 draw(integers(0, 3)),
                 draw(integers(0, 3)),
                 draw(integers(0, 3)),
-                ballot_style_strings[bs],
+                ballot_style_strings[bs_drawn],
             ]
         )
 
         for c in range(0, num_human_contests):
-            if contest_in_bs[bs][c]:
+            if contest_in_bs[bs_drawn][c]:
                 # -1 == undervote
                 # otherwise, it's the position of the 1 vote
                 selection: int = draw(integers(-1, num_candidates_per_contest[c] - 1))
@@ -244,7 +244,7 @@ def dominion_cvrs(draw: _DrawType):
                 for pos in range(0, num_candidates_per_contest[c]):
                     output.append("")
         for c in range(0, num_referenda):
-            if contest_in_bs[bs][c + num_human_contests]:
+            if contest_in_bs[bs_drawn][c + num_human_contests]:
                 # -1 == undervote
                 # otherwise, it's the position of the 1 vote
                 selection: int = draw(integers(-1, 1))
