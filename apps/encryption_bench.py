@@ -9,7 +9,7 @@ from timeit import default_timer as timer
 from electionguard.logs import log_info
 
 from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.eg_tally import fast_tally_everything
+from arlo_e2e.tally import fast_tally_everything
 
 
 def run_bench(filename: str, pool: Pool) -> None:

@@ -10,7 +10,7 @@ from hypothesis import settings, given, HealthCheck, Phase
 from hypothesis.strategies import booleans
 
 from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.eg_tally import fast_tally_everything
+from arlo_e2e.tally import fast_tally_everything
 from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 
 

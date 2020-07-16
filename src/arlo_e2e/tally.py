@@ -1,9 +1,9 @@
 import functools
 from multiprocessing.pool import Pool
-from typing import Tuple, List, Optional, Dict, NamedTuple
 from timeit import default_timer as timer
+from typing import Tuple, List, Optional, Dict, NamedTuple
 
-from electionguard.ballot import PlaintextBallot, CiphertextBallot
+from electionguard.ballot import PlaintextBallot, CiphertextAcceptedBallot, BallotBoxState
 from electionguard.chaum_pedersen import (
     ConstantChaumPedersenProof,
     make_constant_chaum_pedersen,
@@ -11,8 +11,7 @@ from electionguard.chaum_pedersen import (
 from electionguard.election import (
     InternalElectionDescription,
     CiphertextElectionContext,
-    ElectionDescription,
-)
+    ElectionDescription, )
 from electionguard.elgamal import (
     ElGamalCiphertext,
     elgamal_add,
@@ -30,6 +29,7 @@ from electionguard.group import (
 )
 from electionguard.logs import log_info, log_error
 from electionguard.nonces import Nonces
+from electionguard.serializable import Serializable
 from electionguard.utils import get_optional
 from tqdm import tqdm
 
@@ -41,7 +41,7 @@ def _encrypt(
     cec: CiphertextElectionContext,
     seed_hash: ElementModQ,
     input: Tuple[PlaintextBallot, ElementModQ],
-) -> CiphertextBallot:  # pragma: no cover
+) -> CiphertextAcceptedBallot:  # pragma: no cover
     b, n = input
 
     # Coverage note: you'll see a directive on this method and on the other methods
@@ -52,8 +52,17 @@ def _encrypt(
     # here. We do verify the tally proofs at the end, so doing all this extra work
     # here is in the "would be nice if cycles were free" category, but this is the
     # inner loop of the most performance-sensitive part of our code.
-    return get_optional(
+    ballot = get_optional(
         encrypt_ballot(b, ied, cec, seed_hash, n, should_verify_proofs=False)
+    )
+    return CiphertextAcceptedBallot(
+        object_id=ballot.object_id,
+        ballot_style=ballot.ballot_style,
+        description_hash=ballot.description_hash,
+        contests=ballot.contests,
+        tracking_id=ballot.tracking_id,
+        timestamp=ballot.timestamp,
+        state=BallotBoxState.CAST,
     )
 
 
@@ -65,7 +74,7 @@ def fast_encrypt_ballots(
     nonces: List[ElementModQ],
     pool: Optional[Pool] = None,
     show_progress: bool = True,
-) -> List[CiphertextBallot]:
+) -> List[CiphertextAcceptedBallot]:
     """
     This function encrypts a list of plaintext ballots, returning a list of ciphertext ballots.
     if the optional `pool` is passed, it will be used to evaluate the encryption in parallel.
@@ -85,7 +94,7 @@ def fast_encrypt_ballots(
     # the performance bottleneck for the whole computation, which means that this code would
     # benefit most from being distributed on a cluster.
 
-    result: List[CiphertextBallot] = [
+    result: List[CiphertextAcceptedBallot] = [
         wrapped_func(x) for x in inputs
     ] if pool is None else pool.map(func=wrapped_func, iterable=inputs)
 
@@ -109,7 +118,7 @@ TALLY_TYPE = Dict[str, Tuple[ElementModQ, ElGamalCiphertext]]
 
 
 def fast_tally_ballots(
-    ballots: List[CiphertextBallot],
+    ballots: List[CiphertextAcceptedBallot],
     pool: Optional[Pool] = None,
     show_progress: bool = True,
 ) -> TALLY_TYPE:
@@ -223,7 +232,7 @@ def _log_and_print(s: str, verbose: bool) -> None:
     log_info(s)
 
 
-class SelectionInfo(NamedTuple):
+class SelectionInfo(NamedTuple, Serializable):
     """
     A mapping from a selection's object_id to a the encrypted and decrypted tallies and a proof
     of their correspondence.
@@ -278,17 +287,7 @@ class FastTallyEverythingResults(NamedTuple):
     in `DominionCSV`.
     """
 
-    public_key: ElementModP
-    """
-    The election officials' public key. Useful for verifying the election.
-    """
-
-    seed_hash: ElementModQ
-    """
-    Used to seed the randomness while encrypting the ballots.
-    """
-
-    encrypted_ballots: List[CiphertextBallot]
+    encrypted_ballots: List[CiphertextAcceptedBallot]
     """
     All the encrypted ballots.
     """
@@ -299,13 +298,22 @@ class FastTallyEverythingResults(NamedTuple):
     decrypted tallies and a proof of their correspondence.
     """
 
+    context: CiphertextElectionContext
+    """
+    Cryptographic context used in creating the tally.
+    """
+
     def all_proofs_valid(
         self, pool: Optional[Pool] = None, verbose: bool = True
     ) -> bool:
+        """
+        Checks all the proofs used in this tally, returns True if everything is good.
+        Any errors found will be logged.
+        """
         if verbose:  # pragma: no cover
             print("\nVerifying proofs:")
 
-        wrapped_func = functools.partial(_proof_verify, self.public_key)
+        wrapped_func = functools.partial(_proof_verify, self.context.elgamal_public_key)
         start = timer()
 
         inputs = self.tally.values()
@@ -327,7 +335,6 @@ class FastTallyEverythingResults(NamedTuple):
         )
 
         return False not in result
-
 
 def fast_tally_everything(
     cvrs: DominionCSV,
@@ -457,8 +464,7 @@ def fast_tally_everything(
 
     return FastTallyEverythingResults(
         election_description=ed,
-        public_key=public_key,
-        seed_hash=seed_hash,
         encrypted_ballots=cballots,
         tally=reported_tally,
+        context=cec
     )

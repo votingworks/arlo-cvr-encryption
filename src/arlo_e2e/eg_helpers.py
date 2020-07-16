@@ -43,7 +43,7 @@ class UidMaker:
         """
         c = self.counter
         self.counter += 1
-        return c, f"{self.prefix}{c}"
+        return c, f"{self.prefix}{c:07d}"
 
     def next(self) -> str:
         """

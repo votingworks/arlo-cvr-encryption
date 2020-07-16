@@ -369,7 +369,7 @@ class DominionCSV(NamedTuple):
 
         # And now, for the ballots
         ballots: List[PlaintextBallot] = list()
-        ballot_uids = UidMaker("ballot")
+        ballot_uids = UidMaker("b")
 
         for index, row in self.data.iterrows():
             ballot_type = row["BallotType"]
