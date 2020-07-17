@@ -10,9 +10,11 @@ from electionguard.election import (
     ElectionDescription,
     CiphertextElectionContext,
 )
+from electionguard.group import ElementModP, int_to_p_unchecked, int_to_q_unchecked, ElementModQ
 from electionguard.logs import log_error
 from electionguard.publish import set_serializers
 from electionguard.serializable import Serializable
+from jsons import set_deserializer, set_validator, DecodeError
 from tqdm import tqdm
 
 from arlo_e2e.tally import FastTallyEverythingResults, SelectionInfo, SelectionTally
@@ -33,6 +35,10 @@ CRYPTO_CONTEXT: Final[str] = "cryptographic_context"
 
 def _serializers_init():
     set_serializers()
+    set_deserializer(lambda obj, cls, **_: int_to_p_unchecked(obj), ElementModP)
+    set_deserializer(lambda obj, cls, **_: int_to_q_unchecked(obj), ElementModQ)
+    set_validator(lambda x: x.is_in_bounds(), ElementModP)
+    set_validator(lambda x: x.is_in_bounds(), ElementModQ)
 
 
 def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> None:
@@ -169,7 +175,11 @@ def _load_helper(filename: str, class_handle: Optional[Type[U]]) -> Optional[T]:
         with open(filename, "r") as subject:
             data = subject.read()
             if class_handle is not None:
-                result = class_handle.from_json(data)
+                try:
+                    result = class_handle.from_json(data)
+                except DecodeError as err:
+                    log_error(f"Failed to decode an instance of {class_handle}: {err}")
+                    return None
             else:
                 result = json.loads(data)
             if result is None:

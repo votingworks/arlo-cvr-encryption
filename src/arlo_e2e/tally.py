@@ -1,6 +1,5 @@
-from dataclasses import dataclass, field
-
 import functools
+from dataclasses import dataclass
 from multiprocessing.pool import Pool
 from timeit import default_timer as timer
 from typing import Tuple, List, Optional, Dict, NamedTuple
@@ -245,7 +244,7 @@ def _log_and_print(s: str, verbose: bool) -> None:
     log_info(s)
 
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class SelectionInfo(Serializable):
     """
     A tuple including a selection's object_id, a the encrypted and decrypted tallies, and a proof
@@ -287,7 +286,7 @@ class SelectionInfo(Serializable):
         return valid
 
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class SelectionTally(Serializable):
     """
     A mapping from a selection's object_id to a `SelectionInfo` class.
