@@ -291,7 +291,13 @@ class SelectionTally(Serializable):
     """
     A mapping from a selection's object_id to a `SelectionInfo` class.
     """
+
     map: Dict[str, SelectionInfo]
+
+    # @classmethod
+    # def from_json(cls, data_str: str):
+    #     data = loads(data_str)
+    #     return cls(map=data["map"])
 
 
 def _proof_verify(

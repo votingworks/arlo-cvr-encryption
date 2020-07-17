@@ -53,7 +53,9 @@ class TestTallyPublishing(unittest.TestCase):
 
         print("tally_testing got non-null result!")
 
-        self.assertEqual(len(results.encrypted_ballots), len(results2.encrypted_ballots))
+        self.assertEqual(
+            len(results.encrypted_ballots), len(results2.encrypted_ballots)
+        )
         self.assertEqual(set(results.tally.map.keys()), set(results2.tally.map.keys()))
 
         pool.close()
