@@ -35,7 +35,6 @@ from electionguard.group import (
 )
 from electionguard.logs import log_info, log_error
 from electionguard.nonces import Nonces
-from electionguard.serializable import Serializable
 from electionguard.utils import get_optional
 from tqdm import tqdm
 
@@ -468,7 +467,8 @@ def fast_tally_everything(
         k: SelectionInfo(
             object_id=k,
             encrypted_tally=tally[k][1],
-            decrypted_tally=decrypted_tally[k][0],
+            # we need to forcibly convert mpz to int here to make serialization work properly
+            decrypted_tally=int(decrypted_tally[k][0]),
             proof=decrypted_tally[k][1],
         )
         for k in tally.keys()
