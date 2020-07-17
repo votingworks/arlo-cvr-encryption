@@ -102,18 +102,6 @@ def load_fast_tally(
     if election_description is None:
         return None
 
-    encrypted_tally: Optional[SelectionTally] = _load_helper(
-        path.join(results_dir, ENCRYPTED_TALLY + ".json"), SelectionTally
-    )
-    if encrypted_tally is None:
-        return None
-
-    cec: Optional[CiphertextElectionContext] = _load_helper(
-        path.join(results_dir, CRYPTO_CONTEXT + ".json"), CiphertextElectionContext
-    )
-    if cec is None:
-        return None
-
     constants: Optional[ElectionConstants] = _load_helper(
         path.join(results_dir, CRYPTO_CONSTANTS + ".json"), ElectionConstants
     )
@@ -123,6 +111,19 @@ def load_fast_tally(
         log_error(
             f"constants are out of date or otherwise don't match the current library: {constants}"
         )
+        return None
+
+
+    cec: Optional[CiphertextElectionContext] = _load_helper(
+        path.join(results_dir, CRYPTO_CONTEXT + ".json"), CiphertextElectionContext
+    )
+    if cec is None:
+        return None
+
+    encrypted_tally: Optional[SelectionTally] = _load_helper(
+        path.join(results_dir, ENCRYPTED_TALLY + ".json"), SelectionTally
+    )
+    if encrypted_tally is None:
         return None
 
     ballots_dir = path.join(results_dir, "ballots")
@@ -158,7 +159,7 @@ def _mkdir_helper(p: str) -> None:
         mkdir(p)
 
 
-def _load_helper(filename: str, type: Optional[Type[U]]) -> Optional[T]:
+def _load_helper(filename: str, class_handle: Optional[Type[U]]) -> Optional[T]:
     try:
         s = os.stat(filename)
         if s.st_size == 0:
@@ -167,8 +168,8 @@ def _load_helper(filename: str, type: Optional[Type[U]]) -> Optional[T]:
 
         with open(filename, "r") as subject:
             data = subject.read()
-            if type is not None:
-                result = type.from_json(data)
+            if class_handle is not None:
+                result = class_handle.from_json(data)
             else:
                 result = json.loads(data)
             if result is None:
