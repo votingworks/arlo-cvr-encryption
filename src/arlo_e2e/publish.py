@@ -22,6 +22,7 @@ CRYPTO_CONTEXT: Final[str] = "cryptographic_context"
 # built into ElectionGuard. We're doing a bit more error checking than they do, and we're trying to
 # avoid directories with a million files if there are a million ballots.
 
+
 def write_fast_tally(self: FastTallyEverythingResults, results_dir: str) -> None:
     """
     Writes out a directory with the full contents of the tally structure. Each ciphertext ballot
@@ -31,7 +32,11 @@ def write_fast_tally(self: FastTallyEverythingResults, results_dir: str) -> None
     if not path.exists(results_dir):
         mkdir(results_dir)
     self.election_description.to_json_file(ELECTION_DESCRIPTION, results_dir)
-    write_json_file(json_data=json.dumps(self.tally), file_name=ENCRYPTED_TALLY, file_path=results_dir)
+    write_json_file(
+        json_data=json.dumps(self.tally),
+        file_name=ENCRYPTED_TALLY,
+        file_path=results_dir,
+    )
     self.context.to_json_file(CRYPTO_CONTEXT, results_dir)
     ElectionConstants().to_json_file(CRYPTO_CONSTANTS, results_dir)
 
@@ -52,7 +57,9 @@ def write_fast_tally(self: FastTallyEverythingResults, results_dir: str) -> None
         ballot.to_json_file(ballot_name, this_ballot_dir)
 
 
-def load_fast_tally(results_dir: str, check_proofs: bool = True) -> Optional[FastTallyEverythingResults]:
+def load_fast_tally(
+    results_dir: str, check_proofs: bool = True
+) -> Optional[FastTallyEverythingResults]:
     """
     Given the directory name / path-name to a disk represntation of a fast-tally structure, this reads
     it back in, makes sure it's well-formed, and optionally checks the cryptographic proofs. If any
@@ -63,8 +70,10 @@ def load_fast_tally(results_dir: str, check_proofs: bool = True) -> Optional[Fas
         log_error(f"Path ({results_dir}) not found, cannot load the fast-tally")
         return None
 
-    election_description = _load_helper(os.path.join(results_dir, ELECTION_DESCRIPTION + ".json"),
-                                        lambda s: ElectionDescription.from_json(s))
+    election_description = _load_helper(
+        os.path.join(results_dir, ELECTION_DESCRIPTION + ".json"),
+        lambda s: ElectionDescription.from_json(s),
+    )
     if election_description is None:
         return None
 
@@ -89,5 +98,3 @@ def _load_helper(filename: str, str_to_obj: Callable[[str], T]) -> Optional[T]:
 
     except OSError as e:
         log_error(f"Error reading file ({filename}): {e}")
-
-
