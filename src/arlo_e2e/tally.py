@@ -1,3 +1,5 @@
+from dataclasses import dataclass, field
+
 import functools
 from multiprocessing.pool import Pool
 from timeit import default_timer as timer
@@ -35,6 +37,7 @@ from electionguard.group import (
 )
 from electionguard.logs import log_info, log_error
 from electionguard.nonces import Nonces
+from electionguard.serializable import Serializable
 from electionguard.utils import get_optional
 from tqdm import tqdm
 
@@ -242,9 +245,10 @@ def _log_and_print(s: str, verbose: bool) -> None:
     log_info(s)
 
 
-class SelectionInfo(NamedTuple):
+@dataclass
+class SelectionInfo(Serializable):
     """
-    A mapping from a selection's object_id to a the encrypted and decrypted tallies and a proof
+    A tuple including a selection's object_id, a the encrypted and decrypted tallies, and a proof
     of their correspondence.
     """
 
@@ -283,6 +287,14 @@ class SelectionInfo(NamedTuple):
         return valid
 
 
+@dataclass
+class SelectionTally(Serializable):
+    """
+    A mapping from a selection's object_id to a `SelectionInfo` class.
+    """
+    map: Dict[str, SelectionInfo]
+
+
 def _proof_verify(
     public_key: ElementModP, s: SelectionInfo
 ) -> bool:  # pragma: no cover
@@ -302,7 +314,7 @@ class FastTallyEverythingResults(NamedTuple):
     All the encrypted ballots.
     """
 
-    tally: Dict[str, SelectionInfo]
+    tally: SelectionTally
     """
     A mapping from selection object_ids to a structure that includes the encrypted and
     decrypted tallies and a proof of their correspondence.
@@ -326,7 +338,7 @@ class FastTallyEverythingResults(NamedTuple):
         wrapped_func = functools.partial(_proof_verify, self.context.elgamal_public_key)
         start = timer()
 
-        inputs = self.tally.values()
+        inputs = self.tally.map.values()
         if verbose:  # pragma: no cover
             inputs = tqdm(list(inputs))
 
@@ -340,7 +352,7 @@ class FastTallyEverythingResults(NamedTuple):
         end = timer()
         _log_and_print(f"Verification time: {end - start: .3f} sec", verbose)
         _log_and_print(
-            f"Verification rate: {len(self.tally.keys()) / (end - start): .3f} selection/sec",
+            f"Verification rate: {len(self.tally.map.keys()) / (end - start): .3f} selection/sec",
             verbose,
         )
 
@@ -480,6 +492,6 @@ def fast_tally_everything(
     return FastTallyEverythingResults(
         election_description=ed,
         encrypted_ballots=accepted_ballots,
-        tally=reported_tally,
+        tally=SelectionTally(reported_tally),
         context=cec,
     )

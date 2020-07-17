@@ -23,6 +23,15 @@ class TestTallyPublishing(unittest.TestCase):
         phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
     )
     def test_end_to_end_publications(self, input: str) -> None:
+        # nuke any pre-existing tally_testing tree, since we only want to see current output
+        TALLY_TESTING_DIR = "tally_testing"
+
+        try:
+            shutil.rmtree(TALLY_TESTING_DIR)
+        except FileNotFoundError:
+            # okay if it's not there
+            pass
+
         coverage.process_startup()  # necessary for coverage testing to work in parallel
 
         cvrs = read_dominion_csv(StringIO(input))
@@ -32,20 +41,22 @@ class TestTallyPublishing(unittest.TestCase):
         assert len(ballots) > 0, "can't have zero ballots!"
 
         pool = Pool(cpu_count())
-        tally = fast_tally_everything(cvrs, pool, verbose=True)
+        results = fast_tally_everything(cvrs, pool, verbose=True)
 
         # dump files out to disk
-        write_fast_tally(tally, "tally_testing")
+        write_fast_tally(results, TALLY_TESTING_DIR)
         print("tally_testing written, proceeding to read it back in again")
 
         # now, read it back again!
-        tally2 = load_fast_tally("tally_testing", check_proofs=True, pool=pool)
-        self.assertIsNotNone(tally2)
+        results2 = load_fast_tally(TALLY_TESTING_DIR, check_proofs=True, pool=pool)
+        self.assertIsNotNone(results2)
 
-        self.assertEqual(len(tally.encrypted_ballots), len(tally2.encrypted_ballots))
-        self.assertEqual(set(tally.tally.t.keys()), set(tally2.tally.t.keys()))
+        print("tally_testing got non-null result!")
+
+        self.assertEqual(len(results.encrypted_ballots), len(results2.encrypted_ballots))
+        self.assertEqual(set(results.tally.map.keys()), set(results2.tally.map.keys()))
 
         pool.close()
 
         # finally, nuke all the test files we just wrote out
-        shutil.rmtree("tally_testing")
+        shutil.rmtree(TALLY_TESTING_DIR)

@@ -2,7 +2,7 @@ import json
 import os
 from multiprocessing.pool import Pool
 from os import path, mkdir
-from typing import Final, Optional, Callable, TypeVar, Dict, Any, List, Type
+from typing import Final, Optional, TypeVar, Dict, Any, List, Type
 
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.election import (
@@ -12,10 +12,10 @@ from electionguard.election import (
 )
 from electionguard.logs import log_error
 from electionguard.publish import set_serializers
-from electionguard.serializable import write_json_file, Serializable
-from jsons import set_serializer
+from electionguard.serializable import Serializable
+from tqdm import tqdm
 
-from arlo_e2e.tally import FastTallyEverythingResults, SelectionInfo
+from arlo_e2e.tally import FastTallyEverythingResults, SelectionInfo, SelectionTally
 
 T = TypeVar("T")
 U = TypeVar("U", bound=Serializable)
@@ -35,27 +35,38 @@ def _serializers_init():
     set_serializers()
 
 
-def write_fast_tally(tally: FastTallyEverythingResults, results_dir: str) -> None:
+def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> None:
     """
     Writes out a directory with the full contents of the tally structure. Each ciphertext ballot
     will end up in its own file. Everything is JSON.
     """
     _serializers_init()
 
+    # Note: occurrences of os.sep in this function are a workaround for an ElectionGuard bug,
+    #   where it's incorrectly handing file paths. Once that bug is fixed, we can remove every
+    #   instance of os.sep here.
+
+    results_dir = results_dir + os.sep
+    print("write_fast_tally: starting!")
     if not path.exists(results_dir):
         mkdir(results_dir)
-    tally.election_description.to_json_file(ELECTION_DESCRIPTION, results_dir)
-    write_json_file(
-        json_data=json.dumps(tally.tally),
-        file_name=ENCRYPTED_TALLY,
-        file_path=results_dir,
-    )
-    tally.context.to_json_file(CRYPTO_CONTEXT, results_dir)
+
+    print("write_fast_tally: writing election_description")
+    results.election_description.to_json_file(ELECTION_DESCRIPTION, results_dir)
+
+    print("write_fast_tally: writing crypto context")
+    results.context.to_json_file(CRYPTO_CONTEXT, results_dir)
+
+    print("write_fast_tally: writing crypto constants")
     ElectionConstants().to_json_file(CRYPTO_CONSTANTS, results_dir)
 
-    ballots_dir = os.path.join(results_dir, "ballots")
+    print("write_fast_tally: writing tally")
+    results.tally.to_json_file(ENCRYPTED_TALLY, results_dir)
+
+    print("write_fast_tally: writing ballots")
+    ballots_dir = path.join(results_dir, "ballots")
     _mkdir_helper(ballots_dir)
-    for ballot in tally.encrypted_ballots:
+    for ballot in tqdm(results.encrypted_ballots):
         ballot_name = ballot.object_id
 
         # This prefix stuff: ballot uids are encoded as 'b' plus a 7-digit number.
@@ -65,7 +76,7 @@ def write_fast_tally(tally: FastTallyEverythingResults, results_dir: str) -> Non
         # it wedge because it's trying to digest a million filenmes.
 
         ballot_name_prefix = ballot_name[0:4]  # letter b plus first three digits
-        this_ballot_dir = os.path.join(ballots_dir, ballot_name_prefix)
+        this_ballot_dir = path.join(ballots_dir, ballot_name_prefix) + os.sep
         _mkdir_helper(this_ballot_dir)
         ballot.to_json_file(ballot_name, this_ballot_dir)
 
@@ -86,25 +97,25 @@ def load_fast_tally(
         return None
 
     election_description: Optional[ElectionDescription] = _load_helper(
-        os.path.join(results_dir, ELECTION_DESCRIPTION + ".json"), ElectionDescription
+        path.join(results_dir, ELECTION_DESCRIPTION + ".json"), ElectionDescription
     )
     if election_description is None:
         return None
 
-    encrypted_tally: Optional[Dict[str, SelectionInfo]] = _load_helper(
-        os.path.join(results_dir, ENCRYPTED_TALLY + ".json"), None
+    encrypted_tally: Optional[SelectionTally] = _load_helper(
+        path.join(results_dir, ENCRYPTED_TALLY + ".json"), SelectionTally
     )
     if encrypted_tally is None:
         return None
 
     cec: Optional[CiphertextElectionContext] = _load_helper(
-        os.path.join(results_dir, CRYPTO_CONTEXT + ".json"), CiphertextElectionContext
+        path.join(results_dir, CRYPTO_CONTEXT + ".json"), CiphertextElectionContext
     )
     if cec is None:
         return None
 
     constants: Optional[ElectionConstants] = _load_helper(
-        os.path.join(results_dir, CRYPTO_CONSTANTS + ".json"), ElectionConstants
+        path.join(results_dir, CRYPTO_CONSTANTS + ".json"), ElectionConstants
     )
     if constants is None:
         return None
@@ -114,7 +125,7 @@ def load_fast_tally(
         )
         return None
 
-    ballots_dir = os.path.join(results_dir, "ballots")
+    ballots_dir = path.join(results_dir, "ballots")
     ballot_files = _all_filenames(ballots_dir)
 
     encrypted_ballots: List[Optional[CiphertextAcceptedBallot]] = [
@@ -175,5 +186,5 @@ def _all_filenames(root_dir: str) -> List[str]:
     results: List[str] = []
     for root, dirs, files in os.walk(root_dir):
         for file in files:
-            results.append(os.path.join(root, file))
+            results.append(path.join(root, file))
     return results

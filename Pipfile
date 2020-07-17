@@ -20,8 +20,8 @@ hypothesis = "==5.15.1"
 typish = '*'
 jsons = '==1.1.2'
 tqdm = "4.47.0"
-electionguard = "1.0.0"
 cryptography = "2.9.2"
+electionguard = {editable = true, git = "https://github.com/microsoft/electionguard-python.git"}
 
 [requires]
 python_version = "3.8"
