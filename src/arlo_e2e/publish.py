@@ -2,7 +2,7 @@ import json
 import os
 from multiprocessing.pool import Pool
 from os import path, mkdir
-from typing import Final, Optional, TypeVar, Dict, Any, List, Type
+from typing import Final, Optional, TypeVar, Dict, Any, List, Type, cast
 
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.election import (
@@ -10,16 +10,10 @@ from electionguard.election import (
     ElectionDescription,
     CiphertextElectionContext,
 )
-from electionguard.group import (
-    ElementModP,
-    int_to_p_unchecked,
-    int_to_q_unchecked,
-    ElementModQ,
-)
-from electionguard.logs import log_error
+from electionguard.logs import log_error, log_info
 from electionguard.publish import set_serializers
 from electionguard.serializable import Serializable
-from jsons import set_deserializer, set_validator, DecodeError, UnfulfilledArgumentError
+from jsons import DecodeError, UnfulfilledArgumentError
 from tqdm import tqdm
 
 from arlo_e2e.tally import FastTallyEverythingResults, SelectionInfo, SelectionTally
@@ -38,43 +32,35 @@ CRYPTO_CONTEXT: Final[str] = "cryptographic_context"
 # avoid directories with a million files if there are a million ballots.
 
 
-def _serializers_init():
-    set_serializers()
-    set_deserializer(lambda obj, cls, **_: int_to_p_unchecked(int(obj)), ElementModP)
-    set_deserializer(lambda obj, cls, **_: int_to_q_unchecked(int(obj)), ElementModQ)
-    set_validator(lambda x: x.is_in_bounds(), ElementModP)
-    set_validator(lambda x: x.is_in_bounds(), ElementModQ)
-
-
 def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> None:
     """
     Writes out a directory with the full contents of the tally structure. Each ciphertext ballot
     will end up in its own file. Everything is JSON.
     """
-    _serializers_init()
+    set_serializers()
 
     # Note: occurrences of os.sep in this function are a workaround for an ElectionGuard bug,
     #   where it's incorrectly handing file paths. Once that bug is fixed, we can remove every
     #   instance of os.sep here.
 
     results_dir = results_dir + os.sep
-    print("write_fast_tally: starting!")
+    log_info("write_fast_tally: starting!")
     if not path.exists(results_dir):
         mkdir(results_dir)
 
-    print("write_fast_tally: writing election_description")
+    log_info("write_fast_tally: writing election_description")
     results.election_description.to_json_file(ELECTION_DESCRIPTION, results_dir)
 
-    print("write_fast_tally: writing crypto context")
+    log_info("write_fast_tally: writing crypto context")
     results.context.to_json_file(CRYPTO_CONTEXT, results_dir)
 
-    print("write_fast_tally: writing crypto constants")
+    log_info("write_fast_tally: writing crypto constants")
     ElectionConstants().to_json_file(CRYPTO_CONSTANTS, results_dir)
 
-    print("write_fast_tally: writing tally")
+    log_info("write_fast_tally: writing tally")
     results.tally.to_json_file(ENCRYPTED_TALLY, results_dir)
 
-    print("write_fast_tally: writing ballots")
+    log_info("write_fast_tally: writing ballots")
     ballots_dir = path.join(results_dir, "ballots")
     _mkdir_helper(ballots_dir)
     for ballot in tqdm(results.encrypted_ballots):
@@ -101,7 +87,7 @@ def load_fast_tally(
     checks fail, `None` is returned. Errors are logged. Optional `pool` allows for some parallelism
     in the verification process.
     """
-    _serializers_init()
+    set_serializers()
 
     if not path.exists(results_dir):
         log_error(f"Path ({results_dir}) not found, cannot load the fast-tally")
@@ -146,8 +132,14 @@ def load_fast_tally(
         # if even one of them fails, we're just going to give up and fail the whole thing
         return None
 
+    # mypy isn't smart enough to notice the type change List[Optional[X]] --> List[X],
+    # so we need to cast it, below.
+
     everything = FastTallyEverythingResults(
-        election_description, encrypted_ballots, encrypted_tally, cec
+        election_description,
+        cast(List[CiphertextAcceptedBallot], encrypted_ballots),
+        encrypted_tally,
+        cec,
     )
 
     if check_proofs:
@@ -157,11 +149,6 @@ def load_fast_tally(
             return None
 
     return everything
-
-
-def _encrypted_tally_load(s: Any) -> Optional[Dict[str, SelectionInfo]]:
-    # TODO: does this even kinda work
-    return s
 
 
 def _mkdir_helper(p: str) -> None:

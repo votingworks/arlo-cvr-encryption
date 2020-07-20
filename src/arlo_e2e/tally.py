@@ -126,7 +126,7 @@ def _accumulate(
 
 
 # object_id -> nonce, ciphertext
-TALLY_TYPE = Dict[str, Tuple[ElementModQ, ElGamalCiphertext]]
+TALLY_TYPE = Dict[str, Tuple[Optional[ElementModQ], ElGamalCiphertext]]
 
 
 def fast_tally_ballots(
@@ -152,13 +152,9 @@ def fast_tally_ballots(
                 if not s.is_placeholder_selection:
                     if s.object_id not in messages:
                         messages[s.object_id] = []
-                    assert (
-                        s.nonce is not None
-                    ), "we need the encryption nonce to generate the Chaum-Pedersen proof"
 
-                    # Technically, we don't actually need the nonces. Just knowing the secret key
-                    # is enough to produce the proofs, but we don't have a handy function in the
-                    # ElectionGuard library that knows how to do it for us.
+                    # Nonces are used later to generate Chaum-Pedersen proofs, but for
+                    # now we're just passing them along.
                     messages[s.object_id].append((s.nonce, s.message))
 
     # Now, we're creating the list of tuples that will be the arguments to _accumulate,
@@ -331,14 +327,16 @@ class FastTallyEverythingResults(NamedTuple):
     """
 
     def all_proofs_valid(
-        self, pool: Optional[Pool] = None, verbose: bool = True
+        self,
+        pool: Optional[Pool] = None,
+        verbose: bool = True,
+        recheck_ballots_and_tallies: bool = False,
     ) -> bool:
         """
         Checks all the proofs used in this tally, returns True if everything is good.
         Any errors found will be logged.
         """
-        if verbose:  # pragma: no cover
-            print("\nVerifying proofs:")
+        _log_and_print("Verifying proofs:", verbose)
 
         wrapped_func = functools.partial(_proof_verify, self.context.elgamal_public_key)
         start = timer()
@@ -346,10 +344,6 @@ class FastTallyEverythingResults(NamedTuple):
         inputs = self.tally.map.values()
         if verbose:  # pragma: no cover
             inputs = tqdm(list(inputs))
-
-        # Performance note: at this point, the tallies have been computed, so we
-        # don't actually have all that much data left to process. There's almost
-        # certainly no benefit to distributing this on a cluster.
 
         result: List[bool] = [
             wrapped_func(x) for x in inputs
@@ -361,7 +355,50 @@ class FastTallyEverythingResults(NamedTuple):
             verbose,
         )
 
-        return False not in result
+        if False in result:
+            return False
+
+        if recheck_ballots_and_tallies:
+            _log_and_print("Checking individual ballot proofs:", verbose)
+
+            # first, check each individual ballot's proofs
+            ballot_iter = tqdm(self.encrypted_ballots) if verbose else self.encrypted_ballots
+            ballot_func = functools.partial(_ballot_proof_verify, self.context.elgamal_public_key)
+
+            ballot_start = timer()
+            ballot_result: List[bool] = [
+                ballot_func(x) for x in ballot_iter
+            ] if pool is None else pool.map(func=ballot_func, iterable=ballot_iter)
+
+            ballot_end = timer()
+            _log_and_print(
+                f"Ballot verification rate: {len(self.encrypted_ballots) / (ballot_end - ballot_start): .3f} ballot/sec",
+                verbose,
+            )
+
+            if False in ballot_result:
+                return False
+
+            _log_and_print("Recomputing tallies:", verbose)
+            recomputed_tally = fast_tally_ballots(self.encrypted_ballots, pool, verbose)
+
+            tally_success = True
+            # Dict[str, Tuple[Optional[ElementModQ], ElGamalCiphertext]]
+            for selection in recomputed_tally.keys():
+                recomputed_ciphertext: ElGamalCiphertext = recomputed_tally[selection][1]
+                provided_ciphertext: ElGamalCiphertext = self.tally.map[selection].encrypted_tally
+                if recomputed_ciphertext != provided_ciphertext:
+                    log_error(f"Mismatching ciphertext tallies found for selection ({selection}). Recomputed sum: ({recomputed_ciphertext}), provided sum: ({provided_ciphertext})")
+                    tally_success = False
+
+            if tally_success == False:
+                return False
+
+        return True
+
+
+def _ballot_proof_verify(public_key: ElementModP, ballot: CiphertextAcceptedBallot) -> bool:
+    return ballot.is_valid_encryption(ballot.description_hash, public_key)
 
 
 def fast_tally_everything(
@@ -401,8 +438,10 @@ def fast_tally_everything(
         public_key = tmp.public_key
 
     # This computation exists only to cause side-effects in the DLog engine, so the lame nonce is not an issue.
-    assert len(ballots) == elgamal_encrypt(
-        m=len(ballots), nonce=int_to_q_unchecked(3), public_key=public_key
+    assert len(ballots) == get_optional(
+        elgamal_encrypt(
+            m=len(ballots), nonce=int_to_q_unchecked(3), public_key=public_key
+        )
     ).decrypt(secret_key), "got wrong ElGamal decryption!"
 
     dlog_prime_time = timer()

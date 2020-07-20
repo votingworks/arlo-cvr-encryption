@@ -43,12 +43,15 @@ class TestTallyPublishing(unittest.TestCase):
         pool = Pool(cpu_count())
         results = fast_tally_everything(cvrs, pool, verbose=True)
 
+        print("verifying proofs")
+        self.assertTrue(results.all_proofs_valid(pool))
+
         # dump files out to disk
         write_fast_tally(results, TALLY_TESTING_DIR)
         print("tally_testing written, proceeding to read it back in again")
 
         # now, read it back again!
-        results2 = load_fast_tally(TALLY_TESTING_DIR, check_proofs=True, pool=pool)
+        results2 = load_fast_tally(TALLY_TESTING_DIR, check_proofs=False, pool=pool)
         self.assertIsNotNone(results2)
 
         print("tally_testing got non-null result!")
@@ -57,6 +60,7 @@ class TestTallyPublishing(unittest.TestCase):
             len(results.encrypted_ballots), len(results2.encrypted_ballots)
         )
         self.assertEqual(set(results.tally.map.keys()), set(results2.tally.map.keys()))
+        self.assertTrue(results2.all_proofs_valid(pool, recheck_ballots_and_tallies=True, verbose=True))
 
         pool.close()
 
