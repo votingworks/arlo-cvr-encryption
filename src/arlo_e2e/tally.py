@@ -2,7 +2,7 @@ import functools
 from dataclasses import dataclass
 from multiprocessing.pool import Pool
 from timeit import default_timer as timer
-from typing import Tuple, List, Optional, Dict, NamedTuple
+from typing import Tuple, List, Optional, Dict, NamedTuple, cast, Sequence
 
 from electionguard.ballot import (
     PlaintextBallot,
@@ -114,15 +114,17 @@ def fast_encrypt_ballots(
 
 
 def _accumulate(
-    data: Tuple[str, List[Tuple[ElementModQ, ElGamalCiphertext]]]
-) -> Tuple[str, ElementModQ, ElGamalCiphertext]:  # pragma: no cover
+    data: Tuple[str, List[Tuple[Optional[ElementModQ], ElGamalCiphertext]]]
+) -> Tuple[str, Optional[ElementModQ], ElGamalCiphertext]:  # pragma: no cover
     object_id, ciphertexts = data
 
-    return (
-        object_id,
-        add_q(*[x[0] for x in ciphertexts]),
-        elgamal_add(*[x[1] for x in ciphertexts]),
-    )
+    nonces = [x[0] for x in ciphertexts]
+    encrypted_counters = [x[1] for x in ciphertexts]
+
+    nonce_sum = None if None in nonces else add_q(*cast(List[ElementModQ], nonces))
+    counter_sum = elgamal_add(*encrypted_counters)
+
+    return (object_id, nonce_sum, counter_sum)
 
 
 # object_id -> nonce, ciphertext
@@ -130,7 +132,7 @@ TALLY_TYPE = Dict[str, Tuple[Optional[ElementModQ], ElGamalCiphertext]]
 
 
 def fast_tally_ballots(
-    ballots: List[CiphertextBallot],
+    ballots: Sequence[CiphertextBallot],
     pool: Optional[Pool] = None,
     show_progress: bool = True,
 ) -> TALLY_TYPE:
@@ -142,7 +144,7 @@ def fast_tally_ballots(
     sequentially. Also, a progress bar is displayed, by default, and can be disabled by
     setting `show_progress` to `False`.
     """
-    messages: Dict[str, List[Tuple[ElementModQ, ElGamalCiphertext]]] = {}
+    messages: Dict[str, List[Tuple[Optional[ElementModQ], ElGamalCiphertext]]] = {}
 
     # First, we fill up this dictionary with all the individual ciphertexts. This rearrangement
     # of the data makes it much easier to run the tally in parallel.
@@ -172,7 +174,7 @@ def fast_tally_ballots(
     # The tallying process appears to run 500x faster than the encryption process, so there's less
     # need to make this scale.
 
-    result: List[Tuple[str, ElementModQ, ElGamalCiphertext]] = [
+    result: List[Tuple[str, Optional[ElementModQ], ElGamalCiphertext]] = [
         _accumulate(x) for x in inputs
     ] if pool is None else pool.map(func=_accumulate, iterable=inputs)
 
@@ -362,8 +364,12 @@ class FastTallyEverythingResults(NamedTuple):
             _log_and_print("Checking individual ballot proofs:", verbose)
 
             # first, check each individual ballot's proofs
-            ballot_iter = tqdm(self.encrypted_ballots) if verbose else self.encrypted_ballots
-            ballot_func = functools.partial(_ballot_proof_verify, self.context.elgamal_public_key)
+            ballot_iter = (
+                tqdm(self.encrypted_ballots) if verbose else self.encrypted_ballots
+            )
+            ballot_func = functools.partial(
+                _ballot_proof_verify, self.context.elgamal_public_key
+            )
 
             ballot_start = timer()
             ballot_result: List[bool] = [
@@ -385,10 +391,16 @@ class FastTallyEverythingResults(NamedTuple):
             tally_success = True
             # Dict[str, Tuple[Optional[ElementModQ], ElGamalCiphertext]]
             for selection in recomputed_tally.keys():
-                recomputed_ciphertext: ElGamalCiphertext = recomputed_tally[selection][1]
-                provided_ciphertext: ElGamalCiphertext = self.tally.map[selection].encrypted_tally
+                recomputed_ciphertext: ElGamalCiphertext = recomputed_tally[selection][
+                    1
+                ]
+                provided_ciphertext: ElGamalCiphertext = self.tally.map[
+                    selection
+                ].encrypted_tally
                 if recomputed_ciphertext != provided_ciphertext:
-                    log_error(f"Mismatching ciphertext tallies found for selection ({selection}). Recomputed sum: ({recomputed_ciphertext}), provided sum: ({provided_ciphertext})")
+                    log_error(
+                        f"Mismatching ciphertext tallies found for selection ({selection}). Recomputed sum: ({recomputed_ciphertext}), provided sum: ({provided_ciphertext})"
+                    )
                     tally_success = False
 
             if tally_success == False:
@@ -397,7 +409,9 @@ class FastTallyEverythingResults(NamedTuple):
         return True
 
 
-def _ballot_proof_verify(public_key: ElementModP, ballot: CiphertextAcceptedBallot) -> bool:
+def _ballot_proof_verify(
+    public_key: ElementModP, ballot: CiphertextAcceptedBallot
+) -> bool:  # pragma: no cover
     return ballot.is_valid_encryption(ballot.description_hash, public_key)
 
 

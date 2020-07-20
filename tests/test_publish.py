@@ -6,15 +6,16 @@ from multiprocessing import Pool, cpu_count
 
 import coverage
 from hypothesis import settings, given, HealthCheck, Phase
+from hypothesis.strategies import booleans
 
 from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.tally import fast_tally_everything
 from arlo_e2e.publish import write_fast_tally, load_fast_tally
+from arlo_e2e.tally import fast_tally_everything
 from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 
 
 class TestTallyPublishing(unittest.TestCase):
-    @given(dominion_cvrs())
+    @given(dominion_cvrs(), booleans())
     @settings(
         deadline=timedelta(milliseconds=50000),
         suppress_health_check=[HealthCheck.too_slow],
@@ -22,7 +23,7 @@ class TestTallyPublishing(unittest.TestCase):
         # disabling the "shrink" phase, because it runs very slowly
         phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
     )
-    def test_end_to_end_publications(self, input: str) -> None:
+    def test_end_to_end_publications(self, input: str, check_proofs: bool) -> None:
         # nuke any pre-existing tally_testing tree, since we only want to see current output
         TALLY_TESTING_DIR = "tally_testing"
 
@@ -51,7 +52,9 @@ class TestTallyPublishing(unittest.TestCase):
         print("tally_testing written, proceeding to read it back in again")
 
         # now, read it back again!
-        results2 = load_fast_tally(TALLY_TESTING_DIR, check_proofs=False, pool=pool)
+        results2 = load_fast_tally(
+            TALLY_TESTING_DIR, check_proofs=check_proofs, pool=pool, verbose=True
+        )
         self.assertIsNotNone(results2)
 
         print("tally_testing got non-null result!")
@@ -60,7 +63,6 @@ class TestTallyPublishing(unittest.TestCase):
             len(results.encrypted_ballots), len(results2.encrypted_ballots)
         )
         self.assertEqual(set(results.tally.map.keys()), set(results2.tally.map.keys()))
-        self.assertTrue(results2.all_proofs_valid(pool, recheck_ballots_and_tallies=True, verbose=True))
 
         pool.close()
 

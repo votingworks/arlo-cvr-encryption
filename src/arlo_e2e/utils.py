@@ -1,18 +1,10 @@
-import functools
-from multiprocessing import Pool, cpu_count
 from typing import (
     TypeVar,
     Callable,
     Sequence,
     List,
     Iterable,
-    Optional,
-    NamedTuple,
-    Any,
 )
-
-from electionguard.logs import log_warning
-from tqdm import tqdm
 
 T = TypeVar("T")
 U = TypeVar("U")

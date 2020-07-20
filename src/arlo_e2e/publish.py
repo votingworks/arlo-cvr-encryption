@@ -2,7 +2,7 @@ import json
 import os
 from multiprocessing.pool import Pool
 from os import path, mkdir
-from typing import Final, Optional, TypeVar, Dict, Any, List, Type, cast
+from typing import Final, Optional, TypeVar, List, Type, cast
 
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.election import (
@@ -16,7 +16,7 @@ from electionguard.serializable import Serializable
 from jsons import DecodeError, UnfulfilledArgumentError
 from tqdm import tqdm
 
-from arlo_e2e.tally import FastTallyEverythingResults, SelectionInfo, SelectionTally
+from arlo_e2e.tally import FastTallyEverythingResults, SelectionTally
 
 T = TypeVar("T")
 U = TypeVar("U", bound=Serializable)
@@ -79,7 +79,10 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> N
 
 
 def load_fast_tally(
-    results_dir: str, check_proofs: bool = True, pool: Optional[Pool] = None
+    results_dir: str,
+    check_proofs: bool = True,
+    pool: Optional[Pool] = None,
+    verbose: bool = False,
 ) -> Optional[FastTallyEverythingResults]:
     """
     Given the directory name / path-name to a disk represntation of a fast-tally structure, this reads
@@ -143,7 +146,7 @@ def load_fast_tally(
     )
 
     if check_proofs:
-        proofs_good = everything.all_proofs_valid(pool)
+        proofs_good = everything.all_proofs_valid(pool, verbose, True)
         if not proofs_good:
             # we don't need to log errors here; that will have happened internally
             return None
@@ -156,7 +159,9 @@ def _mkdir_helper(p: str) -> None:
         mkdir(p)
 
 
-def _load_helper(filename: str, class_handle: Optional[Type[U]]) -> Optional[T]:
+def _load_helper(
+    filename: str, class_handle: Optional[Type[U]]
+) -> Optional[T]:  # pragma: no cover
     try:
         s = os.stat(filename)
         if s.st_size == 0:

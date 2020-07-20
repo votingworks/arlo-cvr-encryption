@@ -1,9 +1,9 @@
 import unittest
-import coverage
-from io import StringIO
 from datetime import timedelta
+from io import StringIO
 from multiprocessing import Pool, cpu_count
 
+import coverage
 from electionguard.elgamal import ElGamalKeyPair
 from electionguardtest.elgamal import elgamal_keypairs
 from hypothesis import settings, given, HealthCheck, Phase

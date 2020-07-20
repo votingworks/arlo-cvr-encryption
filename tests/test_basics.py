@@ -1,9 +1,6 @@
 import unittest
 from typing import Optional
 
-from hypothesis import given
-from hypothesis.strategies import integers
-
 from electionguard.elgamal import (
     elgamal_encrypt,
     ElGamalKeyPair,
@@ -14,6 +11,9 @@ from electionguard.group import ElementModQ, ElementModP
 from electionguard.utils import get_optional, flatmap_optional
 from electionguardtest.elgamal import elgamal_keypairs
 from electionguardtest.group import elements_mod_q_no_zero
+from hypothesis import given
+from hypothesis.strategies import integers
+
 
 # The tests here are really just a sanity test to make sure that we can integrate with ElectionGuard.
 # If this test doesn't work, then the most likely culprit is something wrong with pipenv.
