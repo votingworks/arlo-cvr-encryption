@@ -33,6 +33,12 @@ from electionguard.election import (
 from electionguard.encrypt import selection_from
 
 from arlo_e2e.eg_helpers import UidMaker
+from arlo_e2e.metadata import (
+    ElectionMetadata,
+    CONTEST_MAP,
+    STYLE_MAP,
+    SelectionMetadata,
+)
 from arlo_e2e.utils import flatmap
 
 
@@ -137,48 +143,10 @@ def _str_to_internationalized_text_en(input: str) -> InternationalizedText:
     return InternationalizedText([Language(input, language="en")])
 
 
-CONTEST_MAP = Dict[str, Dict[Tuple[str, str], str]]
-STYLE_MAP = Dict[str, Set[str]]
-
-
 class DominionCSV(NamedTuple):
+    metadata: ElectionMetadata
     """
-    This data structure represents everything we parse out of a Dominion CSV file. It's
-    produced by `read_dominion_csv`.
-    """
-
-    election_name: str
-    """
-    Name of the election (as provided by the election administrator).
-    """
-
-    contests: Set[str]
-    """
-    List of every contest name (i.e., list of every column name in the data). Not every ballot
-    will have every contest.
-    """
-
-    ballot_types: Set[str]
-    """
-    Set of the different "ballot type" names (as provided by the election administrator).
-    """
-
-    all_parties: Set[str]
-    """
-    Set of political parties (typically three-letter codes).
-    """
-
-    style_map: STYLE_MAP
-    """
-    A dictionary mapping ballot-type names to the set of associated contest titles.
-    """
-
-    contest_map: CONTEST_MAP
-    """
-    A nested dictionary. The first key has every contest title (e.g., "Governor"). The
-    second key is a tuple with the candidates associated with that contest (e.g., "Alice"
-    or "Bob") and the party (e.g., "REP" or "DEM"; empty-string if there is no party).
-    The resulting value is the name of the dataframe column having all of the votes for this specific race.
+    Public information about the election, derived from the Dominion CSV file.
     """
 
     data: pd.DataFrame
@@ -189,15 +157,16 @@ class DominionCSV(NamedTuple):
     """
 
     def _all_parties_for_contests(self, contests: Iterable[str]) -> Set[str]:
-        # The tuple we get back from the contest_map has a contest name (t[0]) and maybe a party
-        # (t[1]), which will be "" if there's no party at all, so we want to filter those out.
+        selections = flatmap(
+            lambda contest: self.metadata.contest_map[contest], contests
+        )
 
-        parties = [
-            t[1]
-            for t in flatmap(lambda c: self.contest_map[c].keys(), contests)
-            if t[1] != ""
-        ]
-        return set(parties)
+        # we're filtering out the empty-string from party names
+        return {
+            selection.party_name
+            for selection in selections
+            if selection.party_name != ""
+        }
 
     def _ballot_style_from_id(
         self,
@@ -207,7 +176,7 @@ class DominionCSV(NamedTuple):
         cd_map: Dict[str, ContestDescription],
     ) -> BallotStyle:
 
-        contest_titles = self.style_map[dominion_ballot_style_id]
+        contest_titles = self.metadata.style_map[dominion_ballot_style_id]
         bs_id = bs_uids.next()
 
         party_ids = [
@@ -257,13 +226,13 @@ class DominionCSV(NamedTuple):
 
         candidate_to_column: Dict[str, str] = {}
 
-        for c in self.contest_map[name]:
+        for c in self.metadata.contest_map[name]:
             id_number, id_str = selection_uid_maker.next_int()
 
             candidate = Candidate(
                 object_id=candidate_uid_maker.next(),
-                ballot_name=_str_to_internationalized_text_en(c[0]),
-                party_id=c[1] if c[1] != "" else None,
+                ballot_name=_str_to_internationalized_text_en(c.choice_name),
+                party_id=c.party_name if c.party_name != "" else None,
                 image_uri=None,
             )
 
@@ -278,7 +247,7 @@ class DominionCSV(NamedTuple):
                 )
             )
 
-            candidate_to_column[candidate.object_id] = self.contest_map[name][c]
+            candidate_to_column[candidate.object_id] = c.to_string()
 
         gp = GeopoliticalUnit(
             object_id=gp_uid_maker.next(), name=name, type=ReportingUnitType.unknown,
@@ -320,7 +289,7 @@ class DominionCSV(NamedTuple):
                 object_id=party_uids.next(),
                 ballot_name=_str_to_internationalized_text_en(p),
             )
-            for p in self.all_parties
+            for p in self.metadata.all_parties
         }
 
         # A ballot style is a subset of all of the contests on the ballot. Luckily, we have a column
@@ -341,7 +310,7 @@ class DominionCSV(NamedTuple):
 
         all_candidate_ids_to_columns: Dict[str, str] = {}
 
-        for name in self.contest_map.keys():
+        for name in self.metadata.contest_map.keys():
             (
                 contest_description,
                 candidates,
@@ -364,7 +333,7 @@ class DominionCSV(NamedTuple):
 
         ballotstyle_map: Dict[str, BallotStyle] = {
             bt: self._ballot_style_from_id(bt, ballotstyle_uids, party_map, contest_map)
-            for bt in self.ballot_types
+            for bt in self.metadata.ballot_types
         }
 
         # And now, for the ballots
@@ -373,9 +342,10 @@ class DominionCSV(NamedTuple):
 
         for index, row in self.data.iterrows():
             ballot_type = row["BallotType"]
+            ballot_id = row["BallotId"]
             pbcontests: List[PlaintextBallotContest] = []
 
-            contest_titles: Set[str] = self.style_map[ballot_type]
+            contest_titles: Set[str] = self.metadata.style_map[ballot_type]
             for title in contest_titles:
                 # This is insanely complicated. The challenge is that we have the Dominion data structures,
                 # which has its own column names, but we have to connect that with all of the ElectionGuard
@@ -412,8 +382,8 @@ class DominionCSV(NamedTuple):
 
         return (
             ElectionDescription(
-                name=_str_to_internationalized_text_en(self.election_name),
-                election_scope_id=self.election_name,
+                name=_str_to_internationalized_text_en(self.metadata.election_name),
+                election_scope_id=self.metadata.election_name,
                 type=ElectionType.unknown,
                 start_date=date,
                 end_date=date,
@@ -477,10 +447,15 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     ] + filtered_columns[2:]
 
     df.columns = [" | ".join(x) for x in column_names]
-    df["UID"] = df.apply(
+
+    df["Guid"] = df.apply(
         lambda row: dominion_row_to_uid(row, election_name, ballot_metadata_fields),
         axis=1,
     )
+
+    # there's probably an easier way to do this, but it does what we want
+    uid_iter = UidMaker("b")
+    df["BallotId"] = df.apply(lambda row: uid_iter.next(), axis=1,)
 
     if "BallotType" not in df:
         return None
@@ -490,7 +465,8 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     contest_keys = set()
 
     all_parties: Set[str] = set()
-    contest_map: CONTEST_MAP = {}
+    contest_map_builder: Dict[str, List[SelectionMetadata]] = {}
+
     contest_key_to_title: Dict[str, str] = {}
     for contest in contests:
         title = contest[0]
@@ -500,19 +476,24 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
         if party not in all_parties and party != "":
             all_parties.add(party)
 
-        choice = (candidate, party)
         key = " | ".join(contest)
         contest_keys.add(key)
 
-        if title not in contest_map:
-            contest_map[title] = {}
+        if title not in contest_map_builder:
+            contest_map_builder[title] = []
 
-        # goes from ["Representative - District 1"][("Alice", "DEM")] to "Representative - District 1 | Alice | DEM"
-        contest_map[title][choice] = key
+        # goes from ["Representative - District 1"] to a list of SelectionMetadata objects
+        metadata = SelectionMetadata(
+            contest_name=title, choice_name=candidate, party_name=party
+        )
+        contest_map_builder[title].append(metadata)
 
         # goes from "Representative - District 1 | Alice | DEM" to "Representative - District 1"
-        contest_key_to_title[key] = title
+        contest_key_to_title[metadata.to_string()] = title
 
+    contest_map: CONTEST_MAP = {
+        k: set(contest_map_builder[k]) for k in contest_map_builder.keys()
+    }
     style_map: STYLE_MAP = {}
 
     # We're computing a set-union of all the non-empty contest fields we find, in any ballot
@@ -538,11 +519,12 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
             style_map[ballot_type] = style_map[ballot_type].union(present_contests)
 
     return DominionCSV(
-        fix_strings(election_name),
-        contest_keys,
-        set(df["BallotType"]),
-        all_parties,
-        style_map,
-        contest_map,
+        ElectionMetadata(
+            fix_strings(election_name),
+            set(df["BallotType"]),
+            all_parties,
+            style_map,
+            contest_map,
+        ),
         df,
     )

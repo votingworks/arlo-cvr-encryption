@@ -16,11 +16,13 @@ from electionguard.serializable import Serializable
 from jsons import DecodeError, UnfulfilledArgumentError
 from tqdm import tqdm
 
+from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.tally import FastTallyEverythingResults, SelectionTally
 
 T = TypeVar("T")
 U = TypeVar("U", bound=Serializable)
 
+ELECTION_METADATA: Final[str] = "election_metadata"
 ELECTION_DESCRIPTION: Final[str] = "election_description"
 ENCRYPTED_TALLY: Final[str] = "encrypted_tally"
 CRYPTO_CONSTANTS: Final[str] = "constants"
@@ -59,6 +61,9 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> N
 
     log_info("write_fast_tally: writing tally")
     results.tally.to_json_file(ENCRYPTED_TALLY, results_dir)
+
+    log_info("write_fast_tally: writing metadata")
+    results.metadata.to_json_file(ELECTION_METADATA, results_dir)
 
     log_info("write_fast_tally: writing ballots")
     ballots_dir = path.join(results_dir, "ballots")
@@ -125,6 +130,12 @@ def load_fast_tally(
     if encrypted_tally is None:
         return None
 
+    metadata: Optional[ElectionMetadata] = _load_helper(
+        path.join(results_dir, ELECTION_METADATA + ".json"), ElectionMetadata
+    )
+    if metadata is None:
+        return None
+
     ballots_dir = path.join(results_dir, "ballots")
     ballot_files = _all_filenames(ballots_dir)
 
@@ -139,6 +150,7 @@ def load_fast_tally(
     # so we need to cast it, below.
 
     everything = FastTallyEverythingResults(
+        metadata,
         election_description,
         cast(List[CiphertextAcceptedBallot], encrypted_ballots),
         encrypted_tally,

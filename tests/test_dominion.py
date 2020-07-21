@@ -22,6 +22,7 @@ from arlo_e2e.dominion import (
     DominionCSV,
 )
 from arlo_e2e.eg_helpers import decrypt_with_secret
+from arlo_e2e.metadata import SelectionMetadata
 from arlo_e2e_testing.dominion_hypothesis import (
     dominion_cvrs,
     ballots_and_context,
@@ -36,6 +37,14 @@ _good_dominion_cvrs = """
 ="1",="1",="1",="1",="1-1-1","Mail","12345 - STR5 (12345 - STR5)","STR5","1","0","0","0"
 ="2",="1",="1",="3",="1-1-3","Mail","12345 - STSF (12345 - STSF)","STSF","0","1","0","0"
         """
+_expected_alice_metadata = SelectionMetadata(
+    "Representative - District X (Vote For=1)", "Alice", "DEM"
+)
+_expected_bob_metadata = SelectionMetadata(
+    "Representative - District X (Vote For=1)", "Bob", "REP"
+)
+_expected_ref_for_metadata = SelectionMetadata("Referendum", "For", "")
+_expected_ref_against_metadata = SelectionMetadata("Referendum", "Against", "")
 
 
 class TestDominionBasics(unittest.TestCase):
@@ -89,19 +98,21 @@ class TestDominionBasics(unittest.TestCase):
         if result is None:
             self.fail("Expected not none")
         else:
-            self.assertEqual("2018 Test Election", result.election_name)
-            self.assertEqual(2, len(result.contest_map.keys()))
+            self.assertEqual("2018 Test Election", result.metadata.election_name)
+            self.assertEqual(2, len(result.metadata.contest_map.keys()))
             self.assertIn(
-                "Representative - District X (Vote For=1)", result.contest_map
+                "Representative - District X (Vote For=1)", result.metadata.contest_map
             )
-            self.assertIn("Referendum", result.contest_map)
-            rep_map = result.contest_map["Representative - District X (Vote For=1)"]
-            self.assertIsNotNone(rep_map)
-            self.assertIn(("Alice", "DEM"), rep_map)
-            self.assertIn(("Bob", "REP"), rep_map)
+            self.assertIn("Referendum", result.metadata.contest_map)
+            rep_list = result.metadata.contest_map[
+                "Representative - District X (Vote For=1)"
+            ]
+            self.assertIsNotNone(rep_list)
+            self.assertIn(_expected_alice_metadata, rep_list)
+            self.assertIn(_expected_bob_metadata, rep_list)
             self.assertEqual(
                 "Representative - District X (Vote For=1) | Alice | DEM",
-                rep_map[("Alice", "DEM")],
+                _expected_alice_metadata.to_string(),
             )
             self.assertIn(
                 "Representative - District X (Vote For=1) | Alice | DEM", result.data
@@ -109,14 +120,16 @@ class TestDominionBasics(unittest.TestCase):
             self.assertIn(
                 "Representative - District X (Vote For=1) | Bob | REP", result.data
             )
-            referendum_map = result.contest_map["Referendum"]
-            self.assertIsNotNone(referendum_map)
-            self.assertIn(("For", ""), referendum_map)
-            self.assertIn(("Against", ""), referendum_map)
-            self.assertEqual("Referendum | For", referendum_map[("For", "")])
-            self.assertEqual("Referendum | Against", referendum_map[("Against", "")])
+            referendum_list = result.metadata.contest_map["Referendum"]
+            self.assertIsNotNone(referendum_list)
+            self.assertIn(_expected_ref_for_metadata, referendum_list)
+            self.assertIn(_expected_ref_against_metadata, referendum_list)
+            self.assertEqual("Referendum | For", _expected_ref_for_metadata.to_string())
+            self.assertEqual(
+                "Referendum | Against", _expected_ref_against_metadata.to_string()
+            )
 
-            self.assertEqual({"REP", "DEM"}, result.all_parties)
+            self.assertEqual({"REP", "DEM"}, result.metadata.all_parties)
 
             rows = list(result.data.iterrows())
             self.assertEqual(2, len(rows))
@@ -127,7 +140,7 @@ class TestDominionBasics(unittest.TestCase):
             self.assertEqual("1-1-1", x["ImprintedId"])
             self.assertEqual(
                 "2018 Test Election | 1 | 1 | 1 | 1 | 1-1-1 | Mail | 12345 - STR5 (12345 - STR5) | STR5",
-                x["UID"],
+                x["Guid"],
             )
 
     def test_electionguard_extraction(self) -> None:
@@ -164,10 +177,11 @@ class TestDominionBasics(unittest.TestCase):
             self.assertEqual(2, len(rows))
 
             self.assertSetEqual(
-                {"Representative - District X (Vote For=1)"}, result.style_map["T1"],
+                {"Representative - District X (Vote For=1)"},
+                result.metadata.style_map["T1"],
             )
 
-            self.assertSetEqual({"Referendum"}, result.style_map["T2"])
+            self.assertSetEqual({"Referendum"}, result.metadata.style_map["T2"])
 
 
 class TestDominionHypotheses(unittest.TestCase):

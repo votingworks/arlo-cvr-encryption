@@ -10,7 +10,7 @@ from hypothesis.strategies import booleans
 
 from arlo_e2e.dominion import read_dominion_csv
 from arlo_e2e.publish import write_fast_tally, load_fast_tally
-from arlo_e2e.tally import fast_tally_everything
+from arlo_e2e.tally import fast_tally_everything, _log_and_print
 from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 
 
@@ -44,12 +44,11 @@ class TestTallyPublishing(unittest.TestCase):
         pool = Pool(cpu_count())
         results = fast_tally_everything(cvrs, pool, verbose=True)
 
-        print("verifying proofs")
         self.assertTrue(results.all_proofs_valid(pool))
 
         # dump files out to disk
         write_fast_tally(results, TALLY_TESTING_DIR)
-        print("tally_testing written, proceeding to read it back in again")
+        _log_and_print("tally_testing written, proceeding to read it back in again")
 
         # now, read it back again!
         results2 = load_fast_tally(
@@ -57,7 +56,7 @@ class TestTallyPublishing(unittest.TestCase):
         )
         self.assertIsNotNone(results2)
 
-        print("tally_testing got non-null result!")
+        _log_and_print("tally_testing got non-null result!")
 
         self.assertEqual(
             len(results.encrypted_ballots), len(results2.encrypted_ballots)
