@@ -11,7 +11,7 @@ from electionguard.election import (
     CiphertextElectionContext,
 )
 from electionguard.logs import log_error, log_info
-from electionguard.publish import set_serializers
+from electionguard.publish import set_serializers, set_deserializers
 from electionguard.serializable import Serializable
 from jsons import DecodeError, UnfulfilledArgumentError
 from tqdm import tqdm
@@ -40,6 +40,7 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> N
     will end up in its own file. Everything is JSON.
     """
     set_serializers()
+    set_deserializers()
 
     # Note: occurrences of os.sep in this function are a workaround for an ElectionGuard bug,
     #   where it's incorrectly handing file paths. Once that bug is fixed, we can remove every
@@ -96,6 +97,7 @@ def load_fast_tally(
     in the verification process.
     """
     set_serializers()
+    set_deserializers()
 
     if not path.exists(results_dir):
         log_error(f"Path ({results_dir}) not found, cannot load the fast-tally")
