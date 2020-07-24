@@ -1,11 +1,31 @@
 from dataclasses import dataclass
-from typing import Dict, Set, List
+from typing import Dict, Set
 
+from electionguard.election_object_base import ElectionObjectBase
 from electionguard.serializable import Serializable
 
 
 @dataclass(frozen=True, eq=True)
 class SelectionMetadata(Serializable):
+    """
+    This class contains useful information to understand every ballot "selection" (i.e., every ballot
+    has one or more contests, each of which has one or more selections). This is necessary to map
+    from the selection `object_id` values in the corresponding ElectionGuard structures back to
+    the actual text associated with those selections.
+
+    Everything in this structure is suitable for sharing with the public. There are no "secrets" here.
+    """
+
+    object_id: str
+    """
+    Used within ElectionGuard as a unique identifier for this particular selection.
+    """
+
+    sequence_number: int
+    """
+    This value is embedded in `object_id`, and is also a unique identifier.
+    """
+
     contest_name: str
     """
     The name of the seat being challenged (e.g., "City Council, District 5") or of the referendum
@@ -26,7 +46,7 @@ class SelectionMetadata(Serializable):
     def to_string(self) -> str:
         """
         Returns a unique string representation of this selection, suitable for use as the column
-        title of a Pandas dataframe or whatever else.
+        title of a Pandas dataframe or whatever else. Notably ignores the `object_id`.
         """
         return f"{self.contest_name} | {self.choice_name}" + (
             f" | {self.party_name}" if self.party_name != "" else ""
@@ -40,8 +60,9 @@ STYLE_MAP = Dict[str, Set[str]]
 @dataclass(frozen=True, eq=True)
 class ElectionMetadata(Serializable):
     """
-    This data structure represents everything that we have that describes an election.
-    Everything here is suitable for sharing with anybody.
+    This data structure represents everything that we have that describes the original election.
+
+    Everything in this structure is suitable for sharing with the public. There are no "secrets" here.
     """
 
     election_name: str

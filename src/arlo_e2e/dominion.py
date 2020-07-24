@@ -202,12 +202,7 @@ class DominionCSV(NamedTuple):
         return column_map[cd_map[sd.candidate_id]]
 
     def _contest_name_to_description(
-        self,
-        name: str,
-        candidate_uid_maker: UidMaker,
-        contest_uid_maker: UidMaker,
-        selection_uid_maker: UidMaker,
-        gp_uid_maker: UidMaker,
+        self, name: str, contest_uid_maker: UidMaker, gp_uid_maker: UidMaker,
     ) -> Tuple[ContestDescription, List[Candidate], GeopoliticalUnit, Dict[str, str]]:
 
         selections: List[SelectionDescription] = []
@@ -227,10 +222,11 @@ class DominionCSV(NamedTuple):
         candidate_to_column: Dict[str, str] = {}
 
         for c in self.metadata.contest_map[name]:
-            id_number, id_str = selection_uid_maker.next_int()
+            id_str = c.object_id
+            id_number = int(id_str[1:])  # total hack: stripping off the first char
 
             candidate = Candidate(
-                object_id=candidate_uid_maker.next(),
+                object_id=id_str,
                 ballot_name=_str_to_internationalized_text_en(c.choice_name),
                 party_id=c.party_name if c.party_name != "" else None,
                 image_uri=None,
@@ -299,9 +295,7 @@ class DominionCSV(NamedTuple):
         # but we don't have any data at all about them in the Dominion CVR file. Our current hack
         # is that we're making them one-to-one with contests.
 
-        candidate_uids = UidMaker("candidate")
         contest_uids = UidMaker("contest")
-        selection_uids = UidMaker("selection")
         gp_uids = UidMaker("gpunit")
 
         contest_map: Dict[str, ContestDescription] = {}
@@ -317,11 +311,7 @@ class DominionCSV(NamedTuple):
                 gp,
                 candidate_id_to_column,
             ) = self._contest_name_to_description(
-                name=name,
-                candidate_uid_maker=candidate_uids,
-                contest_uid_maker=contest_uids,
-                selection_uid_maker=selection_uids,
-                gp_uid_maker=gp_uids,
+                name=name, contest_uid_maker=contest_uids, gp_uid_maker=gp_uids,
             )
             contest_map[name] = contest_description
             all_candidates = all_candidates + candidates
@@ -454,8 +444,9 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     )
 
     # there's probably an easier way to do this, but it does what we want
-    uid_iter = UidMaker("b")
-    df["BallotId"] = df.apply(lambda row: uid_iter.next(), axis=1,)
+    ballot_uid_iter = UidMaker("b")
+    selection_uid_iter = UidMaker("s")
+    df["BallotId"] = df.apply(lambda row: ballot_uid_iter.next(), axis=1,)
 
     if "BallotType" not in df:
         return None
@@ -483,8 +474,13 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
             contest_map_builder[title] = []
 
         # goes from ["Representative - District 1"] to a list of SelectionMetadata objects
+        uid_int, uid_str = selection_uid_iter.next_int()
         metadata = SelectionMetadata(
-            contest_name=title, choice_name=candidate, party_name=party
+            object_id=uid_str,
+            sequence_number=uid_int,
+            contest_name=title,
+            choice_name=candidate,
+            party_name=party,
         )
         contest_map_builder[title].append(metadata)
 

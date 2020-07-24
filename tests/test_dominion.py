@@ -21,7 +21,7 @@ from arlo_e2e.dominion import (
     read_dominion_csv,
     DominionCSV,
 )
-from arlo_e2e.eg_helpers import decrypt_with_secret
+from arlo_e2e.eg_helpers import decrypt_with_secret, UidMaker
 from arlo_e2e.metadata import SelectionMetadata
 from arlo_e2e_testing.dominion_hypothesis import (
     dominion_cvrs,
@@ -37,14 +37,28 @@ _good_dominion_cvrs = """
 ="1",="1",="1",="1",="1-1-1","Mail","12345 - STR5 (12345 - STR5)","STR5","1","0","0","0"
 ="2",="1",="1",="3",="1-1-3","Mail","12345 - STSF (12345 - STSF)","STSF","0","1","0","0"
         """
+
+_sel_uid_iter = UidMaker("s")  # see read_dominion_csv; we're need the same uid sequence
+
+_uid_int, _uid_str = _sel_uid_iter.next_int()
 _expected_alice_metadata = SelectionMetadata(
-    "Representative - District X (Vote For=1)", "Alice", "DEM"
+    _uid_str, _uid_int, "Representative - District X (Vote For=1)", "Alice", "DEM"
 )
+
+_uid_int, _uid_str = _sel_uid_iter.next_int()
 _expected_bob_metadata = SelectionMetadata(
-    "Representative - District X (Vote For=1)", "Bob", "REP"
+    _uid_str, _uid_int, "Representative - District X (Vote For=1)", "Bob", "REP"
 )
-_expected_ref_for_metadata = SelectionMetadata("Referendum", "For", "")
-_expected_ref_against_metadata = SelectionMetadata("Referendum", "Against", "")
+
+_uid_int, _uid_str = _sel_uid_iter.next_int()
+_expected_ref_for_metadata = SelectionMetadata(
+    _uid_str, _uid_int, "Referendum", "For", ""
+)
+
+_uid_int, _uid_str = _sel_uid_iter.next_int()
+_expected_ref_against_metadata = SelectionMetadata(
+    _uid_str, _uid_int, "Referendum", "Against", ""
+)
 
 
 class TestDominionBasics(unittest.TestCase):
