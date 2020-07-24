@@ -41,6 +41,7 @@ from electionguard.utils import get_optional
 from tqdm import tqdm
 
 from arlo_e2e.dominion import DominionCSV
+from arlo_e2e.metadata import ElectionMetadata
 
 
 def _encrypt(
@@ -236,7 +237,7 @@ def fast_decrypt_tally(
     return {k: (p, proof) for k, p, proof in result}
 
 
-def _log_and_print(s: str, verbose: bool) -> None:
+def _log_and_print(s: str, verbose: bool = True) -> None:
     if verbose:  # pragma: no cover
         print(f"    {s}")
     log_info(s)
@@ -305,11 +306,16 @@ def _proof_verify(
 
 
 class FastTallyEverythingResults(NamedTuple):
+    metadata: ElectionMetadata
+    """
+    All the public metadata we know about this election. Useful when interacting
+    with `election_description`.
+    """
+
     election_description: ElectionDescription
     """
     ElectionGuard top-level data structure that describes everything about the election: 
-    the candidates, the parties, and so forth. See also, the many helpful methods
-    in `DominionCSV`.
+    the candidates, the parties, and so forth.
     """
 
     encrypted_ballots: List[CiphertextAcceptedBallot]
@@ -548,6 +554,7 @@ def fast_tally_everything(
     accepted_ballots = [_ciphertext_ballot_to_accepted(x) for x in cballots]
 
     return FastTallyEverythingResults(
+        metadata=cvrs.metadata,
         election_description=ed,
         encrypted_ballots=accepted_ballots,
         tally=SelectionTally(reported_tally),
