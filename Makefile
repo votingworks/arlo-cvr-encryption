@@ -93,4 +93,5 @@ coverage-erase:
 
 upgrade-electionguard:
 	pipenv uninstall electionguard
-	pipenv install -e 'git+https://github.com/microsoft/electionguard-python.git@fix/deserialization-issues#egg=electionguard'
+	pipenv install -e 'git+https://github.com/microsoft/electionguard-python.git#egg=electionguard'
+#	pipenv install -e 'git+https://github.com/microsoft/electionguard-python.git@fix/deserialization-issues#egg=electionguard'

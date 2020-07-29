@@ -11,8 +11,7 @@ from electionguard.election import (
     CiphertextElectionContext,
 )
 from electionguard.logs import log_error, log_info
-from electionguard.publish import set_serializers, set_deserializers
-from electionguard.serializable import Serializable
+from electionguard.serializable import set_deserializers, Serializable, set_serializers
 from jsons import DecodeError, UnfulfilledArgumentError
 from tqdm import tqdm
 
@@ -104,13 +103,13 @@ def load_fast_tally(
         return None
 
     election_description: Optional[ElectionDescription] = _load_helper(
-        path.join(results_dir, ELECTION_DESCRIPTION + ".json"), ElectionDescription
+        results_dir, ELECTION_DESCRIPTION, ElectionDescription
     )
     if election_description is None:
         return None
 
     constants: Optional[ElectionConstants] = _load_helper(
-        path.join(results_dir, CRYPTO_CONSTANTS + ".json"), ElectionConstants
+        results_dir, CRYPTO_CONSTANTS, ElectionConstants
     )
     if constants is None:
         return None
@@ -121,19 +120,19 @@ def load_fast_tally(
         return None
 
     cec: Optional[CiphertextElectionContext] = _load_helper(
-        path.join(results_dir, CRYPTO_CONTEXT + ".json"), CiphertextElectionContext
+        results_dir, CRYPTO_CONTEXT, CiphertextElectionContext
     )
     if cec is None:
         return None
 
     encrypted_tally: Optional[SelectionTally] = _load_helper(
-        path.join(results_dir, ENCRYPTED_TALLY + ".json"), SelectionTally
+        results_dir, ENCRYPTED_TALLY, SelectionTally
     )
     if encrypted_tally is None:
         return None
 
     metadata: Optional[ElectionMetadata] = _load_helper(
-        path.join(results_dir, ELECTION_METADATA + ".json"), ElectionMetadata
+        results_dir, ELECTION_METADATA, ElectionMetadata
     )
     if metadata is None:
         return None
@@ -141,8 +140,9 @@ def load_fast_tally(
     ballots_dir = path.join(results_dir, "ballots")
     ballot_files = _all_filenames(ballots_dir)
 
-    encrypted_ballots: List[Optional[CiphertextAcceptedBallot]] = [
-        _load_helper(s, CiphertextAcceptedBallot) for s in ballot_files
+    encrypted_ballots: Optional[List[Optional[CiphertextAcceptedBallot]]] = [
+        _load_helper(".", s, CiphertextAcceptedBallot, file_suffix="")
+        for s in ballot_files
     ]
     if encrypted_ballots is None or None in encrypted_ballots:
         # if even one of them fails, we're just going to give up and fail the whole thing
@@ -150,13 +150,10 @@ def load_fast_tally(
 
     # mypy isn't smart enough to notice the type change List[Optional[X]] --> List[X],
     # so we need to cast it, below.
+    encrypted_ballots_cast = cast(List[CiphertextAcceptedBallot], encrypted_ballots)
 
     everything = FastTallyEverythingResults(
-        metadata,
-        election_description,
-        cast(List[CiphertextAcceptedBallot], encrypted_ballots),
-        encrypted_tally,
-        cec,
+        metadata, election_description, encrypted_ballots_cast, encrypted_tally, cec,
     )
 
     if check_proofs:
@@ -174,8 +171,12 @@ def _mkdir_helper(p: str) -> None:
 
 
 def _load_helper(
-    filename: str, class_handle: Optional[Type[U]]
+    dir_name: str,
+    file_prefix: str,
+    class_handle: Optional[Type[U]],
+    file_suffix: str = ".json",
 ) -> Optional[T]:  # pragma: no cover
+    filename = path.join(dir_name, file_prefix + file_suffix)
     try:
         s = os.stat(filename)
         if s.st_size == 0:

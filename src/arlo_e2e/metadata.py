@@ -1,11 +1,15 @@
 from dataclasses import dataclass
 from typing import Dict, Set
 
-from electionguard.election_object_base import ElectionObjectBase
 from electionguard.serializable import Serializable
 
 
-@dataclass(frozen=True, eq=True)
+# A hash function isn't auto-generated unless a data class is frozen, which this certainly can be,
+# but we get a warning unless the superclass is also frozen, and Serializable comes from ElectionGuard,
+# where it isn't frozen. Saying unsafe_hash=True is our workaround.
+
+
+@dataclass(eq=True, unsafe_hash=True)
 class SelectionMetadata(Serializable):
     """
     This class contains useful information to understand every ballot "selection" (i.e., every ballot
@@ -57,7 +61,7 @@ CONTEST_MAP = Dict[str, Set[SelectionMetadata]]
 STYLE_MAP = Dict[str, Set[str]]
 
 
-@dataclass(frozen=True, eq=True)
+@dataclass(eq=True)
 class ElectionMetadata(Serializable):
     """
     This data structure represents everything that we have that describes the original election.

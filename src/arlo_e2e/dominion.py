@@ -139,8 +139,8 @@ def _nonempty_elem(row: pd.Series, key: str) -> bool:
         return val is not None
 
 
-def _str_to_internationalized_text_en(input: str) -> InternationalizedText:
-    return InternationalizedText([Language(input, language="en")])
+def _str_to_internationalized_text_en(s: str) -> InternationalizedText:
+    return InternationalizedText([Language(s, language="en")])
 
 
 class DominionCSV(NamedTuple):
@@ -332,7 +332,7 @@ class DominionCSV(NamedTuple):
 
         for index, row in self.data.iterrows():
             ballot_type = row["BallotType"]
-            ballot_id = row["BallotId"]
+            # ballot_id = row["BallotId"]
             pbcontests: List[PlaintextBallotContest] = []
 
             contest_titles: Set[str] = self.metadata.style_map[ballot_type]
@@ -439,14 +439,13 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     df.columns = [" | ".join(x) for x in column_names]
 
     df["Guid"] = df.apply(
-        lambda row: dominion_row_to_uid(row, election_name, ballot_metadata_fields),
-        axis=1,
+        lambda r: dominion_row_to_uid(r, election_name, ballot_metadata_fields), axis=1,
     )
 
     # there's probably an easier way to do this, but it does what we want
     ballot_uid_iter = UidMaker("b")
     selection_uid_iter = UidMaker("s")
-    df["BallotId"] = df.apply(lambda row: ballot_uid_iter.next(), axis=1,)
+    df["BallotId"] = df.apply(lambda r: ballot_uid_iter.next(), axis=1,)
 
     if "BallotType" not in df:
         return None

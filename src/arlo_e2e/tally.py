@@ -48,9 +48,9 @@ def _encrypt(
     ied: InternalElectionDescription,
     cec: CiphertextElectionContext,
     seed_hash: ElementModQ,
-    input: Tuple[PlaintextBallot, ElementModQ],
+    input_tuple: Tuple[PlaintextBallot, ElementModQ],
 ) -> CiphertextBallot:  # pragma: no cover
-    b, n = input
+    b, n = input_tuple
 
     # Coverage note: you'll see a directive on this method and on the other methods
     # used for the parallel mapping. For whatever reason, the Python coverage tool
@@ -125,7 +125,7 @@ def _accumulate(
     nonce_sum = None if None in nonces else add_q(*cast(List[ElementModQ], nonces))
     counter_sum = elgamal_add(*encrypted_counters)
 
-    return (object_id, nonce_sum, counter_sum)
+    return object_id, nonce_sum, counter_sum
 
 
 # object_id -> nonce, ciphertext
@@ -190,9 +190,9 @@ DECRYPT_OUTPUT_TYPE = Tuple[str, int, ConstantChaumPedersenProof]
 
 
 def _decrypt(
-    public_key: ElementModP, secret_key: ElementModQ, input: DECRYPT_INPUT_TYPE
+    public_key: ElementModP, secret_key: ElementModQ, decrypt_input: DECRYPT_INPUT_TYPE
 ) -> DECRYPT_OUTPUT_TYPE:  # pragma: no cover
-    object_id, seed, nonce, c = input
+    object_id, seed, nonce, c = decrypt_input
     plaintext = c.decrypt(secret_key)
     proof = make_constant_chaum_pedersen(c, plaintext, nonce, public_key, seed)
     return object_id, plaintext, proof
@@ -243,7 +243,7 @@ def _log_and_print(s: str, verbose: bool = True) -> None:
     log_info(s)
 
 
-@dataclass(frozen=True, eq=True)
+@dataclass(eq=True)
 class SelectionInfo(Serializable):
     """
     A tuple including a selection's object_id, a the encrypted and decrypted tallies, and a proof
@@ -285,7 +285,7 @@ class SelectionInfo(Serializable):
         return valid
 
 
-@dataclass(frozen=True, eq=True)
+@dataclass(eq=True)
 class SelectionTally(Serializable):
     """
     A mapping from a selection's object_id to a `SelectionInfo` class.
@@ -409,7 +409,7 @@ class FastTallyEverythingResults(NamedTuple):
                     )
                     tally_success = False
 
-            if tally_success == False:
+            if not tally_success:
                 return False
 
         return True

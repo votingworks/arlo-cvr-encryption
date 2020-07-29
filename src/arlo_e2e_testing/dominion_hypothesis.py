@@ -96,8 +96,8 @@ def dominion_cvrs(draw: _DrawType):
     ]
     num_human_contests = len(candidates_and_parties)
 
-    contest_names = [f"Contest{i}" for i in range(1, num_human_contests + 1)]
-    referenda_names = [f"Referendum{i}" for i in range(1, num_referenda + 1)]
+    contest_names: List[str] = [f"Contest{i}" for i in range(1, num_human_contests + 1)]
+    referenda_names: List[str] = [f"Referendum{i}" for i in range(1, num_referenda + 1)]
 
     num_ballot_styles: int = draw(integers(1, 10))
     total_voter_choice_slots: int = sum(num_candidates_per_contest) + 2 * num_referenda
@@ -111,25 +111,23 @@ def dominion_cvrs(draw: _DrawType):
     total_metadata_columns = 7 + (1 if counting_group_present else 0)
     total_csv_columns = total_metadata_columns + total_voter_choice_slots
     ballot_style_strings = [f"BALLOTSTYLE{i}" for i in range(0, num_ballot_styles + 1)]
-    # header row 1: only two fields, plus a bunch of blanks
-    # header row 2: a bunch of blanks, then the contest/referenda names
-
-    rows: List[str] = []
 
     # header row 1: only two fields, plus a bunch of blanks
-    rows.append(
+    rows: List[str] = [
         _encode_list_as_csv(
             ["Random Test Election", "5.2.16.1"] + [""] * (total_csv_columns - 2),
             quotation_style,
             total_csv_columns,
         )
-    )
+    ]
 
     # We need both the "for" and "against" for each referendum.
-    repeated_referenda_names = flatmap(lambda name: [name, name], referenda_names)
+    repeated_referenda_names: Sequence[str] = flatmap(
+        lambda name: [name, name], referenda_names
+    )
 
     # Different contests have different numbers of candidates, so we need different repetition.
-    repeated_contest_names = flatmap(
+    repeated_contest_names: Sequence[str] = flatmap(
         lambda n: [contest_names[n]] * len(candidates_and_parties[n]),
         range(0, num_human_contests),
     )
@@ -150,7 +148,7 @@ def dominion_cvrs(draw: _DrawType):
     for contest in candidates_and_parties:
         for c in contest:
             row3_output.append(c[0])
-    for r in referenda_names:
+    for _ in referenda_names:
         row3_output.append("FOR")
         row3_output.append("AGAINST")
 
@@ -182,7 +180,7 @@ def dominion_cvrs(draw: _DrawType):
     for contest in candidates_and_parties:
         for c in contest:
             output.append(c[1])
-    for r in referenda_names:
+    for _ in referenda_names:
         output.append("")
         output.append("")
 
