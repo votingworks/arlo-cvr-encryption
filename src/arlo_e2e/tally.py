@@ -432,9 +432,6 @@ def fast_tally_everything(
 
     For parallelism, a `multiprocessing.pool.Pool` may be provided, and should result in significant
     speedups on multicore computers. If absent, the computation will proceed sequentially.
-
-    *WARNING: The CiphertextBallots in the results will have their encryption nonces inside.
-    Be careful that you don't serialize these.*
     """
     rows, cols = cvrs.data.shape
 
