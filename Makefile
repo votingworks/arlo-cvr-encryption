@@ -1,6 +1,6 @@
 .PHONY: all environment install install-mac install-linux install-windows lint validate test test-example coverage coverage-html coverage-xml coverage-erase
 
-CODE_COVERAGE ?= 90
+CODE_COVERAGE ?= 80
 WINDOWS_32BIT_GMPY2 ?= packages/gmpy2-2.0.8-cp38-cp38-win32.whl
 WINDOWS_64BIT_GMPY2 ?= packages/gmpy2-2.0.8-cp38-cp38-win_amd64.whl
 OS ?= $(shell python -c 'import platform; print(platform.system())')

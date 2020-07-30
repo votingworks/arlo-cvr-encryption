@@ -2,13 +2,14 @@ import functools
 from dataclasses import dataclass
 from multiprocessing.pool import Pool
 from timeit import default_timer as timer
-from typing import Tuple, List, Optional, Dict, NamedTuple, cast, Sequence
+from typing import Tuple, List, Optional, Dict, NamedTuple, Sequence
 
 from electionguard.ballot import (
     PlaintextBallot,
     CiphertextAcceptedBallot,
     BallotBoxState,
     CiphertextBallot,
+    from_ciphertext_ballot,
 )
 from electionguard.chaum_pedersen import (
     ConstantChaumPedersenProof,
@@ -68,15 +69,7 @@ def _encrypt(
 def _ciphertext_ballot_to_accepted(
     ballot: CiphertextBallot,
 ) -> CiphertextAcceptedBallot:
-    return CiphertextAcceptedBallot(
-        object_id=ballot.object_id,
-        ballot_style=ballot.ballot_style,
-        description_hash=ballot.description_hash,
-        contests=ballot.contests,
-        tracking_id=ballot.tracking_id,
-        timestamp=ballot.timestamp,
-        state=BallotBoxState.CAST,
-    )
+    return from_ciphertext_ballot(ballot, BallotBoxState.CAST)
 
 
 def fast_encrypt_ballots(
@@ -119,10 +112,11 @@ def _accumulate(
 ) -> Tuple[str, Optional[ElementModQ], ElGamalCiphertext]:  # pragma: no cover
     object_id, ciphertexts = data
 
-    nonces = [x[0] for x in ciphertexts]
-    encrypted_counters = [x[1] for x in ciphertexts]
+    nonces: List[ElementModQ] = [x[0] for x in ciphertexts if x[0] is not None]
+    encrypted_counters: List[ElGamalCiphertext] = [x[1] for x in ciphertexts]
 
-    nonce_sum = None if None in nonces else add_q(*cast(List[ElementModQ], nonces))
+    # if we're missing any of the nonces, because they were None, then we don't have a defined nonce_sum
+    nonce_sum = None if len(nonces) != len(encrypted_counters) else add_q(*nonces)
     counter_sum = elgamal_add(*encrypted_counters)
 
     return object_id, nonce_sum, counter_sum
@@ -158,7 +152,7 @@ def fast_tally_ballots(
 
                     # Nonces are used later to generate Chaum-Pedersen proofs, but for
                     # now we're just passing them along.
-                    messages[s.object_id].append((s.nonce, s.message))
+                    messages[s.object_id].append((s.nonce, s.ciphertext))
 
     # Now, we're creating the list of tuples that will be the arguments to _accumulate,
     # for running in parallel.

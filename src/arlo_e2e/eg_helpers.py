@@ -16,7 +16,7 @@ def decrypt_with_secret(
     plaintext_selections: Dict[str, int] = {}
     for _, contest in tally.cast.items():
         for object_id, selection in contest.tally_selections.items():
-            plaintext = selection.message.decrypt(secret_key)
+            plaintext = selection.ciphertext.decrypt(secret_key)
             plaintext_selections[object_id] = plaintext
 
     return plaintext_selections
