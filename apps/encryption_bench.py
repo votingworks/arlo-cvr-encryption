@@ -6,6 +6,7 @@ from multiprocessing import cpu_count
 from multiprocessing.pool import Pool
 from timeit import default_timer as timer
 
+import ray
 from electionguard.logs import log_info
 
 from arlo_e2e.dominion import read_dominion_csv
@@ -59,6 +60,7 @@ if __name__ == "__main__":
         run_bench(arg, pool)
 
     pool.close()
+    ray.shutdown()
     exit(0)
 
 # Numbers from a 6-core machine for the encryption phase:

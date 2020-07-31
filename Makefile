@@ -54,7 +54,9 @@ endif
 ifeq ($(IS_64_BIT), False)
 	pipenv run python -m pip install -f $(WINDOWS_32BIT_GMPY2) -e . 
 endif
-	
+
+black:
+	black apps src tests setup.py
 
 lint:
 	@echo 💚 LINT

@@ -14,8 +14,9 @@ def ray_init_localhost() -> None:
     """
     Initializes Ray for computation on the local computer.
     """
-    ray.init(num_cpus=os.cpu_count())
-    ray_init_serializers()
+    if not ray.is_initialized():
+        ray.init(num_cpus=os.cpu_count())
+        ray_init_serializers()
 
 
 def ray_init_serializers() -> None:
