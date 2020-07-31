@@ -9,6 +9,8 @@ from timeit import default_timer as timer
 from electionguard.logs import log_info
 
 from arlo_e2e.dominion import read_dominion_csv
+from arlo_e2e.ray_helpers import ray_init_localhost
+from arlo_e2e.ray_tally import ray_tally_everything
 from arlo_e2e.tally import fast_tally_everything
 
 
@@ -28,13 +30,30 @@ def run_bench(filename: str, pool: Pool) -> None:
     _, ballots, _ = cvrs.to_election_description()
     assert len(ballots) > 0, "can't have zero ballots!"
 
+    tally_start = timer()
     tally = fast_tally_everything(cvrs, pool, verbose=True)
     assert tally.all_proofs_valid(verbose=True), "proof failure!"
+    tally_end = timer()
+    print(f"    Pool time:   {tally_end - tally_start: .3f} sec")
+    print(f"    Pool rate:   {rows / (tally_end - tally_start): .3f} ballots/sec")
+
+    print(f"Now, trying ray cluster parallelism!")
+    rtally = ray_tally_everything(cvrs)
+    rtally_end = timer()
+    assert rtally.all_proofs_valid(verbose=True), "proof failure!"
+
+    print(f"    Ray time:    {rtally_end - tally_end : .3f} sec")
+    print(f"    Ray rate:    {rows / (rtally_end - tally_end): .3f} ballots/sec")
+
+    print(
+        f"    Ray speedup: {(tally_end - tally_start) / (rtally_end - tally_end) : .3f} sec"
+    )
 
 
 if __name__ == "__main__":
     print(f"CPUs detected: {cpu_count()}, launching thread pool")
     pool = multiprocessing.Pool(cpu_count())
+    ray_init_localhost()
 
     for arg in sys.argv[1:]:
         run_bench(arg, pool)
