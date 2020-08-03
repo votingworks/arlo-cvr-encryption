@@ -10,12 +10,13 @@ from electionguard.group import (
 )
 
 
-def ray_init_localhost() -> None:
+def ray_init_localhost(num_cpus: int = -1) -> None:
     """
-    Initializes Ray for computation on the local computer.
+    Initializes Ray for computation on the local computer. If num_cpus are specified,
+    that's how many CPUs will be used. Otherwise, uses `os.cpu_count()`.
     """
     if not ray.is_initialized():
-        ray.init(num_cpus=os.cpu_count())
+        ray.init(num_cpus=num_cpus if num_cpus > 0 else os.cpu_count())
         ray_init_serializers()
 
 
