@@ -33,21 +33,23 @@ def run_bench(filename: str, pool: Pool) -> None:
 
     tally_start = timer()
     tally = fast_tally_everything(cvrs, pool, verbose=True)
-    assert tally.all_proofs_valid(verbose=True), "proof failure!"
     tally_end = timer()
-    print(f"    Pool time:   {tally_end - tally_start: .3f} sec")
-    print(f"    Pool rate:   {rows / (tally_end - tally_start): .3f} ballots/sec")
+    assert tally.all_proofs_valid(verbose=True), "proof failure!"
 
-    print(f"Now, trying ray cluster parallelism!")
+    print(f"starting ray.io parallelism")
+    rtally_start = timer()
     rtally = ray_tally_everything(cvrs)
     rtally_end = timer()
     assert rtally.all_proofs_valid(verbose=True), "proof failure!"
 
-    print(f"    Ray time:    {rtally_end - tally_end : .3f} sec")
-    print(f"    Ray rate:    {rows / (rtally_end - tally_end): .3f} ballots/sec")
+    print(f"OVERALL PERFORMANCE")
+    print(f"    Pool time:   {tally_end - tally_start: .3f} sec")
+    print(f"    Pool rate:   {rows / (tally_end - tally_start): .3f} ballots/sec")
+    print(f"    Ray time:    {rtally_end - rtally_start : .3f} sec")
+    print(f"    Ray rate:    {rows / (rtally_end - rtally_start): .3f} ballots/sec")
 
     print(
-        f"    Ray speedup: {(tally_end - tally_start) / (rtally_end - tally_end) : .3f} sec"
+        f"    Ray speedup: {(tally_end - tally_start) / (rtally_end - rtally_start) : .3f} (>1.0 = faster, <1.0 = slower)"
     )
 
 

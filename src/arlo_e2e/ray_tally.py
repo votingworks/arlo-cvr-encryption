@@ -77,9 +77,9 @@ def r_encrypt(
     seed_hash: ElementModQ,
     input_tuple: Tuple[PlaintextBallot, ElementModQ],
 ) -> CiphertextBallot:
-    # l_ied: InternalElectionDescription = ray.get(ied)
-    # l_cec: CiphertextElectionContext = ray.get(cec)
-    # l_seed_hash: ElementModQ = ray.get(seed_hash)
+    """
+    Remotely encrypts a ballot.
+    """
     b, n = input_tuple
     return get_optional(
         encrypt_ballot(b, ied, cec, seed_hash, n, should_verify_proofs=False)
@@ -99,12 +99,12 @@ def _cballot_to_partial_tally(cballot: CiphertextBallot) -> TALLY_TYPE:
     return result
 
 
-@ray.remote
-def r_tally(ptallies: Sequence[ray.ObjectID]) -> TALLY_TYPE:
+def _sequential_tally(
+    ptallies: Sequence[Union[TALLY_TYPE, CiphertextBallot]]
+) -> TALLY_TYPE:
     result: TALLY_TYPE = {}
-    for tally_remote in ptallies:
+    for tally in ptallies:
         # we want do our computation purely in terms of TALLY_TYPE, so we'll convert CiphertextBallots
-        tally = ray.get(tally_remote)
         if isinstance(tally, CiphertextBallot):
             tally = _cballot_to_partial_tally(tally)
 
@@ -124,36 +124,42 @@ def r_tally(ptallies: Sequence[ray.ObjectID]) -> TALLY_TYPE:
     return result
 
 
-def ray_tally_ballots(cballots: List[ray.ObjectID]) -> TALLY_TYPE:
+@ray.remote
+def r_tally(ptallies: Sequence[ray.ObjectID]) -> TALLY_TYPE:
     """
-    The front-end for parallel ballot tallies. The input is a list of ballots, which could be
-    really be a list of futures that haven't yet been computed yet. The list is sharded up
-    into groups, and each group is tallied independently. Then all those tallies are tallied,
-    until we ultimately get down to a singular tally of every ballot.
-
-    :param cballots: a list of ray ObjectIDs that may contain either `CiphertextBallot` or `TALLY_TYPE`
-    :return: a ray ObjectID containing `TALLY_TYPE`
+    Remotely tallies a sequence of either encrypted ballots or partial tallies.
+    On the remote node, the computation will be sequential.
     """
-    assert len(cballots) > 0, "cannot tally an empty list of ballots"
-    if len(cballots) == 1:
-        ballot0: Union[CiphertextBallot, TALLY_TYPE] = ray.get(cballots[0])
-        if isinstance(ballot0, CiphertextBallot):
-            return _cballot_to_partial_tally(ballot0)
-        else:
-            return ballot0
+    return _sequential_tally(ray.get(ptallies))
 
-    shards: Sequence[Sequence[ray.ObjectID]] = shard_list(cballots, BALLOTS_PER_SHARD)
-    partial_tallies: List[ray.ObjectID] = [r_tally.remote(shard) for shard in shards]
 
-    assert len(partial_tallies) < len(cballots), "recursion broken"
-    return ray_tally_ballots(partial_tallies)
+def ray_tally_ballots(ptallies: Sequence[ray.ObjectID]) -> ray.ObjectID:
+    """
+    Launches a parallel tally tree, with a fanout of BALLOTS_PER_SHARD. Returns
+    a reference to the result, which the caller will then need to call `ray.get()`
+    to retrieve.
+    """
+
+    if len(ptallies) <= BALLOTS_PER_SHARD:
+        return r_tally.remote(ptallies)
+    else:
+        shards: Sequence[Sequence[ray.ObjectID]] = shard_list(
+            ptallies, BALLOTS_PER_SHARD
+        )
+        partial_tallies: List[ray.ObjectID] = [
+            ray_tally_ballots(shard) for shard in shards
+        ]
+        return r_tally.remote(partial_tallies)
 
 
 @ray.remote
 def r_decrypt(
     public_key: ElementModP, secret_key: ElementModQ, decrypt_input: DECRYPT_INPUT_TYPE
 ) -> DECRYPT_OUTPUT_TYPE:
-    # there aren't really enough elements to be worth the bother, but might as well get some speedup
+    """
+    Remotely decrypts an ElGamalCiphertext (and its related data -- see DECRYPT_INPUT_TYPE)
+    and returns the plaintext along with a Chaum-Pedersen proof (see DECRYPT_OUTPUT_TYPE).
+    """
     object_id, seed, nonce, c = decrypt_input
     plaintext = c.decrypt(secret_key)
     proof = make_constant_chaum_pedersen(c, plaintext, nonce, public_key, seed)
@@ -246,13 +252,15 @@ def ray_tally_everything(
 
     start_time = timer()
 
-    # immediately returns a list of futures and launches the computation,
+    # This immediately returns a list of futures and launches the computation,
     # so the actual type is List[ray.ObjectID], not List[CiphertextBallot].
     cballot_refs: List[ray.ObjectID] = [
         r_encrypt.remote(r_ied, r_cec, r_seed_hash, t) for t in inputs
     ]
 
-    tally: TALLY_TYPE = ray_tally_ballots(cballot_refs)
+    # We're now starting a computation on the tally even though we don't have
+    # the ballots computed yet. Ray will deal with scheduling the computation.
+    tally: TALLY_TYPE = ray.get(ray_tally_ballots(cballot_refs))
 
     # At this point, all of the CiphertextBallots are spread out across the cluster.
     # We need to bring them back here, so we can ultimately write them out.
