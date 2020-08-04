@@ -16,13 +16,13 @@ pydocstyle = "*"
 gmpy2 = "==2.1.0b4"
 numpy = '==1.18.2'
 pandas = '==1.0.4'
-hypothesis = "==5.15.1"
+hypothesis = "==5.23.11"
 typish = '*'
 jsons = '==1.1.2'
 tqdm = "4.47.0"
 cryptography = "2.9.2"
 ray = "0.8.6"
-electionguard = {editable = true, git = "https://github.com/microsoft/electionguard-python.git"}
+electionguard = {editable = true, git = "https://github.com/microsoft/electionguard-python.git", ref = "temporary/omnibus-fixes"}
 
 [requires]
 python_version = "3.8"

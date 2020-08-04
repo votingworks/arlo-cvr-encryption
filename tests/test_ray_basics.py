@@ -11,7 +11,7 @@ from electionguard.elgamal import (
 from electionguard.group import ElementModP, ElementModQ, int_to_q
 from electionguard.nonces import Nonces
 
-from arlo_e2e.ray_helpers import ray_init_localhost
+from arlo_e2e.ray_helpers import ray_init_localhost, ray_shutdown_localhost
 
 
 @ray.remote
@@ -31,15 +31,19 @@ def r_square(i: int) -> int:
 
 
 class TestRayBasics(unittest.TestCase):
-    def test_hello_world(self) -> None:
+    def setUp(self) -> None:
         ray_init_localhost()
+
+    def tearDown(self) -> None:
+        ray_shutdown_localhost()
+
+    def test_hello_world(self) -> None:
         inputs = range(0, 1000)
         serial_outputs = [i * i for i in inputs]
         parallel_outputs = ray.get([r_square.remote(i) for i in inputs])
         self.assertEqual(serial_outputs, parallel_outputs)
 
     def test_electionguard_basics(self) -> None:
-        ray_init_localhost()
         plaintexts = range(0, 1000)
         nonces = Nonces(int_to_q(3))
         keypair = elgamal_keypair_random()

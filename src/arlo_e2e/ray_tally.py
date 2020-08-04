@@ -5,22 +5,6 @@ from timeit import default_timer as timer
 from typing import Optional, List, Tuple, Sequence, Dict, Final, Union
 
 import ray
-from electionguard.ballot import PlaintextBallot, CiphertextBallot
-from electionguard.chaum_pedersen import make_constant_chaum_pedersen
-from electionguard.election import (
-    CiphertextElectionContext,
-    InternalElectionDescription,
-)
-from electionguard.elgamal import (
-    elgamal_keypair_random,
-    elgamal_keypair_from_secret,
-    elgamal_add,
-)
-from electionguard.encrypt import encrypt_ballot
-from electionguard.group import ElementModQ, rand_q, add_q, ElementModP
-from electionguard.nonces import Nonces
-from electionguard.utils import get_optional
-
 from arlo_e2e.dominion import DominionCSV
 from arlo_e2e.ray_helpers import shard_list
 from arlo_e2e.tally import (
@@ -34,6 +18,22 @@ from arlo_e2e.tally import (
     _ciphertext_ballot_to_accepted,
     SelectionTally,
 )
+from electionguard.ballot import PlaintextBallot, CiphertextBallot
+from electionguard.chaum_pedersen import make_constant_chaum_pedersen
+from electionguard.election import (
+    CiphertextElectionContext,
+    InternalElectionDescription,
+    make_ciphertext_election_context,
+)
+from electionguard.elgamal import (
+    elgamal_keypair_random,
+    elgamal_keypair_from_secret,
+    elgamal_add,
+)
+from electionguard.encrypt import encrypt_ballot
+from electionguard.group import ElementModQ, rand_q, add_q, ElementModP
+from electionguard.nonces import Nonces
+from electionguard.utils import get_optional
 
 # High-level design: What Ray gives us is the ability to call a remote method -- decorated with
 # @ray.remote, called with methodname.remote(args), returning a ray.ObjectID immediately. That
@@ -224,7 +224,7 @@ def ray_tally_everything(
         public_key = tmp.public_key
 
     cec = ray.put(
-        CiphertextElectionContext(
+        make_ciphertext_election_context(
             number_of_guardians=1,
             quorum=1,
             elgamal_public_key=public_key,

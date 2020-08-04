@@ -9,12 +9,18 @@ from hypothesis import settings, given, HealthCheck, Phase
 from hypothesis.strategies import booleans
 
 from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.ray_helpers import ray_init_localhost
+from arlo_e2e.ray_helpers import ray_init_localhost, ray_shutdown_localhost
 from arlo_e2e.ray_tally import ray_tally_everything
 from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 
 
 class TestRayTallies(unittest.TestCase):
+    def setUp(self) -> None:
+        ray_init_localhost()
+
+    def tearDown(self) -> None:
+        ray_shutdown_localhost()
+
     @given(dominion_cvrs(), elgamal_keypairs(), booleans())
     @settings(
         deadline=timedelta(milliseconds=50000),
@@ -34,7 +40,6 @@ class TestRayTallies(unittest.TestCase):
         _, ballots, _ = cvrs.to_election_description()
         assert len(ballots) > 0, "can't have zero ballots!"
 
-        ray_init_localhost()  # safe to call multiple times, unlike ray.init()
         if use_keypair:
             tally = ray_tally_everything(
                 cvrs, verbose=True, secret_key=keypair.secret_key

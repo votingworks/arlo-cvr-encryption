@@ -20,6 +20,13 @@ def ray_init_localhost(num_cpus: int = -1) -> None:
         ray_init_serializers()
 
 
+def ray_shutdown_localhost() -> None:
+    """
+    Shuts down Ray. Opposite of `ray_init_localhost`.
+    """
+    ray.shutdown()
+
+
 def ray_init_serializers() -> None:
     """
     Configures Ray's serialization to work properly with ElectionGuard.

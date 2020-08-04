@@ -4,6 +4,8 @@ from multiprocessing.pool import Pool
 from timeit import default_timer as timer
 from typing import Tuple, List, Optional, Dict, NamedTuple, Sequence
 
+from arlo_e2e.dominion import DominionCSV
+from arlo_e2e.metadata import ElectionMetadata
 from electionguard.ballot import (
     PlaintextBallot,
     CiphertextAcceptedBallot,
@@ -19,6 +21,7 @@ from electionguard.election import (
     InternalElectionDescription,
     CiphertextElectionContext,
     ElectionDescription,
+    make_ciphertext_election_context,
 )
 from electionguard.elgamal import (
     ElGamalCiphertext,
@@ -40,9 +43,6 @@ from electionguard.nonces import Nonces
 from electionguard.serializable import Serializable
 from electionguard.utils import get_optional
 from tqdm import tqdm
-
-from arlo_e2e.dominion import DominionCSV
-from arlo_e2e.metadata import ElectionMetadata
 
 
 def _encrypt(
@@ -461,7 +461,7 @@ def fast_tally_everything(
         verbose,
     )
 
-    cec = CiphertextElectionContext(
+    cec = make_ciphertext_election_context(
         number_of_guardians=1,
         quorum=1,
         elgamal_public_key=public_key,
