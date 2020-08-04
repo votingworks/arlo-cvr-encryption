@@ -21,7 +21,7 @@ class TestRayTallies(unittest.TestCase):
     def tearDown(self) -> None:
         ray_shutdown_localhost()
 
-    @given(dominion_cvrs(), elgamal_keypairs(), booleans())
+    @given(dominion_cvrs(300), elgamal_keypairs(), booleans())
     @settings(
         deadline=timedelta(milliseconds=50000),
         suppress_health_check=[HealthCheck.too_slow],
@@ -29,7 +29,7 @@ class TestRayTallies(unittest.TestCase):
         # disabling the "shrink" phase, because it runs very slowly
         phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
     )
-    def test_end_to_end(
+    def test_ray_end_to_end(
         self, input: str, keypair: ElGamalKeyPair, use_keypair: bool
     ) -> None:
         coverage.process_startup()  # necessary for coverage testing to work in parallel
@@ -46,4 +46,4 @@ class TestRayTallies(unittest.TestCase):
             )
         else:
             tally = ray_tally_everything(cvrs, verbose=True)
-        self.assertTrue(tally.all_proofs_valid(verbose=True))
+        self.assertTrue(tally.all_proofs_valid(verbose=False))

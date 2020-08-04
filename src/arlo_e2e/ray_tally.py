@@ -72,17 +72,17 @@ will be the work unit.
 
 @ray.remote
 def r_encrypt(
-    ied: ray.ObjectID,
-    cec: ray.ObjectID,
-    seed_hash: ray.ObjectID,
+    ied: InternalElectionDescription,
+    cec: CiphertextElectionContext,
+    seed_hash: ElementModQ,
     input_tuple: Tuple[PlaintextBallot, ElementModQ],
 ) -> CiphertextBallot:
-    l_ied: InternalElectionDescription = ray.get(ied)
-    l_cec: CiphertextElectionContext = ray.get(cec)
-    l_seed_hash: ElementModQ = ray.get(seed_hash)
+    # l_ied: InternalElectionDescription = ray.get(ied)
+    # l_cec: CiphertextElectionContext = ray.get(cec)
+    # l_seed_hash: ElementModQ = ray.get(seed_hash)
     b, n = input_tuple
     return get_optional(
-        encrypt_ballot(b, l_ied, l_cec, l_seed_hash, n, should_verify_proofs=False)
+        encrypt_ballot(b, ied, cec, seed_hash, n, should_verify_proofs=False)
     )
 
 
@@ -124,7 +124,7 @@ def r_tally(ptallies: Sequence[ray.ObjectID]) -> TALLY_TYPE:
     return result
 
 
-def ray_tally_ballots(cballots: List[ray.ObjectID]) -> ray.ObjectID:
+def ray_tally_ballots(cballots: List[ray.ObjectID]) -> TALLY_TYPE:
     """
     The front-end for parallel ballot tallies. The input is a list of ballots, which could be
     really be a list of futures that haven't yet been computed yet. The list is sharded up
@@ -138,16 +138,14 @@ def ray_tally_ballots(cballots: List[ray.ObjectID]) -> ray.ObjectID:
     if len(cballots) == 1:
         ballot0: Union[CiphertextBallot, TALLY_TYPE] = ray.get(cballots[0])
         if isinstance(ballot0, CiphertextBallot):
-            return ray.put(_cballot_to_partial_tally(ballot0))
+            return _cballot_to_partial_tally(ballot0)
         else:
-            return cballots[0]
+            return ballot0
 
     shards: Sequence[Sequence[ray.ObjectID]] = shard_list(cballots, BALLOTS_PER_SHARD)
     partial_tallies: List[ray.ObjectID] = [r_tally.remote(shard) for shard in shards]
 
-    # This recursion is cool. No actual computation will be done for the tallying, but all
-    # of the computations will be set up, their dependencies sorted, and will launch whenever
-    # the external caller of tally_ballots calls ray.get() on the result.
+    assert len(partial_tallies) < len(cballots), "recursion broken"
     return ray_tally_ballots(partial_tallies)
 
 
@@ -223,16 +221,16 @@ def ray_tally_everything(
         assert tmp is not None, "unexpected failure with keypair computation"
         public_key = tmp.public_key
 
-    cec = ray.put(
-        make_ciphertext_election_context(
-            number_of_guardians=1,
-            quorum=1,
-            elgamal_public_key=public_key,
-            description_hash=ed.crypto_hash(),
-        )
+    cec = make_ciphertext_election_context(
+        number_of_guardians=1,
+        quorum=1,
+        elgamal_public_key=public_key,
+        description_hash=ed.crypto_hash(),
     )
+    r_cec = ray.put(cec)
 
-    ied = ray.put(InternalElectionDescription(ed))
+    ied = InternalElectionDescription(ed)
+    r_ied = ray.put(ied)
 
     if seed_hash is None:
         seed_hash = rand_q()
@@ -251,33 +249,27 @@ def ray_tally_everything(
     # immediately returns a list of futures and launches the computation,
     # so the actual type is List[ray.ObjectID], not List[CiphertextBallot].
     cballot_refs: List[ray.ObjectID] = [
-        r_encrypt.remote(ied, cec, r_seed_hash, t) for t in inputs
+        r_encrypt.remote(r_ied, r_cec, r_seed_hash, t) for t in inputs
     ]
 
-    tally_ref = ray_tally_ballots(cballot_refs)
-
-    # Okay, let's launch that computation!
-    tally: TALLY_TYPE = ray.get(tally_ref)
+    tally: TALLY_TYPE = ray_tally_ballots(cballot_refs)
 
     # At this point, all of the CiphertextBallots are spread out across the cluster.
     # We need to bring them back here, so we can ultimately write them out.
-    cballots: List[CiphertextBallot] = [ray.get(x) for x in cballot_refs]
+    cballots: List[CiphertextBallot] = ray.get(cballot_refs)
+    assert (
+        len(cballots) == rows
+    ), f"missing ballots? only have {len(cballots)} of {rows}"
 
     tabulate_time = timer()
 
     _log_and_print(
-        f"Encryption and tabulation time: {tabulate_time - start_time: .3f} sec",
-        verbose,
-    )
-    _log_and_print(
-        f"Encryption and tabulation rate: {rows / (tabulate_time - start_time): .3f} ballot/sec",
+        f"Encryption and tabulation: {rows} ballots / {tabulate_time - start_time: .3f} sec = {rows / (tabulate_time - start_time): .3f} ballot/sec",
         verbose,
     )
 
     assert tally is not None, "tally failed!"
 
-    if verbose:  # pragma: no cover
-        print("\nDecryption & Proofs: ")
     decrypted_tally = ray_decrypt_tally(tally, r_public_key, r_secret_key, seed_hash)
 
     # Sanity-checking logic: make sure we don't have any unexpected keys, and that the decrypted totals

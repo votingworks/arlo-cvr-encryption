@@ -4,14 +4,13 @@ from io import StringIO
 from multiprocessing import Pool, cpu_count
 
 import coverage
+from arlo_e2e.dominion import read_dominion_csv
+from arlo_e2e.tally import fast_tally_everything
+from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 from electionguard.elgamal import ElGamalKeyPair
 from electionguardtest.elgamal import elgamal_keypairs
 from hypothesis import settings, given, HealthCheck, Phase
 from hypothesis.strategies import booleans
-
-from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.tally import fast_tally_everything
-from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 
 
 class TestFastTallies(unittest.TestCase):
@@ -41,5 +40,6 @@ class TestFastTallies(unittest.TestCase):
             )
         else:
             tally = fast_tally_everything(cvrs, pool, verbose=True)
+
         self.assertTrue(tally.all_proofs_valid(verbose=True))
         pool.close()

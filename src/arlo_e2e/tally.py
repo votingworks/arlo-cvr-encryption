@@ -503,6 +503,10 @@ def fast_tally_everything(
         f"Tabulation rate: {rows / (eg_tabulate_time - eg_encrypt_time): .3f} ballot/sec",
         verbose,
     )
+    _log_and_print(
+        f"Encryption and tabulation: {rows} ballots / {eg_tabulate_time - dlog_prime_time: .3f} sec = {rows / (eg_tabulate_time - dlog_prime_time): .3f} ballot/sec",
+        verbose,
+    )
 
     assert tally is not None, "tally failed!"
 
