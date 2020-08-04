@@ -5,7 +5,6 @@ from typing import Optional
 
 import pandas as pd
 from electionguard.ballot_box import BallotBox
-from electionguard.ballot_store import BallotStore
 from electionguard.decrypt_with_secrets import decrypt_ballot_with_secret
 from electionguard.election import InternalElectionDescription
 from electionguard.encrypt import encrypt_ballot, EncryptionDevice
@@ -225,7 +224,6 @@ class TestDominionHypotheses(unittest.TestCase):
         ied = InternalElectionDescription(state.ed)
         ballot_box = BallotBox(ied, state.cec)
 
-        store = BallotStore()
         seed_hash = EncryptionDevice("Location").get_hash()
         nonces = Nonces(seed)[0 : len(state.ballots)]
 

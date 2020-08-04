@@ -60,7 +60,7 @@ def _encode_list_as_csv(
 
 
 @composite
-def dominion_cvrs(draw: _DrawType):
+def dominion_cvrs(draw: _DrawType, max_rows: int = 300):
     """
     This strategy creates a multiline text string, with comma-separated-values, corresponding to the
     many different styles of Dominion CVRs that we might see. For the following fields, the returned
@@ -72,7 +72,7 @@ def dominion_cvrs(draw: _DrawType):
     Write-in votes are normally represented as just a 0/1 slot, like any other vote; they're not included
     in the output of this strategy.
     """
-    num_cvrs: int = draw(integers(1, 300))
+    num_cvrs: int = draw(integers(1, max_rows))
     num_referenda: int = draw(integers(1, 5))
     max_candidates_per_contest: int = draw(integers(1, 5))
     num_candidates_per_contest: List[int] = draw(

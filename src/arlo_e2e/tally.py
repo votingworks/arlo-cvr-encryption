@@ -4,6 +4,8 @@ from multiprocessing.pool import Pool
 from timeit import default_timer as timer
 from typing import Tuple, List, Optional, Dict, NamedTuple, Sequence
 
+from arlo_e2e.dominion import DominionCSV
+from arlo_e2e.metadata import ElectionMetadata
 from electionguard.ballot import (
     PlaintextBallot,
     CiphertextAcceptedBallot,
@@ -19,6 +21,7 @@ from electionguard.election import (
     InternalElectionDescription,
     CiphertextElectionContext,
     ElectionDescription,
+    make_ciphertext_election_context,
 )
 from electionguard.elgamal import (
     ElGamalCiphertext,
@@ -40,9 +43,6 @@ from electionguard.nonces import Nonces
 from electionguard.serializable import Serializable
 from electionguard.utils import get_optional
 from tqdm import tqdm
-
-from arlo_e2e.dominion import DominionCSV
-from arlo_e2e.metadata import ElectionMetadata
 
 
 def _encrypt(
@@ -432,9 +432,6 @@ def fast_tally_everything(
 
     For parallelism, a `multiprocessing.pool.Pool` may be provided, and should result in significant
     speedups on multicore computers. If absent, the computation will proceed sequentially.
-
-    *WARNING: The CiphertextBallots in the results will have their encryption nonces inside.
-    Be careful that you don't serialize these.*
     """
     rows, cols = cvrs.data.shape
 
@@ -464,7 +461,7 @@ def fast_tally_everything(
         verbose,
     )
 
-    cec = CiphertextElectionContext(
+    cec = make_ciphertext_election_context(
         number_of_guardians=1,
         quorum=1,
         elgamal_public_key=public_key,
@@ -504,6 +501,10 @@ def fast_tally_everything(
     )
     _log_and_print(
         f"Tabulation rate: {rows / (eg_tabulate_time - eg_encrypt_time): .3f} ballot/sec",
+        verbose,
+    )
+    _log_and_print(
+        f"Encryption and tabulation: {rows} ballots / {eg_tabulate_time - dlog_prime_time: .3f} sec = {rows / (eg_tabulate_time - dlog_prime_time): .3f} ballot/sec",
         verbose,
     )
 

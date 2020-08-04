@@ -41,11 +41,7 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> N
     set_serializers()
     set_deserializers()
 
-    # Note: occurrences of os.sep in this function are a workaround for an ElectionGuard bug,
-    #   where it's incorrectly handing file paths. Once that bug is fixed, we can remove every
-    #   instance of os.sep here.
-
-    results_dir = results_dir + os.sep
+    results_dir = results_dir
     log_info("write_fast_tally: starting!")
     if not path.exists(results_dir):
         mkdir(results_dir)
@@ -78,7 +74,7 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> N
         # it wedge because it's trying to digest a million filenmes.
 
         ballot_name_prefix = ballot_name[0:4]  # letter b plus first three digits
-        this_ballot_dir = path.join(ballots_dir, ballot_name_prefix) + os.sep
+        this_ballot_dir = path.join(ballots_dir, ballot_name_prefix)
         _mkdir_helper(this_ballot_dir)
         ballot.to_json_file(ballot_name, this_ballot_dir)
 
