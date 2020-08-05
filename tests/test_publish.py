@@ -15,7 +15,7 @@ from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 
 
 class TestTallyPublishing(unittest.TestCase):
-    @given(dominion_cvrs(), booleans())
+    @given(dominion_cvrs(max_rows=50), booleans())
     @settings(
         deadline=timedelta(milliseconds=50000),
         suppress_health_check=[HealthCheck.too_slow],

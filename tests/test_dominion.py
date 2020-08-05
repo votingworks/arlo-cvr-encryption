@@ -198,7 +198,7 @@ class TestDominionBasics(unittest.TestCase):
 
 
 class TestDominionHypotheses(unittest.TestCase):
-    @given(dominion_cvrs())
+    @given(dominion_cvrs(max_rows=50))
     @settings(
         deadline=timedelta(milliseconds=10000),
         suppress_health_check=[HealthCheck.too_slow],

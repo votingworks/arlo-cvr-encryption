@@ -14,7 +14,7 @@ from hypothesis.strategies import booleans
 
 
 class TestFastTallies(unittest.TestCase):
-    @given(dominion_cvrs(), elgamal_keypairs(), booleans())
+    @given(dominion_cvrs(max_rows=50), elgamal_keypairs(), booleans())
     @settings(
         deadline=timedelta(milliseconds=50000),
         suppress_health_check=[HealthCheck.too_slow],

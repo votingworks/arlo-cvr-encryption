@@ -21,7 +21,7 @@ class TestRayTallies(unittest.TestCase):
     def tearDown(self) -> None:
         ray_shutdown_localhost()
 
-    @given(dominion_cvrs(300), elgamal_keypairs(), booleans())
+    @given(dominion_cvrs(max_rows=50), elgamal_keypairs(), booleans())
     @settings(
         deadline=timedelta(milliseconds=50000),
         suppress_health_check=[HealthCheck.too_slow],
