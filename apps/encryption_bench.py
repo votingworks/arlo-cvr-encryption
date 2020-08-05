@@ -2,7 +2,7 @@
 # file in Dominion format. It then parses and encrypts the whole thing, including computing the decrypted tallies.
 import multiprocessing
 import sys
-from multiprocessing import cpu_count
+from os import cpu_count
 from multiprocessing.pool import Pool
 from timeit import default_timer as timer
 
@@ -49,7 +49,7 @@ def run_bench(filename: str, pool: Pool) -> None:
     print(f"    Ray rate:    {rows / (rtally_end - rtally_start): .3f} ballots/sec")
 
     print(
-        f"    Ray speedup: {(tally_end - tally_start) / (rtally_end - rtally_start) : .3f} (>1.0 = faster, <1.0 = slower)"
+        f"    Ray speedup: {(tally_end - tally_start) / (rtally_end - rtally_start) : .3f} (>1.0 = ray is faster, <1.0 = ray is slower)"
     )
 
 
@@ -68,4 +68,5 @@ if __name__ == "__main__":
 # Numbers from a 6-core machine for the encryption phase:
 #   0.217 ballot/sec with no pool
 #   1.239 ballot/sec with pool
-# speedup = 5.71x
+#   speedup = 5.71x
+# Ray seems to run at 99% the speed of the multiprocessing pool.

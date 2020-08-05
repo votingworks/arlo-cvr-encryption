@@ -2,10 +2,11 @@ import functools
 from dataclasses import dataclass
 from multiprocessing.pool import Pool
 from timeit import default_timer as timer
-from typing import Tuple, List, Optional, Dict, NamedTuple, Sequence
+from typing import Tuple, List, Optional, Dict, NamedTuple, Sequence, Union, Final
 
 from arlo_e2e.dominion import DominionCSV
 from arlo_e2e.metadata import ElectionMetadata
+from arlo_e2e.utils import shard_list
 from electionguard.ballot import (
     PlaintextBallot,
     CiphertextAcceptedBallot,
@@ -107,73 +108,88 @@ def fast_encrypt_ballots(
     return result
 
 
-def _accumulate(
-    data: Tuple[str, List[Tuple[Optional[ElementModQ], ElGamalCiphertext]]]
-) -> Tuple[str, Optional[ElementModQ], ElGamalCiphertext]:  # pragma: no cover
-    object_id, ciphertexts = data
-
-    nonces: List[ElementModQ] = [x[0] for x in ciphertexts if x[0] is not None]
-    encrypted_counters: List[ElGamalCiphertext] = [x[1] for x in ciphertexts]
-
-    # if we're missing any of the nonces, because they were None, then we don't have a defined nonce_sum
-    nonce_sum = None if len(nonces) != len(encrypted_counters) else add_q(*nonces)
-    counter_sum = elgamal_add(*encrypted_counters)
-
-    return object_id, nonce_sum, counter_sum
-
-
 # object_id -> nonce, ciphertext
 TALLY_TYPE = Dict[str, Tuple[Optional[ElementModQ], ElGamalCiphertext]]
+
+
+def cballot_to_partial_tally(cballot: CiphertextBallot) -> TALLY_TYPE:
+    """
+    Given a `CiphertextBallot`, extracts the relevant nonces and ciphertext counters used for
+    our tallies.
+    """
+    result: TALLY_TYPE = {}
+    for c in cballot.contests:
+        for s in c.ballot_selections:
+            if not s.is_placeholder_selection:
+                result[s.object_id] = (s.nonce, s.ciphertext)
+    return result
+
+
+def sequential_tally(
+    ptallies: Sequence[Union[TALLY_TYPE, CiphertextBallot]],
+) -> TALLY_TYPE:
+    """
+    Internal function: sequentially tallies all of the ciphertext ballots, or other partial tallies,
+    and returns a partial tally.
+    """
+    result: TALLY_TYPE = {}
+    for ptally in ptallies:
+        # we want do our computation purely in terms of TALLY_TYPE, so we'll convert CiphertextBallots
+        if isinstance(ptally, CiphertextBallot):
+            ptally = cballot_to_partial_tally(ptally)
+
+        for k in ptally.keys():
+            if k not in result:
+                result[k] = ptally[k]
+            else:
+                nonce_sum, counter_sum = result[k]
+                nonce_partial, counter_partial = ptally[k]
+                nonce_sum = (
+                    add_q(nonce_sum, nonce_partial)
+                    if (nonce_sum is not None and nonce_partial is not None)
+                    else None
+                )
+                counter_sum = elgamal_add(counter_sum, counter_partial)
+                result[k] = (nonce_sum, counter_sum)
+    return result
+
+
+BALLOTS_PER_SHARD: Final[int] = 10
+"""
+For ballot tallying, we'll "shard" the list of ballots up into groups, and that
+will be the work unit.
+"""
 
 
 def fast_tally_ballots(
     ballots: Sequence[CiphertextBallot],
     pool: Optional[Pool] = None,
-    show_progress: bool = True,
+    verbose: bool = False,
 ) -> TALLY_TYPE:
     """
     This function does a tally of the given list of ballots, returning a dictionary that maps
     from selection object_ids to the ElGamalCiphertext that corresponds to the encrypted tally
     of that selection. An optional `Pool` may be passed in, and it will be used to evaluate
     the ElGamal accumulation in parallel. If it's absent, then the accumulation will happen
-    sequentially. Also, a progress bar is displayed, by default, and can be disabled by
-    setting `show_progress` to `False`.
+    sequentially. Progress bars are not currently supported.
     """
-    messages: Dict[str, List[Tuple[Optional[ElementModQ], ElGamalCiphertext]]] = {}
 
-    # First, we fill up this dictionary with all the individual ciphertexts. This rearrangement
-    # of the data makes it much easier to run the tally in parallel.
-    for b in ballots:
-        for c in b.contests:
-            for s in c.ballot_selections:
-                if not s.is_placeholder_selection:
-                    if s.object_id not in messages:
-                        messages[s.object_id] = []
+    iter_count = 1
+    ballots_iter: Sequence[Union[TALLY_TYPE, CiphertextBallot]] = ballots
 
-                    # Nonces are used later to generate Chaum-Pedersen proofs, but for
-                    # now we're just passing them along.
-                    messages[s.object_id].append((s.nonce, s.ciphertext))
+    while True:
+        if pool is None or len(ballots_iter) <= BALLOTS_PER_SHARD:
+            return sequential_tally(ballots_iter)
 
-    # Now, we're creating the list of tuples that will be the arguments to _accumulate,
-    # for running in parallel.
-    inputs = [(object_id, messages[object_id]) for object_id in messages.keys()]
-    if show_progress:  # pragma: no cover
-        inputs = tqdm(list(inputs))
+        shards = shard_list(ballots_iter, BALLOTS_PER_SHARD)
+        if verbose:
+            print(f"Tally shards: {len(shards)}")
+        partial_tallies: Sequence[TALLY_TYPE] = pool.map(
+            func=sequential_tally, iterable=shards
+        )
 
-    # Performance note: as written, we'll create one task for every column of ballot selections. So,
-    # if there are millions of ballots but only 100 columns of selections, there will be only
-    # 100-way parallelism available. The way to gain additional parallelism is to subdivide
-    # these lists if they're really long. Each list can be passed to _accumulate() separately,
-    # for much more parallelism, and then you have to accumulate all those intermediate results.
-
-    # The tallying process appears to run 500x faster than the encryption process, so there's less
-    # need to make this scale.
-
-    result: List[Tuple[str, Optional[ElementModQ], ElGamalCiphertext]] = [
-        _accumulate(x) for x in inputs
-    ] if pool is None else pool.map(func=_accumulate, iterable=inputs)
-
-    return {k: (n, v) for k, n, v in result}
+        iter_count += 1
+        ballots_iter = partial_tallies
 
 
 # object_id, seed, nonce, ciphertext

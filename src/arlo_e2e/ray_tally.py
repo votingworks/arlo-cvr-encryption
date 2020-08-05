@@ -2,11 +2,11 @@
 # code in tally.py, and should yield identical results, just much faster on big cluster computers.
 
 from timeit import default_timer as timer
-from typing import Optional, List, Tuple, Sequence, Dict, Final, Union
+from typing import Optional, List, Tuple, Sequence, Dict, Final
 
 import ray
 from arlo_e2e.dominion import DominionCSV
-from arlo_e2e.ray_helpers import shard_list
+from arlo_e2e.utils import shard_list
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
     _log_and_print,
@@ -17,6 +17,7 @@ from arlo_e2e.tally import (
     SelectionInfo,
     _ciphertext_ballot_to_accepted,
     SelectionTally,
+    sequential_tally,
 )
 from electionguard.ballot import PlaintextBallot, CiphertextBallot
 from electionguard.chaum_pedersen import make_constant_chaum_pedersen
@@ -28,10 +29,9 @@ from electionguard.election import (
 from electionguard.elgamal import (
     elgamal_keypair_random,
     elgamal_keypair_from_secret,
-    elgamal_add,
 )
 from electionguard.encrypt import encrypt_ballot
-from electionguard.group import ElementModQ, rand_q, add_q, ElementModP
+from electionguard.group import ElementModQ, rand_q, ElementModP
 from electionguard.nonces import Nonces
 from electionguard.utils import get_optional
 
@@ -67,7 +67,7 @@ will be the work unit.
 # Design thoughts: we could redo r_encrypt to take a list of input tuples, and return a list of ballots.
 # This would allow for bigger data shards. At least right now, it's convenient that the remote call gives
 # us back a list of ObjectIDs, so we can shard that up for the tallying process. Tallying is much faster,
-# per ballot, than encrypting.
+# per ballot, than encrypting, so the sharding we do there is more essential than it would be here.
 
 
 @ray.remote
@@ -86,58 +86,20 @@ def r_encrypt(
     )
 
 
-def _cballot_to_partial_tally(cballot: CiphertextBallot) -> TALLY_TYPE:
-    """
-    Given a `CiphertextBallot`, extracts the relevant nonces and ciphertext counters used for
-    our tallies.
-    """
-    result: TALLY_TYPE = {}
-    for c in cballot.contests:
-        for s in c.ballot_selections:
-            if not s.is_placeholder_selection:
-                result[s.object_id] = (s.nonce, s.ciphertext)
-    return result
-
-
-def _sequential_tally(
-    ptallies: Sequence[Union[TALLY_TYPE, CiphertextBallot]]
-) -> TALLY_TYPE:
-    result: TALLY_TYPE = {}
-    for tally in ptallies:
-        # we want do our computation purely in terms of TALLY_TYPE, so we'll convert CiphertextBallots
-        if isinstance(tally, CiphertextBallot):
-            tally = _cballot_to_partial_tally(tally)
-
-        for k in tally.keys():
-            if k not in result:
-                result[k] = tally[k]
-            else:
-                nonce_sum, counter_sum = result[k]
-                nonce_partial, counter_partial = tally[k]
-                nonce_sum = (
-                    add_q(nonce_sum, nonce_partial)
-                    if (nonce_sum is not None and nonce_partial is not None)
-                    else None
-                )
-                counter_sum = elgamal_add(counter_sum, counter_partial)
-                result[k] = (nonce_sum, counter_sum)
-    return result
-
-
 @ray.remote
 def r_tally(ptallies: Sequence[ray.ObjectID]) -> TALLY_TYPE:
     """
     Remotely tallies a sequence of either encrypted ballots or partial tallies.
     On the remote node, the computation will be sequential.
     """
-    return _sequential_tally(ray.get(ptallies))
+    return sequential_tally(ray.get(ptallies))
 
 
 def ray_tally_ballots(ptallies: Sequence[ray.ObjectID]) -> ray.ObjectID:
     """
-    Launches a parallel tally tree, with a fanout of BALLOTS_PER_SHARD. Returns
-    a reference to the result, which the caller will then need to call `ray.get()`
-    to retrieve.
+    Launches a parallel tally reduction tree, with a fanout of BALLOTS_PER_SHARD. Returns
+    a Ray ObjectID reference to the future result, which the caller will then need to call
+    `ray.get()` to retrieve.
     """
 
     if len(ptallies) <= BALLOTS_PER_SHARD:
@@ -212,7 +174,8 @@ def ray_tally_everything(
     parameter. If absent, a random keypair is generated and used. Similarly, if a `seed_hash` or
     `master_nonce` is not provided, random ones are generated and used.
 
-    For parallelism, Ray is used. Make sure you've called `ray.init()` before calling this.
+    For parallelism, Ray is used. Make sure you've called `ray.init()` or `ray_localhost_init()`
+    before calling this.
     """
     rows, cols = cvrs.data.shape
 
