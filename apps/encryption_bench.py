@@ -42,6 +42,10 @@ def run_bench(filename: str, pool: Pool) -> None:
     rtally_end = timer()
     assert rtally.all_proofs_valid(verbose=True), "proof failure!"
 
+    # Note: we're not testing here for identical tallies. They're going to differ because
+    # of the random nonces and such generated internally. In tests/test_ray_tally.py,
+    # the method test_ray_and_multiprocessing_agree does the extra work to test for equality.
+
     print(f"OVERALL PERFORMANCE")
     print(f"    Pool time:   {tally_end - tally_start: .3f} sec")
     print(f"    Pool rate:   {rows / (tally_end - tally_start): .3f} ballots/sec")

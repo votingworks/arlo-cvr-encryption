@@ -1,6 +1,6 @@
 # Uses Ray to achieve cluster parallelism for tallying. Note that this code is patterned closely after the
 # code in tally.py, and should yield identical results, just much faster on big cluster computers.
-
+from datetime import datetime
 from timeit import default_timer as timer
 from typing import Optional, List, Tuple, Sequence, Dict, Final
 
@@ -163,6 +163,7 @@ def ray_decrypt_tally(
 def ray_tally_everything(
     cvrs: DominionCSV,
     verbose: bool = True,
+    date: Optional[datetime] = None,
     seed_hash: Optional[ElementModQ] = None,
     master_nonce: Optional[ElementModQ] = None,
     secret_key: Optional[ElementModQ] = None,
@@ -179,7 +180,10 @@ def ray_tally_everything(
     """
     rows, cols = cvrs.data.shape
 
-    ed, ballots, id_map = cvrs.to_election_description()
+    if date is None:
+        date = datetime.now()
+
+    ed, ballots, id_map = cvrs.to_election_description(date=date)
     assert len(ballots) > 0, "can't have zero ballots!"
 
     if secret_key is None:

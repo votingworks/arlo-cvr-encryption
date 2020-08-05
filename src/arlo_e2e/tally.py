@@ -1,8 +1,9 @@
 import functools
 from dataclasses import dataclass
+from datetime import datetime
 from multiprocessing.pool import Pool
 from timeit import default_timer as timer
-from typing import Tuple, List, Optional, Dict, NamedTuple, Sequence, Union, Final
+from typing import Tuple, List, Optional, Dict, NamedTuple, Sequence, Union, Final, Any
 
 from arlo_e2e.dominion import DominionCSV
 from arlo_e2e.metadata import ElectionMetadata
@@ -13,6 +14,7 @@ from electionguard.ballot import (
     BallotBoxState,
     CiphertextBallot,
     from_ciphertext_ballot,
+    _list_eq,
 )
 from electionguard.chaum_pedersen import (
     ConstantChaumPedersenProof,
@@ -344,6 +346,19 @@ class FastTallyEverythingResults(NamedTuple):
     Cryptographic context used in creating the tally.
     """
 
+    def __eq__(self, other: Any) -> bool:
+        return (
+            isinstance(other, FastTallyEverythingResults)
+            and self.metadata == other.metadata
+            and self.election_description == other.election_description
+            and _list_eq(self.encrypted_ballots, other.encrypted_ballots)
+            and self.tally == other.tally
+            and self.context == other.context
+        )
+
+    def __ne__(self, other: Any) -> bool:
+        return not self == other
+
     def all_proofs_valid(
         self,
         pool: Optional[Pool] = None,
@@ -435,6 +450,7 @@ def fast_tally_everything(
     cvrs: DominionCSV,
     pool: Optional[Pool] = None,
     verbose: bool = True,
+    date: Optional[datetime] = None,
     seed_hash: Optional[ElementModQ] = None,
     master_nonce: Optional[ElementModQ] = None,
     secret_key: Optional[ElementModQ] = None,
@@ -451,10 +467,13 @@ def fast_tally_everything(
     """
     rows, cols = cvrs.data.shape
 
+    if date is None:
+        date = datetime.now()
+
     parse_time = timer()
     _log_and_print(f"Rows: {rows}, cols: {cols}", verbose)
 
-    ed, ballots, id_map = cvrs.to_election_description()
+    ed, ballots, id_map = cvrs.to_election_description(date=date)
     assert len(ballots) > 0, "can't have zero ballots!"
 
     if secret_key is None:

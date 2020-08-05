@@ -1,5 +1,5 @@
 import csv
-import datetime
+from datetime import datetime
 from io import StringIO
 from math import floor, isnan
 from typing import (
@@ -268,7 +268,7 @@ class DominionCSV(NamedTuple):
         )
 
     def to_election_description(
-        self,
+        self, date: Optional[datetime] = None
     ) -> Tuple[ElectionDescription, List[PlaintextBallot], Dict[str, str]]:
         """
         Converts this data to a ElectionGuard `ElectionDescription` (having all of the metadata
@@ -277,7 +277,8 @@ class DominionCSV(NamedTuple):
         the name of the candidate (as it appears in the Pandas column).
         """
 
-        date = datetime.datetime.now()
+        if date is None:
+            date = datetime.now()
 
         party_uids = UidMaker("party")
         party_map = {
