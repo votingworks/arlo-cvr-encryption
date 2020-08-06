@@ -9,10 +9,12 @@ from typing import (
     Iterable,
     Optional,
     Type,
+    cast,
 )
 
 import jsons
 from electionguard.logs import log_error
+from electionguard.serializable import Serializable
 from jsons import DecodeError, UnfulfilledArgumentError
 
 T = TypeVar("T")
@@ -122,14 +124,17 @@ def load_file_helper(
         return None
 
 
+ST = TypeVar("ST", bound=Serializable)
+
+
 def load_json_helper(
     root_dir: str,
     file_prefix: str,
-    class_handle: Optional[Type[T]] = None,
+    class_handle: Type[ST],
     file_suffix: str = ".json",
     subdirectory: str = "",
     expected_sha256: Optional[int] = None,
-) -> Optional[T]:  # pragma: no cover
+) -> Optional[ST]:  # pragma: no cover
     """
     Wrapper around JSON deserialization that, given a directory name and file prefix (without
     the ".json" suffix) as well as an optional handle to the class type, will load the contents
@@ -155,21 +160,16 @@ def load_json_helper(
     if file_contents is None:
         return None
 
-    if class_handle is not None:
-        try:
-            result = class_handle.from_json(file_contents)
-        except DecodeError as err:
-            log_error(f"Failed to decode an instance of {class_handle}: {err}")
-            return None
-        except UnfulfilledArgumentError as err:
-            log_error(f"Decoding failure for {class_handle}: {err}")
-            return None
-    else:
-        result = jsons.loads(file_contents)
-    if result is None:
-        log_error(
-            f"failed to convert file ({full_filename}) to its proper internal type"
-        )
+    try:
+        # cast shouldn't be necessary here
+        result = class_handle.from_json(file_contents)
+    except DecodeError as err:
+        log_error(f"Failed to decode an instance of {class_handle}: {err}")
+        return None
+    except UnfulfilledArgumentError as err:
+        log_error(f"Decoding failure for {class_handle}: {err}")
+        return None
+
     return result
 
 
