@@ -104,7 +104,7 @@ def load_file_helper(
 
     try:
         s = os.stat(full_name)
-        if s.st_size == 0:
+        if s.st_size == 0:  # pragma: no cover
             log_error(f"The file ({full_name}) is empty")
             return None
 
@@ -113,28 +113,25 @@ def load_file_helper(
 
             if expected_sha256 is not None:
                 data_hash = sha256_hash(data)
-                if data_hash != expected_sha256:
+                if data_hash != expected_sha256:  # pragma: no cover
                     log_error(
                         f"File {full_name} did not have the expected hash (expected: {expected_sha256}, actual: {data_hash})"
                     )
                     return None
             return data
-    except OSError as e:
+    except OSError as e:  # pragma: no cover
         log_error(f"Error reading file ({full_name}): {e}")
         return None
-
-
-ST = TypeVar("ST", bound=Serializable)
 
 
 def load_json_helper(
     root_dir: str,
     file_prefix: str,
-    class_handle: Type[ST],
+    class_handle: Type[Serializable[T]],
     file_suffix: str = ".json",
     subdirectory: str = "",
     expected_sha256: Optional[int] = None,
-) -> Optional[ST]:  # pragma: no cover
+) -> Optional[T]:
     """
     Wrapper around JSON deserialization that, given a directory name and file prefix (without
     the ".json" suffix) as well as an optional handle to the class type, will load the contents
@@ -163,10 +160,10 @@ def load_json_helper(
     try:
         # cast shouldn't be necessary here
         result = class_handle.from_json(file_contents)
-    except DecodeError as err:
+    except DecodeError as err:  # pragma: no cover
         log_error(f"Failed to decode an instance of {class_handle}: {err}")
         return None
-    except UnfulfilledArgumentError as err:
+    except UnfulfilledArgumentError as err:  # pragma: no cover
         log_error(f"Decoding failure for {class_handle}: {err}")
         return None
 

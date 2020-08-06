@@ -4,7 +4,7 @@ from typing import Dict, Optional, Type
 
 import jsons
 from electionguard.logs import log_error
-from electionguard.serializable import WRITE
+from electionguard.serializable import WRITE, Serializable
 from electionguard.utils import flatmap_optional
 
 from arlo_e2e.utils import (
@@ -12,7 +12,7 @@ from arlo_e2e.utils import (
     sha256_hash,
     load_file_helper,
     compose_filename,
-    ST,
+    T,
 )
 
 
@@ -77,8 +77,11 @@ class Manifest:
         return hash
 
     def read_json_file(
-        self, file_name: str, class_handle: Type[ST], subdirectory: str = "",
-    ) -> Optional[ST]:
+        self,
+        file_name: str,
+        class_handle: Type[Serializable[T]],
+        subdirectory: str = "",
+    ) -> Optional[T]:
         """
         Reads the requested file, by name, returning its contents as a Python object for the given class handle.
         If no hash for the file is present, if the file doesn't match its known hash, or if the JSON deserialization
