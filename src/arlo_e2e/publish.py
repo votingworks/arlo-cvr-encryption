@@ -1,8 +1,6 @@
-import json
-import os
 from multiprocessing.pool import Pool
 from os import path, mkdir
-from typing import Final, Optional, TypeVar, List, Type, cast
+from typing import Final, Optional, TypeVar, List, cast
 
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.election import (
@@ -12,11 +10,11 @@ from electionguard.election import (
 )
 from electionguard.logs import log_error, log_info
 from electionguard.serializable import set_deserializers, Serializable, set_serializers
-from jsons import DecodeError, UnfulfilledArgumentError
 from tqdm import tqdm
 
 from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.tally import FastTallyEverythingResults, SelectionTally
+from arlo_e2e.utils import mkdir_helper, load_json_helper, all_files_in_directory
 
 T = TypeVar("T")
 U = TypeVar("U", bound=Serializable)
@@ -63,7 +61,7 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> N
 
     log_info("write_fast_tally: writing ballots")
     ballots_dir = path.join(results_dir, "ballots")
-    _mkdir_helper(ballots_dir)
+    mkdir_helper(ballots_dir)
     for ballot in tqdm(results.encrypted_ballots):
         ballot_name = ballot.object_id
 
@@ -75,7 +73,7 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> N
 
         ballot_name_prefix = ballot_name[0:4]  # letter b plus first three digits
         this_ballot_dir = path.join(ballots_dir, ballot_name_prefix)
-        _mkdir_helper(this_ballot_dir)
+        mkdir_helper(this_ballot_dir)
         ballot.to_json_file(ballot_name, this_ballot_dir)
 
 
@@ -98,13 +96,13 @@ def load_fast_tally(
         log_error(f"Path ({results_dir}) not found, cannot load the fast-tally")
         return None
 
-    election_description: Optional[ElectionDescription] = _load_helper(
+    election_description: Optional[ElectionDescription] = load_json_helper(
         results_dir, ELECTION_DESCRIPTION, ElectionDescription
     )
     if election_description is None:
         return None
 
-    constants: Optional[ElectionConstants] = _load_helper(
+    constants: Optional[ElectionConstants] = load_json_helper(
         results_dir, CRYPTO_CONSTANTS, ElectionConstants
     )
     if constants is None:
@@ -115,29 +113,29 @@ def load_fast_tally(
         )
         return None
 
-    cec: Optional[CiphertextElectionContext] = _load_helper(
+    cec: Optional[CiphertextElectionContext] = load_json_helper(
         results_dir, CRYPTO_CONTEXT, CiphertextElectionContext
     )
     if cec is None:
         return None
 
-    encrypted_tally: Optional[SelectionTally] = _load_helper(
+    encrypted_tally: Optional[SelectionTally] = load_json_helper(
         results_dir, ENCRYPTED_TALLY, SelectionTally
     )
     if encrypted_tally is None:
         return None
 
-    metadata: Optional[ElectionMetadata] = _load_helper(
+    metadata: Optional[ElectionMetadata] = load_json_helper(
         results_dir, ELECTION_METADATA, ElectionMetadata
     )
     if metadata is None:
         return None
 
     ballots_dir = path.join(results_dir, "ballots")
-    ballot_files = _all_filenames(ballots_dir)
+    ballot_files = all_files_in_directory(ballots_dir)
 
     encrypted_ballots: Optional[List[Optional[CiphertextAcceptedBallot]]] = [
-        _load_helper(".", s, CiphertextAcceptedBallot, file_suffix="")
+        load_json_helper(".", s, CiphertextAcceptedBallot, file_suffix="")
         for s in ballot_files
     ]
     if encrypted_ballots is None or None in encrypted_ballots:
@@ -159,54 +157,3 @@ def load_fast_tally(
             return None
 
     return everything
-
-
-def _mkdir_helper(p: str) -> None:
-    if not path.exists(p):
-        mkdir(p)
-
-
-def _load_helper(
-    dir_name: str,
-    file_prefix: str,
-    class_handle: Optional[Type[U]],
-    file_suffix: str = ".json",
-) -> Optional[T]:  # pragma: no cover
-    filename = path.join(dir_name, file_prefix + file_suffix)
-    try:
-        s = os.stat(filename)
-        if s.st_size == 0:
-            log_error(f"The file ({filename}) is empty")
-            return None
-
-        with open(filename, "r") as subject:
-            data = subject.read()
-            result: Optional[T] = None
-            if class_handle is not None:
-                try:
-                    result = class_handle.from_json(data)
-                except DecodeError as err:
-                    log_error(f"Failed to decode an instance of {class_handle}: {err}")
-                    return None
-                except UnfulfilledArgumentError as err:
-                    log_error(f"Decoding failure for {class_handle}: {err}")
-                    return None
-            else:
-                result = json.loads(data)
-            if result is None:
-                log_error(
-                    f"failed to convert file ({filename}) to its proper internal type"
-                )
-            return result
-
-    except OSError as e:
-        log_error(f"Error reading file ({filename}): {e}")
-        return None
-
-
-def _all_filenames(root_dir: str) -> List[str]:
-    results: List[str] = []
-    for root, dirs, files in os.walk(root_dir):
-        for file in files:
-            results.append(path.join(root, file))
-    return results
