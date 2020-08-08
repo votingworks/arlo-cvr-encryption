@@ -1,6 +1,7 @@
 import shutil
 from dataclasses import dataclass
-from typing import Dict, Optional, Type
+from pathlib import PurePath
+from typing import Dict, Optional, Type, List, Union
 
 import jsons
 from electionguard.logs import log_error
@@ -13,7 +14,27 @@ from arlo_e2e.utils import (
     load_file_helper,
     compose_filename,
     T,
+    compose_manifest_name,
+    mkdir_list_helper,
+    filename_to_manifest_name,
 )
+
+
+@dataclass(eq=True, unsafe_hash=True)
+class ManifestExternal(Serializable):
+    """
+    This class is the on-disk representation of the Manifest class. The only difference is that
+    it doesn't have the `root_dir` field, which wouldn't make sense to write to disk.
+    """
+
+    hashes: Dict[str, int]
+    bytes_written: int = 0
+
+    def to_manifest(self, root_dir: str) -> "Manifest":
+        """
+        Converts this to a Manifest class, suitable for working with in-memory.
+        """
+        return Manifest(root_dir, self.hashes, self.bytes_written)
 
 
 @dataclass(eq=True, unsafe_hash=True)
@@ -28,22 +49,53 @@ class Manifest:
 
     root_dir: str
     hashes: Dict[str, int]
+    bytes_written: int = 0
 
-    def write_file(
-        self, file_name: str, subdirectory: str = "", file_contents: str = ""
+    def to_manifest_external(self) -> ManifestExternal:
+        """
+        Converts this to a ManifestExternal class, suitable for serializing to disk.
+        """
+        return ManifestExternal(self.hashes, self.bytes_written)
+
+    def write_json_file(
+        self,
+        file_name: str,
+        content_obj: Serializable,
+        subdirectories: List[str] = None,
     ) -> int:
         """
         Given a filename, subdirectory, and contents of the file, writes the contents out to the file. As a
         side-effect, the full filename and its contents' hash are remembered in `self.hashes`, to be written
         out later with a call to `write_manifest`.
 
-        :param subdirectory: path to be introduced between `root_dir` and the file; empty-string means no subdirectory
+        :param subdirectories: paths to be introduced between `root_dir` and the file; empty-list means no subdirectory
         :param file_name: name of the file, including any suffix
+        :param content_obj: any ElectionGuard "Serializable" object
         :returns: the SHA256 hash of `file_contents`
         """
+
+        json_txt = content_obj.to_json(strip_privates=True)
+        return self.write_file(file_name, json_txt, subdirectories)
+
+    def write_file(
+        self, file_name: str, file_contents: str, subdirectories: List[str] = None
+    ) -> int:
+        """
+        Given a filename, subdirectory, and contents of the file, writes the contents out to the file. As a
+        side-effect, the full filename and its contents' hash are remembered in `self.hashes`, to be written
+        out later with a call to `write_manifest`.
+
+        :param subdirectories: paths to be introduced between `root_dir` and the file; empty-list means no subdirectory
+        :param file_name: name of the file, including any suffix
+        :param file_contents: string to be written to the file
+        :returns: the SHA256 hash of `file_contents`
+        """
+        mkdir_list_helper(self.root_dir, subdirectories)
         hash = sha256_hash(file_contents)
-        full_name = compose_filename(self.root_dir, file_name, subdirectory)
-        self.hashes[full_name] = hash
+        self.bytes_written += len(file_contents.encode("utf-8"))
+        full_name = compose_filename(self.root_dir, file_name, subdirectories)
+        manifest_name = compose_manifest_name(file_name, subdirectories)
+        self.hashes[manifest_name] = hash
         with open(full_name, WRITE) as f:
             f.write(file_contents)
         return hash
@@ -63,7 +115,7 @@ class Manifest:
 
         # As a side-effect, this will also add a hash for the manifest itself into hashes, but that's
         # something of an oddball case that won't ever matter in practice.
-        return self.write_file("MANIFEST.json", "", jsons.dumps(self.hashes))
+        return self.write_json_file("MANIFEST.json", self.to_manifest_external(), [])
 
     def _get_hash_required(self, filename: str) -> Optional[int]:
         """
@@ -78,48 +130,56 @@ class Manifest:
 
     def read_json_file(
         self,
-        file_name: str,
+        file_name: Union[PurePath, str],
         class_handle: Type[Serializable[T]],
-        subdirectory: str = "",
+        subdirectories: List[str] = None,
     ) -> Optional[T]:
         """
         Reads the requested file, by name, returning its contents as a Python object for the given class handle.
         If no hash for the file is present, if the file doesn't match its known hash, or if the JSON deserialization
         process fails, then `None` will be returned and an error will be logged.
 
-        :param subdirectory: path to be introduced between `root_dir` and the file; empty-string means no subdirectory
+        :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
         :param file_name: name of the file, including any suffix
         :param class_handle: the class, itself, that we're trying to deserialize to (if None, then you get back
           whatever the JSON becomes, e.g., a dict)
         :returns: the contents of the file, or `None` if there was an error
         """
-        full_name = compose_filename(self.root_dir, file_name, subdirectory)
+
+        if isinstance(file_name, PurePath):
+            full_name = file_name
+        else:
+            full_name = compose_filename(self.root_dir, file_name, subdirectories)
+        manifest_name = filename_to_manifest_name(self.root_dir, file_name)
+
         return flatmap_optional(
-            self._get_hash_required(full_name),
+            self._get_hash_required(manifest_name),
             lambda hash: load_json_helper(
                 root_dir=self.root_dir,
-                file_prefix=file_name,
+                file_name=full_name,
                 class_handle=class_handle,
-                file_suffix="",
-                subdirectory=subdirectory,
                 expected_sha256=hash,
             ),
         )
 
-    def read_file(self, file_name: str, subdirectory: str = "") -> Optional[str]:
+    def read_file(
+        self, file_name: str, subdirectories: List[str] = None
+    ) -> Optional[str]:
         """
         Reads the requested file, by name, returning its contents as a Python string.
         If no hash for the file is present, or if the file doesn't match its known
         hash, then `None` will be returned and an error will be logged.
 
-        :param subdirectory: path to be introduced between `root_dir` and the file; empty-string means no subdirectory
+        :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
         :param file_name: name of the file, including any suffix
         :returns: the contents of the file, or `None` if there was an error
         """
-        full_name = compose_filename(self.root_dir, file_name, subdirectory)
+        manifest_name = compose_manifest_name(file_name, subdirectories)
         return flatmap_optional(
-            self._get_hash_required(full_name),
-            lambda hash: load_file_helper(self.root_dir, file_name, subdirectory, hash),
+            self._get_hash_required(manifest_name),
+            lambda hash: load_file_helper(
+                self.root_dir, file_name, subdirectories, hash
+            ),
         )
 
 
@@ -144,7 +204,7 @@ def make_existing_manifest(root_dir: str) -> Optional[Manifest]:
     If the file is missing or something else goes wrong, you could get `None` as a result.
     :param root_dir: a name for the directory containing `MANIFEST.json` and other files.
     """
-    return flatmap_optional(
-        load_file_helper(root_dir, "MANIFEST.json"),
-        lambda hashes: Manifest(root_dir=root_dir, hashes=jsons.loads(hashes)),
+    manifest_ex: Optional[ManifestExternal] = load_json_helper(
+        root_dir=root_dir, file_name="MANIFEST.json", class_handle=ManifestExternal
     )
+    return flatmap_optional(manifest_ex, lambda m: m.to_manifest(root_dir))

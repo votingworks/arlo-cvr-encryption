@@ -12,6 +12,7 @@ from electionguard.logs import log_error, log_info
 from electionguard.serializable import set_deserializers, Serializable, set_serializers
 from tqdm import tqdm
 
+from arlo_e2e.manifest import make_fresh_manifest, make_existing_manifest
 from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.tally import FastTallyEverythingResults, SelectionTally
 from arlo_e2e.utils import mkdir_helper, load_json_helper, all_files_in_directory
@@ -19,11 +20,11 @@ from arlo_e2e.utils import mkdir_helper, load_json_helper, all_files_in_director
 T = TypeVar("T")
 U = TypeVar("U", bound=Serializable)
 
-ELECTION_METADATA: Final[str] = "election_metadata"
-ELECTION_DESCRIPTION: Final[str] = "election_description"
-ENCRYPTED_TALLY: Final[str] = "encrypted_tally"
-CRYPTO_CONSTANTS: Final[str] = "constants"
-CRYPTO_CONTEXT: Final[str] = "cryptographic_context"
+ELECTION_METADATA: Final[str] = "election_metadata.json"
+ELECTION_DESCRIPTION: Final[str] = "election_description.json"
+ENCRYPTED_TALLY: Final[str] = "encrypted_tally.json"
+CRYPTO_CONSTANTS: Final[str] = "constants.json"
+CRYPTO_CONTEXT: Final[str] = "cryptographic_context.json"
 
 
 # Contents of this file loosely based on ElectionGuard's publish.py, and leveraging all the serialization
@@ -44,25 +45,27 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> N
     if not path.exists(results_dir):
         mkdir(results_dir)
 
+    manifest = make_fresh_manifest(results_dir)
+
     log_info("write_fast_tally: writing election_description")
-    results.election_description.to_json_file(ELECTION_DESCRIPTION, results_dir)
+    manifest.write_json_file(ELECTION_DESCRIPTION, results.election_description)
 
     log_info("write_fast_tally: writing crypto context")
-    results.context.to_json_file(CRYPTO_CONTEXT, results_dir)
+    manifest.write_json_file(CRYPTO_CONTEXT, results.context)
 
     log_info("write_fast_tally: writing crypto constants")
-    ElectionConstants().to_json_file(CRYPTO_CONSTANTS, results_dir)
+    manifest.write_json_file(CRYPTO_CONTEXT, ElectionConstants())
 
     log_info("write_fast_tally: writing tally")
-    results.tally.to_json_file(ENCRYPTED_TALLY, results_dir)
+    manifest.write_json_file(ENCRYPTED_TALLY, results.tally)
 
     log_info("write_fast_tally: writing metadata")
-    results.metadata.to_json_file(ELECTION_METADATA, results_dir)
+    manifest.write_json_file(ELECTION_METADATA, results.metadata)
 
     log_info("write_fast_tally: writing ballots")
     ballots_dir = path.join(results_dir, "ballots")
-    mkdir_helper(ballots_dir)
-    for ballot in tqdm(results.encrypted_ballots):
+
+    for ballot in tqdm(results.encrypted_ballots, desc="Writing ballots"):
         ballot_name = ballot.object_id
 
         # This prefix stuff: ballot uids are encoded as 'b' plus a 7-digit number.
@@ -72,9 +75,11 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> N
         # it wedge because it's trying to digest a million filenmes.
 
         ballot_name_prefix = ballot_name[0:4]  # letter b plus first three digits
-        this_ballot_dir = path.join(ballots_dir, ballot_name_prefix)
-        mkdir_helper(this_ballot_dir)
-        ballot.to_json_file(ballot_name, this_ballot_dir)
+        manifest.write_json_file(
+            ballot_name + ".json", ballot, [ballots_dir, ballot_name_prefix]
+        )
+
+    log_info("write_fast_tally: writing MANIFEST.json")
 
 
 def load_fast_tally(
@@ -96,14 +101,18 @@ def load_fast_tally(
         log_error(f"Path ({results_dir}) not found, cannot load the fast-tally")
         return None
 
-    election_description: Optional[ElectionDescription] = load_json_helper(
-        results_dir, ELECTION_DESCRIPTION, ElectionDescription
+    manifest = make_existing_manifest(results_dir)
+    if manifest is None:
+        return None
+
+    election_description: Optional[ElectionDescription] = manifest.read_json_file(
+        ELECTION_DESCRIPTION, ElectionDescription
     )
     if election_description is None:
         return None
 
-    constants: Optional[ElectionConstants] = load_json_helper(
-        results_dir, CRYPTO_CONSTANTS, ElectionConstants
+    constants: Optional[ElectionConstants] = manifest.read_json_file(
+        CRYPTO_CONSTANTS, ElectionConstants
     )
     if constants is None:
         return None
@@ -113,20 +122,20 @@ def load_fast_tally(
         )
         return None
 
-    cec: Optional[CiphertextElectionContext] = load_json_helper(
-        results_dir, CRYPTO_CONTEXT, CiphertextElectionContext
+    cec: Optional[CiphertextElectionContext] = manifest.read_json_file(
+        CRYPTO_CONTEXT, CiphertextElectionContext
     )
     if cec is None:
         return None
 
-    encrypted_tally: Optional[SelectionTally] = load_json_helper(
-        results_dir, ENCRYPTED_TALLY, SelectionTally
+    encrypted_tally: Optional[SelectionTally] = manifest.read_json_file(
+        ENCRYPTED_TALLY, SelectionTally
     )
     if encrypted_tally is None:
         return None
 
-    metadata: Optional[ElectionMetadata] = load_json_helper(
-        results_dir, ELECTION_METADATA, ElectionMetadata
+    metadata: Optional[ElectionMetadata] = manifest.read_json_file(
+        ELECTION_METADATA, ElectionMetadata
     )
     if metadata is None:
         return None
@@ -135,8 +144,7 @@ def load_fast_tally(
     ballot_files = all_files_in_directory(ballots_dir)
 
     encrypted_ballots: Optional[List[Optional[CiphertextAcceptedBallot]]] = [
-        load_json_helper(".", s, CiphertextAcceptedBallot, file_suffix="")
-        for s in ballot_files
+        load_json_helper(".", s, CiphertextAcceptedBallot) for s in ballot_files
     ]
     if encrypted_ballots is None or None in encrypted_ballots:
         # if even one of them fails, we're just going to give up and fail the whole thing
