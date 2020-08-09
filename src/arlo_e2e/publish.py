@@ -54,7 +54,7 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> N
     manifest.write_json_file(CRYPTO_CONTEXT, results.context)
 
     log_info("write_fast_tally: writing crypto constants")
-    manifest.write_json_file(CRYPTO_CONTEXT, ElectionConstants())
+    manifest.write_json_file(CRYPTO_CONSTANTS, ElectionConstants())
 
     log_info("write_fast_tally: writing tally")
     manifest.write_json_file(ENCRYPTED_TALLY, results.tally)
@@ -63,7 +63,6 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> N
     manifest.write_json_file(ELECTION_METADATA, results.metadata)
 
     log_info("write_fast_tally: writing ballots")
-    ballots_dir = path.join(results_dir, "ballots")
 
     for ballot in tqdm(results.encrypted_ballots, desc="Writing ballots"):
         ballot_name = ballot.object_id
@@ -76,10 +75,11 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> N
 
         ballot_name_prefix = ballot_name[0:4]  # letter b plus first three digits
         manifest.write_json_file(
-            ballot_name + ".json", ballot, [ballots_dir, ballot_name_prefix]
+            ballot_name + ".json", ballot, ["ballots", ballot_name_prefix]
         )
 
     log_info("write_fast_tally: writing MANIFEST.json")
+    manifest.write_manifest()
 
 
 def load_fast_tally(

@@ -53,31 +53,29 @@ def shard_list(input: Sequence[T], num_per_group: int) -> Sequence[Sequence[T]]:
     return [input[i : i + num_per_group] for i in range(0, length, num_per_group)]
 
 
-def mkdir_list_helper(root_dir: str, paths: List[str] = None) -> None:
-    """
-    Like mkdir_helper, but takes a list of strings, each of which corresponds to a directory
-    to make if it doesn't exist, each within the previous. So, `mkdir_list_helper('foo', ['a', 'b', 'c'])`
-    would create `a/b/c` within `foo`.
-    """
-
-    # We're offering the default of None, even though it turns this into a no-op,
-    # because there are lots of default-None subdirectory paths elsewhere in the
-    # code, so it's handy to deal with it here.
-    if paths is None:
-        return
-
-    for i in range(len(paths)):
-        subpath = path.join(root_dir, *(paths[0:i]))
-        if not path.exists(subpath):
-            mkdir(subpath)
-
-
 def mkdir_helper(p: str) -> None:
     """
     Wrapper around `os.mkdir` that will work correctly even if the directory already exists.
     """
     if not path.exists(p):
         mkdir(p)
+
+
+def mkdir_list_helper(root_dir: str, paths: List[str] = None) -> None:
+    """
+    Like mkdir_helper, but takes a list of strings, each of which corresponds to a directory
+    to make if it doesn't exist, each within the previous. So, `mkdir_list_helper('foo', ['a', 'b', 'c'])`
+    would create `foo`, then `foo/a`, `foo/a/b`, and `foo/a/b/c`.
+    """
+
+    mkdir_helper(root_dir)
+
+    if paths is None:
+        return
+
+    for i in range(len(paths)):
+        subpath = path.join(root_dir, *(paths[0: i + 1]))
+        mkdir_helper(subpath)
 
 
 def sha256_hash(input: str) -> int:
@@ -142,7 +140,7 @@ def filename_to_manifest_name(root_dir: str, filename: Union[str, PurePath]) -> 
     if not isinstance(filename, PurePath):
         filename = PurePath(filename)
     elems = list(filename.parts)  # need to convert from tuple to list
-    assert elems[0] == root_dir, f"unexpected root directory in path: {filename}"
+    assert elems[0] != root_dir, f"unexpected root directory in path: {filename}"
     return compose_manifest_name(elems[-1], elems[1:-1])
 
 
