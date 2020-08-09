@@ -74,7 +74,7 @@ def mkdir_list_helper(root_dir: str, paths: List[str] = None) -> None:
         return
 
     for i in range(len(paths)):
-        subpath = path.join(root_dir, *(paths[0: i + 1]))
+        subpath = path.join(root_dir, *(paths[0 : i + 1]))
         mkdir_helper(subpath)
 
 

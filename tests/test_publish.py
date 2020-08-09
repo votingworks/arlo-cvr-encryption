@@ -15,6 +15,7 @@ from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 
 TALLY_TESTING_DIR = "tally_testing"
 
+
 class TestTallyPublishing(unittest.TestCase):
     def _removeTree(self) -> None:
         try:
@@ -73,4 +74,3 @@ class TestTallyPublishing(unittest.TestCase):
         self.assertEqual(set(results.tally.map.keys()), set(results2.tally.map.keys()))
 
         self._removeTree()
-
