@@ -144,7 +144,7 @@ def load_fast_tally(
     ballot_files = all_files_in_directory(ballots_dir)
 
     encrypted_ballots: Optional[List[Optional[CiphertextAcceptedBallot]]] = [
-        load_json_helper(".", s, CiphertextAcceptedBallot) for s in ballot_files
+        manifest.read_json_file(s, CiphertextAcceptedBallot) for s in ballot_files
     ]
     if encrypted_ballots is None or None in encrypted_ballots:
         # if even one of them fails, we're just going to give up and fail the whole thing

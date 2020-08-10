@@ -97,7 +97,7 @@ class Manifest:
         manifest_name = compose_manifest_name(file_name, subdirectories)
         if manifest_name in self.hashes:
             log_warning(
-                f"Writing a file through a manifest that hash already been written: {manifest_name}"
+                f"Writing a file through a manifest that has already been written: {manifest_name}"
             )
 
         mkdir_list_helper(self.root_dir, subdirectories)
@@ -147,7 +147,8 @@ class Manifest:
         """
         Reads the requested file, by name, returning its contents as a Python object for the given class handle.
         If no hash for the file is present, if the file doesn't match its known hash, or if the JSON deserialization
-        process fails, then `None` will be returned and an error will be logged.
+        process fails, then `None` will be returned and an error will be logged. If the file_name
+        is actually a path-like object, the subdirectories are ignored.
 
         :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
         :param file_name: name of the file, including any suffix
@@ -196,7 +197,8 @@ class Manifest:
         """
         Reads the requested file, by name, returning its contents as a Python string.
         If no hash for the file is present, or if the file doesn't match its known
-        hash, then `None` will be returned and an error will be logged.
+        hash, then `None` will be returned and an error will be logged. If the file_name
+        is actually a path-like object, the subdirectories are ignored.
 
         :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
         :param file_name: name of the file, including any suffix

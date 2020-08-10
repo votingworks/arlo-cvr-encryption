@@ -5,6 +5,7 @@ from io import StringIO
 from multiprocessing import Pool, cpu_count
 
 import coverage
+from electionguard.ballot import _list_eq
 from hypothesis import settings, given, HealthCheck, Phase
 from hypothesis.strategies import booleans
 
@@ -68,9 +69,7 @@ class TestTallyPublishing(unittest.TestCase):
 
         _log_and_print("tally_testing got non-null result!")
 
-        self.assertEqual(
-            len(results.encrypted_ballots), len(results2.encrypted_ballots)
-        )
+        self.assertTrue(_list_eq(results.encrypted_ballots, results2.encrypted_ballots))
         self.assertEqual(set(results.tally.map.keys()), set(results2.tally.map.keys()))
 
         self._removeTree()
