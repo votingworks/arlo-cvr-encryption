@@ -13,7 +13,7 @@ from arlo_e2e.publish import write_fast_tally, load_fast_tally
 from arlo_e2e.tally import fast_tally_everything, _log_and_print
 from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 
-TALLY_TESTING_DIR = "tally_testing"
+TALLY_TESTING_DIR = "tally_test"
 
 
 class TestTallyPublishing(unittest.TestCase):

@@ -1,7 +1,6 @@
 import os
-from pathlib import PurePath
-from hashlib import sha256
 from os import path, mkdir
+from pathlib import PurePath
 from typing import (
     TypeVar,
     Callable,
@@ -10,13 +9,12 @@ from typing import (
     Iterable,
     Optional,
     Type,
-    cast,
     Union,
 )
 
-import jsons
 from electionguard.logs import log_error
 from electionguard.serializable import Serializable
+from electionguard.utils import flatmap_optional
 from jsons import DecodeError, UnfulfilledArgumentError
 
 T = TypeVar("T")
@@ -78,16 +76,6 @@ def mkdir_list_helper(root_dir: str, paths: List[str] = None) -> None:
         mkdir_helper(subpath)
 
 
-def sha256_hash(input: str) -> int:
-    """
-    Given a string, returns an integer representing the 256-bit SHA2-256
-    hash of that input string, encoded as UTF-8 bytes.
-    """
-    h = sha256()
-    h.update(input.encode("utf-8"))
-    return int.from_bytes(h.digest(), byteorder="big")
-
-
 def compose_filename(
     root_dir: Union[PurePath, str], file_name: str, subdirectories: List[str] = None
 ) -> PurePath:
@@ -106,54 +94,11 @@ def compose_filename(
     return root_dir / file_name
 
 
-def compose_manifest_name(file_name: str, subdirectories: List[str] = None) -> str:
-    """
-    Helper function: given a file name, and an optional list of subdirectories that
-    go in front (empty-list implies no subdirectory), returns a string corresponding
-    to the full filename, properly joined, suitable for use in MANIFEST.json.
-
-    This method is distinct from `compose_filename` because it must give the same
-    answer on any platform. This is why it uses vertical bars rather than forward
-    or backward slashes.
-    """
-    if subdirectories is None:
-        dirs = [file_name]
-    else:
-        dirs = subdirectories + [file_name]
-    return "|".join(dirs)
-
-
-def manifest_name_to_filename(root_dir: str, manifest_name: str) -> PurePath:
-    """
-    Helper function: given the name of a file, as it would appear in a MANIFEST.json
-    file, get the expected local filesystem name.
-    """
-    subdirs = root_dir.split("|")
-    return compose_filename(root_dir, subdirs[-1], subdirs[0:-1])
-
-
-def filename_to_manifest_name(root_dir: str, filename: Union[str, PurePath]) -> str:
-    """
-    Helper function: given the name of a file (or a Path to that file), return the name as
-    it would appear in MANIFEST.json.
-    """
-    if not isinstance(filename, PurePath):
-        filename = PurePath(filename)
-    elems = list(filename.parts)  # need to convert from tuple to list
-    assert elems[0] != root_dir, f"unexpected root directory in path: {filename}"
-    return compose_manifest_name(elems[-1], elems[1:-1])
-
-
 def load_file_helper(
-    root_dir: str,
-    file_name: Union[str, PurePath],
-    subdirectories: List[str] = None,
-    expected_sha256: Optional[int] = None,
+    root_dir: str, file_name: Union[str, PurePath], subdirectories: List[str] = None,
 ) -> Optional[str]:
     """
     Reads the requested file, by name, returning its contents as a Python string.
-    If no hash for the file is present, or if the file doesn't match its known
-    hash, then `None` will be returned and an error will be logged.
 
     Note: if the file_name is a path-like object, the root_dir and subdirectories
     are ignored and the file is directly loaded.
@@ -161,7 +106,6 @@ def load_file_helper(
     :param root_dir: top-level directory where we'll be reading files
     :param file_name: name of the file, including any suffix
     :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
-    :param expected_sha256: if present, the file contents will be compared to the hash
     :returns: the contents of the file, or `None` if there was an error
     """
 
@@ -179,62 +123,27 @@ def load_file_helper(
         with open(full_name, "r") as f:
             data = f.read()
 
-            if expected_sha256 is not None:
-                data_hash = sha256_hash(data)
-                if data_hash != expected_sha256:  # pragma: no cover
-                    log_error(
-                        f"File {full_name} did not have the expected hash (expected: {expected_sha256}, actual: {data_hash})"
-                    )
-                    return None
             return data
     except OSError as e:  # pragma: no cover
         log_error(f"Error reading file ({full_name}): {e}")
         return None
 
 
-def load_json_helper(
-    root_dir: str,
-    file_name: Union[str, PurePath],
-    class_handle: Type[Serializable[T]],
-    subdirectories: List[str] = None,
-    expected_sha256: Optional[int] = None,
+def decode_json_file_contents(
+    json_str: str, class_handle: Type[Serializable[T]]
 ) -> Optional[T]:
     """
-    Wrapper around JSON deserialization that, given a directory name and file prefix (without
-    the ".json" suffix) as well as an optional handle to the class type, will load the contents
-    of the file and return an instance of the desired class, if it fits. If anything fails, the
-    result should be `None`. No exceptions should be raised outside of this method, but all such
-    errors will be logged as part of the ElectionGuard log.
+    Wrapper around JSON deserialization. Given a string of JSON text and a handle to an
+    ElectionGuard `Serializable` class, tries to decode the JSON into an instance of that
+    class. If anything fails, the result will be `None`. No exceptions will be raised outside
+    of this method, but all such failures will be logged to the ElectionGuard log.
 
-    Optionally, by passing in a SHA256 value for the file, such as might have been generated by
-    `sha256_hash`, this will validate the file's hash, returning None if there's a mismatch.
-
-    Note: if the file_name is actually a path-like object, the root_dir and subdirectories are ignored,
-    and the path is directly loaded.
-
-    :param root_dir: top-level directory where we'll be reading files
-    :param file_name: name of the file, including the suffix, excluding any directories leading up to the file
-    :param class_handle: the class, itself, that we're trying to deserialize to (if None, then you get back
-      whatever the JSON becomes, e.g., a dict)
-    :param file_suffix: ".json" or something like that
-    :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
-    :param expected_sha256: if present, the file contents will be compared to the hash
+    :param json_str: any JSON string
+    :param class_handle: the class, itself, that we're trying to deserialize to
     :returns: the contents of the file, or `None` if there was an error
     """
-    if isinstance(file_name, PurePath):
-        file_contents = load_file_helper(
-            root_dir, file_name, subdirectories, expected_sha256
-        )
-    else:
-        full_filename = compose_filename(root_dir, file_name, subdirectories)
-        file_contents = load_file_helper(
-            root_dir, file_name, subdirectories, expected_sha256
-        )
-    if file_contents is None:
-        return None
-
     try:
-        result = class_handle.from_json(file_contents)
+        result = class_handle.from_json(json_str)
     except DecodeError as err:  # pragma: no cover
         log_error(f"Failed to decode an instance of {class_handle}: {err}")
         return None
@@ -243,6 +152,34 @@ def load_json_helper(
         return None
 
     return result
+
+
+def load_json_helper(
+    root_dir: str,
+    file_name: Union[str, PurePath],
+    class_handle: Type[Serializable[T]],
+    subdirectories: List[str] = None,
+) -> Optional[T]:
+    """
+    Wrapper around JSON deserialization that, given a directory name and file name (including
+    the ".json" suffix) as well as an optional handle to the class type, will load the contents
+    of the file and return an instance of the desired class, if it fits. If anything fails, the
+    result should be `None`. No exceptions will be raised outside of this method, but all such
+    errors will be logged as part of the ElectionGuard log.
+
+    Note: if the file_name is actually a path-like object, the root_dir and subdirectories are ignored,
+    and the path is directly loaded.
+
+    :param root_dir: top-level directory where we'll be reading files
+    :param file_name: name of the file, including the suffix, excluding any directories leading up to the file
+    :param class_handle: the class, itself, that we're trying to deserialize to
+    :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
+    :returns: the contents of the file, or `None` if there was an error
+    """
+    file_contents = load_file_helper(root_dir, file_name, subdirectories)
+    return flatmap_optional(
+        file_contents, lambda f: decode_json_file_contents(f, class_handle)
+    )
 
 
 def all_files_in_directory(root_dir: str) -> List[PurePath]:
