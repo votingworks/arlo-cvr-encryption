@@ -1,5 +1,6 @@
 import argparse
 from timeit import default_timer as timer
+from typing import Optional
 
 from electionguard.serializable import set_serializers, set_deserializers
 
@@ -45,7 +46,7 @@ if __name__ == "__main__":
     cvrfile = args.cvr_file[0]
     tallydir = args.output[0]
 
-    admin_state: ElectionAdmin = load_json_helper(".", keyfile, ElectionAdmin)
+    admin_state: Optional[ElectionAdmin] = load_json_helper(".", keyfile, ElectionAdmin)
     if admin_state is None or not admin_state.is_valid():
         print(f"Election administration key material wasn't valid")
         exit(1)
@@ -61,7 +62,9 @@ if __name__ == "__main__":
 
     ray_init_localhost()
     rtally_start = timer()
-    rtally = ray_tally_everything(cvrs, verbose=False, secret_key=admin_state.keypair.secret_key)
+    rtally = ray_tally_everything(
+        cvrs, verbose=False, secret_key=admin_state.keypair.secret_key
+    )
     rtally_end = timer()
     print(f"Tally rate:    {rows / (rtally_end - rtally_start): .3f} ballots/sec")
     ray_shutdown_localhost()
