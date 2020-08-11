@@ -13,7 +13,7 @@ from typing import (
 )
 
 from electionguard.logs import log_error
-from electionguard.serializable import Serializable
+from electionguard.serializable import Serializable, WRITE
 from electionguard.utils import flatmap_optional
 from jsons import DecodeError, UnfulfilledArgumentError
 
@@ -152,6 +152,42 @@ def decode_json_file_contents(
         return None
 
     return result
+
+
+def write_json_helper(
+    root_dir: str,
+    file_name: Union[str, PurePath],
+    json_obj: Serializable,
+    subdirectories: List[str] = None,
+) -> int:
+    """
+    Wrapper around JSON serialization that, given a directory name and file name (including
+    the ".json" suffix), or a path-like object, will save the serialized contents
+    of any ElectionGuard `Serializable` object as a JSON file and return the number of bytes written.
+
+    Note: if the file_name is actually a path-like object, the root_dir and subdirectories are ignored,
+    and the path is directly used.
+
+    :param root_dir: top-level directory where we'll be reading files
+    :param file_name: name of the file, including the suffix, excluding any directories leading up to the file
+    :param json_obj: any ElectionGuard serializable object
+    :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
+    :returns: the number of bytes written
+    """
+
+    if isinstance(file_name, PurePath):
+        full_name = file_name
+    else:
+        full_name = compose_filename(root_dir, file_name, subdirectories)
+        mkdir_list_helper(root_dir, subdirectories)
+
+    json_txt = json_obj.to_json(strip_privates=True)
+    num_bytes = len(json_txt.encode("utf-8"))
+
+    with open(full_name, WRITE) as f:
+        f.write(json_txt)
+
+    return num_bytes
 
 
 def load_json_helper(
