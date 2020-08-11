@@ -52,7 +52,13 @@ class SelectionMetadata(Serializable):
         Returns a unique string representation of this selection, suitable for use as the column
         title of a Pandas dataframe or whatever else. Notably ignores the `object_id`.
         """
-        return f"{self.contest_name} | {self.choice_name}" + (
+        return f"{self.contest_name} | {self.to_string_no_contest()}"
+
+    def to_string_no_contest(self) -> str:
+        """
+        Returns a string representation of this selection, without the contest title.
+        """
+        return f"{self.choice_name}" + (
             f" | {self.party_name}" if self.party_name != "" else ""
         )
 
