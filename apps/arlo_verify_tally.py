@@ -18,8 +18,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "directory",
+        "-d",
+        "--directory",
         type=str,
+        default="tally_output",
         help="directory name for where the tally artifacts can be found",
     )
 
@@ -43,9 +45,9 @@ if __name__ == "__main__":
         exit(1)
 
     print(
-        f"Found {len(results.encrypted_ballots)} encrypted ballots for {results.metadata.election_name} in {tallydir}."
+        f"Verified {len(results.encrypted_ballots)} encrypted ballots for {results.metadata.election_name}."
     )
-    print("All proofs verified.")
+    print("Tally proofs valid, and consistent with the encrypted ballots.")
 
     pool.close()
 

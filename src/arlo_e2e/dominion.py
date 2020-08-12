@@ -171,13 +171,13 @@ class DominionCSV(NamedTuple):
     def _ballot_style_from_id(
         self,
         dominion_ballot_style_id: str,
-        bs_uids: UidMaker,
         party_map: Dict[str, Party],
         cd_map: Dict[str, ContestDescription],
     ) -> BallotStyle:
 
         contest_titles = self.metadata.style_map[dominion_ballot_style_id]
-        bs_id = bs_uids.next()
+
+        bs_id = self.metadata.ballot_types[dominion_ballot_style_id]
 
         party_ids = [
             party_map[p].object_id
@@ -320,11 +320,11 @@ class DominionCSV(NamedTuple):
             for c in candidate_id_to_column.keys():
                 all_candidate_ids_to_columns[c] = candidate_id_to_column[c]
 
-        ballotstyle_uids = UidMaker("ballotstyle")
+        # ballotstyle_uids = UidMaker("ballotstyle")
 
         ballotstyle_map: Dict[str, BallotStyle] = {
-            bt: self._ballot_style_from_id(bt, ballotstyle_uids, party_map, contest_map)
-            for bt in self.metadata.ballot_types
+            bt: self._ballot_style_from_id(bt, party_map, contest_map)
+            for bt in self.metadata.ballot_types.keys()
         }
 
         # And now, for the ballots
@@ -451,6 +451,10 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     if "BallotType" not in df:
         return None
 
+    ballotstyle_uids = UidMaker("ballotstyle")
+    all_types = sorted(set(df["BallotType"]))
+    ballot_type_to_bsid = {bt: ballotstyle_uids.next() for bt in all_types}
+
     # Now we're going to extract a mapping from contest titles to all the choices.
     contests = [x for x in filtered_columns[2:] if len(x) > 1]
     contest_keys = set()
@@ -517,7 +521,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     return DominionCSV(
         ElectionMetadata(
             fix_strings(election_name),
-            set(df["BallotType"]),
+            ballot_type_to_bsid,
             all_parties,
             style_map,
             contest_map,

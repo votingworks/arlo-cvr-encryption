@@ -96,7 +96,7 @@ def fast_encrypt_ballots(
 
     inputs = zip(ballots, nonces)
     if show_progress:  # pragma: no cover
-        inputs = tqdm(list(inputs))
+        inputs = tqdm(list(inputs), desc="Encrypting")
 
     # Performance note: this will gain as much parallelism as you've got available ballots.
     # So, if you've got millions of ballots, this function can use them. This appears to be
@@ -235,7 +235,7 @@ def fast_decrypt_tally(
     ]
 
     if show_progress:  # pragma: no cover
-        inputs = tqdm(list(inputs))
+        inputs = tqdm(list(inputs), "Decrypting")
 
     # Performance note: at this point, the tallies have been computed, so we
     # don't actually have all that much data left to process. There's almost
@@ -376,7 +376,7 @@ class FastTallyEverythingResults(NamedTuple):
 
         inputs = self.tally.map.values()
         if verbose:  # pragma: no cover
-            inputs = tqdm(list(inputs))
+            inputs = tqdm(list(inputs), "Tally proof")
 
         result: List[bool] = [
             wrapped_func(x) for x in inputs
@@ -392,12 +392,9 @@ class FastTallyEverythingResults(NamedTuple):
             return False
 
         if recheck_ballots_and_tallies:
-            _log_and_print("Checking individual ballot proofs:", verbose)
-
-            # first, check each individual ballot's proofs
-            ballot_iter = (
-                tqdm(self.encrypted_ballots) if verbose else self.encrypted_ballots
-            )
+            # first, check each individual ballot's proofs; in this case, we're going to always
+            # show the progress bar, even if verbose is false
+            ballot_iter = tqdm(self.encrypted_ballots, desc="Ballot proofs")
             ballot_func = functools.partial(
                 _ballot_proof_verify, self.context.elgamal_public_key
             )
@@ -513,9 +510,8 @@ def fast_tally_everything(
         master_nonce = rand_q()
     nonces: List[ElementModQ] = Nonces(master_nonce)[0 : len(ballots)]
 
-    if verbose:  # pragma: no cover
-        print("Encrypting:")
-    cballots = fast_encrypt_ballots(ballots, ied, cec, seed_hash, nonces, pool, verbose)
+    # even if verbose is false, we still want to see the progress bar for the encryption
+    cballots = fast_encrypt_ballots(ballots, ied, cec, seed_hash, nonces, pool, True)
     eg_encrypt_time = timer()
 
     _log_and_print(

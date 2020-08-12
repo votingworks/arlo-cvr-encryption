@@ -1,4 +1,6 @@
 import argparse
+from multiprocessing import Pool
+from os import cpu_count
 from timeit import default_timer as timer
 from typing import Optional
 
@@ -7,8 +9,8 @@ from electionguard.serializable import set_serializers, set_deserializers
 from arlo_e2e.admin import ElectionAdmin
 from arlo_e2e.dominion import read_dominion_csv
 from arlo_e2e.publish import write_fast_tally
-from arlo_e2e.ray_helpers import ray_init_localhost, ray_shutdown_localhost
-from arlo_e2e.ray_tally import ray_tally_everything
+from arlo_e2e.ray_helpers import ray_shutdown_localhost
+from arlo_e2e.tally import fast_tally_everything
 from arlo_e2e.utils import load_json_helper
 
 if __name__ == "__main__":
@@ -56,19 +58,20 @@ if __name__ == "__main__":
         print(f"Failed to read {cvrfile}, terminating.")
         exit(1)
     rows, cols = cvrs.data.shape
-    print(
-        f"Found {rows} CVRs in data for {cvrs.metadata.election_name}. Running encryption!"
-    )
+    print(f"Found {rows} CVRs in {cvrs.metadata.election_name}.")
 
-    ray_init_localhost()
-    rtally_start = timer()
-    rtally = ray_tally_everything(
-        cvrs, verbose=False, secret_key=admin_state.keypair.secret_key
+    pool = Pool(cpu_count())
+
+    tally_start = timer()
+    tally = fast_tally_everything(
+        cvrs, verbose=False, secret_key=admin_state.keypair.secret_key, pool=pool
     )
-    rtally_end = timer()
-    print(f"Tally rate:    {rows / (rtally_end - rtally_start): .3f} ballots/sec")
+    tally_end = timer()
+    print(f"Tally rate:    {rows / (tally_end - tally_start): .3f} ballots/sec")
     ray_shutdown_localhost()
-    write_fast_tally(rtally, tallydir)
+    write_fast_tally(tally, tallydir)
     print(f"Tally written to {tallydir}")
+
+    pool.close()
 
     exit(0)
