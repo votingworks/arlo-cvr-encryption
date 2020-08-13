@@ -1,11 +1,12 @@
 import shutil
 import unittest
+from datetime import timedelta
 from os import path
 from pathlib import PurePath
 from typing import List
 
 from electionguard.logs import log_warning
-from hypothesis import given, assume
+from hypothesis import given, assume, settings
 from hypothesis.strategies import lists
 
 from arlo_e2e.manifest import (
@@ -43,6 +44,9 @@ class TestManifestPublishing(unittest.TestCase):
             elements=file_name_and_contents(),
             unique_by=lambda f: f.file_name,
         )
+    )
+    @settings(
+        deadline=timedelta(milliseconds=50000),
     )
     def test_manifest(self, files: List[FileNameAndContents]) -> None:
         self._removeTree()
