@@ -27,15 +27,27 @@ And, of course, if you *do* happen to have voting machines that generate e2e cip
 
 ## Command-line tools
 
-*(None of these exist yet. This is where we think we're going.)*
-
 `arlo_initialize_keys`: Creates a public/private key pair for the election administrator. The private key could eventually be built with secret sharing across trustees, but for version 1 that's irrelevant, since the election administrator already has the plaintext CVRs.
 
-`arlo_encrypt_cvrs`: Input is a file full of CVRs, probably in CSV format along with the public key of the election. Output is a directory full of JSON files, using the serialization support of ElectionGuard. This would include tallies and Chaum-Pedersen proofs. The
-output of this tool could be posted on a web site, making it a realization of the _public bulletin board_ concept
-that appears widely in the cryptographic voting literature.
+`arlo_tally_ballots`: Input is a file full of CVRs, in Dominion format, and the key file from `arlo_initialize_keys`. Output is a directory full of JSON files, including the encrypted ballots,
+their associated proofs, the tallies, and other useful metadata.
+This directory could be posted on a web site, making it a realization of the _public bulletin board_ concept
+that appears widely in the cryptographic voting literature. The election official might then
+distribute the SHA256 hash of `MANIFEST.json`, which contains SHA256 hashes of
+every other JSON file in the directory.
 
-`arlo_verify_proofs`: Input is one or more JSON files (the `arlo_encrypt_cvrs` format) along with the public key of the election. Quietly churns through all the Chaum-Pederson proofs and generates a loud warning if any of the proofs aren't verifiable.
+`arlo_verify_tally`: Input is a tally directory (the output of `arlo_tally_ballots`). The election private key is not needed. Verifies that
+the tally is consistent with all the encrypted ballots, and that all the proofs verify correctly.
+
+`arlo_ballot_style_summary`: Input is a tally directory, output is a summary of all the
+contests and ballot styles. Demonstrates how to work with the metadata included
+in a tally directory.
+
+`arlo_all_ballots_for_contest`: Input is a tally directory, output is a list of every ballot id
+for ballots having the desired contest.  Demonstrates how to work with the metadata included
+in a tally directory.
+
+(*Tools not yet written.*)
 
 `arlo_decrypt_ballots`: Input is one or more JSON files (the `arlo_encrypt_cvrs` format), the *private* key of the election, and the identifier(s) for the ballot(s) to be decrypted. Output is some sort of JSON format containing the plaintext plus the decryption proof.
 

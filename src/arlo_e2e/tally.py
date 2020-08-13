@@ -3,7 +3,19 @@ from dataclasses import dataclass
 from datetime import datetime
 from multiprocessing.pool import Pool
 from timeit import default_timer as timer
-from typing import Tuple, List, Optional, Dict, NamedTuple, Sequence, Union, Final, Any
+from typing import (
+    Tuple,
+    List,
+    Optional,
+    Dict,
+    NamedTuple,
+    Sequence,
+    Union,
+    Final,
+    Any,
+    Set,
+    Iterable,
+)
 
 from arlo_e2e.dominion import DominionCSV
 from arlo_e2e.metadata import ElectionMetadata
@@ -435,6 +447,67 @@ class FastTallyEverythingResults(NamedTuple):
                 return False
 
         return True
+
+    def get_contest_titles_matching(self, prefixes: Iterable[str]) -> Set[str]:
+        """
+        Returns a set of all contest titles that match any of the given text prefixes. If an
+        empty list of prefixes is provided, the result will be the empty-set.
+        """
+
+        # Python annoyance: strings are iterable, yielding each individual character.
+        # We're okay with List[str] or Set[str], which gets us to Iterable[str]. If the
+        # caller passes a bare string, that would preferably be a static error from mypy,
+        # but sadly it won't be, thus the need for this assertion.
+        assert not isinstance(
+            prefixes, str
+        ), "passed a string where a list or set of string was expected"
+
+        if not prefixes:
+            return set()
+        else:
+            return {
+                contest_title
+                for contest_title in sorted(self.metadata.contest_map.keys())
+                if [prefix for prefix in prefixes if contest_title.startswith(prefix)]
+            }
+
+    def get_ballot_styles_for_contest_titles(
+        self, contest_titles: Iterable[str]
+    ) -> Set[str]:
+        """
+        Returns a set of all ballot styles that contain any of the given contest titles.
+        """
+
+        assert not isinstance(
+            contest_titles, str
+        ), "passed a string where a list or set of string was expected"
+
+        contest_title_set = set(contest_titles)
+        return {
+            b
+            for b in self.metadata.style_map.keys()
+            if self.metadata.style_map[b].intersection(contest_title_set)
+        }
+
+    def get_ballots_matching_ballot_styles(
+        self, ballot_styles: Iterable[str]
+    ) -> List[CiphertextAcceptedBallot]:
+        """
+        Returns a list of `CiphertextAcceptedBallot` objects having any of the listed ballot styles.
+        """
+
+        assert not isinstance(
+            ballot_styles, str
+        ), "passed a string where a list or set of string was expected"
+
+        ballot_styles_set = set(ballot_styles)
+        ballot_style_ids: Set[str] = {
+            self.metadata.ballot_types[style] for style in ballot_styles_set
+        }
+
+        return [
+            b for b in self.encrypted_ballots if (b.ballot_style in ballot_style_ids)
+        ]
 
 
 def _ballot_proof_verify(

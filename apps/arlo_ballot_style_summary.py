@@ -26,7 +26,7 @@ if __name__ == "__main__":
 
     tallydir = args.directory
 
-    print(f"Loading tallies from {tallydir}...")
+    print(f"Loading tallies and ballots from {tallydir}...")
     results: Optional[FastTallyEverythingResults] = load_fast_tally(
         tallydir, check_proofs=False
     )
@@ -35,28 +35,20 @@ if __name__ == "__main__":
         print(f"Failed to load results from {tallydir}")
         exit(1)
 
-    matching: Dict[str, int] = {}
+    matching: Dict[str, int] = {
+        style: len(results.get_ballots_matching_ballot_styles([style]))
+        for style in results.metadata.ballot_types.keys()
+    }
 
-    print("Ballot styles:")
-    for style in sorted(results.metadata.ballot_types.keys()):
-        n = len(
-            [
-                b
-                for b in results.encrypted_ballots
-                if b.ballot_style == results.metadata.ballot_types[style]
-            ]
-        )
-        print(f"  {style}: {n} ballot(s)")
-        matching[style] = n
+    print("\nBallot styles:")
+    for style in sorted(matching.keys()):
+        print(f"  {style}: {matching[style]} ballot(s)")
 
-    print()
-    print("Contests:")
+    print("\nContests:")
     for contest_title in sorted(results.metadata.contest_map.keys()):
-        styles_with_contest = [
-            k
-            for k in results.metadata.style_map.keys()
-            if contest_title in results.metadata.style_map[k]
-        ]
+        styles_with_contest = results.get_ballot_styles_for_contest_titles(
+            [contest_title]
+        )
         num_ballots = sum(matching[s] for s in styles_with_contest)
         print(
             f"  {contest_title} appears on {len(styles_with_contest)} ballot style(s) or {num_ballots} total ballot(s)"

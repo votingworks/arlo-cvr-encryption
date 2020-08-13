@@ -83,7 +83,7 @@ class ElectionMetadata(Serializable):
     ballot_types: Dict[str, str]
     """
     Keys are the different "ballot type" names (as provided by the election administrator),
-    valuesa re the different object id's used in ElectionGuard for those ballot styles.
+    values are the different object id's used in ElectionGuard for those ballot styles.
     """
 
     all_parties: Set[str]
