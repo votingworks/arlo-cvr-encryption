@@ -19,7 +19,7 @@ if __name__ == "__main__":
         "--directory",
         type=str,
         default="tally_output",
-        help="directory name for where the tally artifacts can be found",
+        help="directory name for where the tally artifacts can be found (default: tally_output)",
     )
 
     parser.add_argument(

@@ -17,12 +17,12 @@ if __name__ == "__main__":
         "--keys",
         type=str,
         nargs=1,
-        default=["secret_election_keys.json"],
+        default="secret_election_keys.json",
         help="file name for where the information is written (default: secret_election_keys.json)",
     )
     args = parser.parse_args()
 
-    filename = PurePath(args.keys[0])
+    filename = PurePath(args.keys)
 
     # This ultimately bottoms out at secrets.randbelow(), which claims to be cryptographically strong.
     admin_state = make_fresh_election_admin()

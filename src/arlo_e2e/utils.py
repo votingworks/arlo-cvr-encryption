@@ -1,6 +1,6 @@
 import os
 from os import path, mkdir
-from pathlib import PurePath
+from pathlib import PurePath, Path
 from typing import (
     TypeVar,
     Callable,
@@ -51,12 +51,16 @@ def shard_list(input: Sequence[T], num_per_group: int) -> Sequence[Sequence[T]]:
     return [input[i : i + num_per_group] for i in range(0, length, num_per_group)]
 
 
-def mkdir_helper(p: str) -> None:
+def mkdir_helper(p: Union[str, Path]) -> None:
     """
     Wrapper around `os.mkdir` that will work correctly even if the directory already exists.
     """
-    if not path.exists(p):
-        mkdir(p)
+    if isinstance(p, str):
+        path = Path(p)
+    else:
+        path = p
+
+    path.mkdir(parents=True, exist_ok=True)
 
 
 def mkdir_list_helper(root_dir: str, paths: List[str] = None) -> None:
@@ -66,14 +70,10 @@ def mkdir_list_helper(root_dir: str, paths: List[str] = None) -> None:
     would create `foo`, then `foo/a`, `foo/a/b`, and `foo/a/b/c`.
     """
 
-    mkdir_helper(root_dir)
-
-    if paths is None:
-        return
-
-    for i in range(len(paths)):
-        subpath = path.join(root_dir, *(paths[0 : i + 1]))
-        mkdir_helper(subpath)
+    if paths is not None:
+        mkdir_helper(Path(root_dir, *paths))
+    else:
+        mkdir_helper(Path(root_dir))
 
 
 def compose_filename(

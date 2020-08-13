@@ -34,8 +34,8 @@ if __name__ == "__main__":
         help="filename for the Dominion-style ballot CVR file",
     )
     parser.add_argument(
-        "-o",
-        "--output",
+        "-d",
+        "--directory",
         type=str,
         nargs=1,
         default=["tally_output"],
