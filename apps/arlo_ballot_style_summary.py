@@ -26,7 +26,6 @@ if __name__ == "__main__":
 
     tallydir = args.directory
 
-    print(f"Loading tallies and ballots from {tallydir}...")
     results: Optional[FastTallyEverythingResults] = load_fast_tally(
         tallydir, check_proofs=False
     )
@@ -40,7 +39,7 @@ if __name__ == "__main__":
         for style in results.metadata.ballot_types.keys()
     }
 
-    print("\nBallot styles:")
+    print("Ballot styles:")
     for style in sorted(matching.keys()):
         print(f"  {style}: {matching[style]} ballot(s)")
 

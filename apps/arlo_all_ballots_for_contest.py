@@ -31,7 +31,6 @@ if __name__ == "__main__":
     tallydir = args.directory
     contest_prefixes = args.contest
 
-    print(f"Loading tallies and ballots from {tallydir}...")
     results: Optional[FastTallyEverythingResults] = load_fast_tally(
         tallydir, check_proofs=False
     )
@@ -52,7 +51,7 @@ if __name__ == "__main__":
 
     matching_ballot_ids: Set[str] = {b.object_id for b in matching_ballots}
 
-    print("\nMatching contest titles:")
+    print("Matching contest titles:")
     print("  " + "\n  ".join(sorted(matching_contest_titles)))
 
     print("\nMatching ballot styles having one or more of these contests:")

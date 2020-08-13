@@ -18,6 +18,7 @@ from typing import (
 )
 
 from arlo_e2e.dominion import DominionCSV
+from arlo_e2e.memo import Memo, make_memo_value
 from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.utils import shard_list
 from electionguard.ballot import (
@@ -342,9 +343,9 @@ class FastTallyEverythingResults(NamedTuple):
     the candidates, the parties, and so forth.
     """
 
-    encrypted_ballots: List[CiphertextAcceptedBallot]
+    encrypted_ballot_memos: Dict[str, Memo[CiphertextAcceptedBallot]]
     """
-    All the encrypted ballots.
+    Dictionary from ballot ids to ballots.
     """
 
     tally: SelectionTally
@@ -357,6 +358,44 @@ class FastTallyEverythingResults(NamedTuple):
     """
     Cryptographic context used in creating the tally.
     """
+
+    def all_files_present(self) -> bool:
+        """
+        Loads every encrypted ballot, but does not check the proofs. If any file does
+        not match the hash in the manifest or otherwise does not load correctly, this
+        method returns False.
+        """
+        if None in [m.contents for m in self.encrypted_ballot_memos.values()]:
+            return False
+
+        # At this point, we know that every file on disk loaded correctly. We need
+        # make sure that they also match up to the metadata.
+
+        encrypted_ballot_bids = {b.object_id for b in self.encrypted_ballots}
+        return encrypted_ballot_bids == self.metadata.ballot_id_to_ballot_type.keys()
+
+    @property
+    def num_ballots(self) -> int:
+        """
+        Returns the number of ballots stored here.
+        """
+        return len(self.encrypted_ballot_memos.keys())
+
+    @property
+    def encrypted_ballots(self) -> List[CiphertextAcceptedBallot]:
+        """
+        Returns a list of all encrypted ballots. If they're on disk, this will cause
+        them all to be loaded, which could take a while. If any file failed to load,
+        then an error will have been logged, and it will be missing from this list.
+
+        See `all_files_present` to make sure everything on disk is consistent with
+        what we expect from the metadata.
+        """
+        return [
+            m.contents
+            for m in self.encrypted_ballot_memos.values()
+            if m.contents is not None
+        ]
 
     def __eq__(self, other: Any) -> bool:
         return (
@@ -371,6 +410,20 @@ class FastTallyEverythingResults(NamedTuple):
     def __ne__(self, other: Any) -> bool:
         return not self == other
 
+    def get_encrypted_ballot(
+        self, ballot_id: str
+    ) -> Optional[CiphertextAcceptedBallot]:
+        """
+        Given the ballot identifier name, returns the corresponding `CiphertextAcceptedBallot`
+        if it exists, otherwise `None`. If the ballots are on disk, this will cause only
+        that one ballot to be loaded and cached.
+        """
+        if ballot_id not in self.encrypted_ballot_memos:
+            log_error(f"ballot_id {ballot_id} missing")
+            return None
+
+        return self.encrypted_ballot_memos[ballot_id].contents
+
     def all_proofs_valid(
         self,
         pool: Optional[Pool] = None,
@@ -381,6 +434,7 @@ class FastTallyEverythingResults(NamedTuple):
         Checks all the proofs used in this tally, returns True if everything is good.
         Any errors found will be logged.
         """
+
         _log_and_print("Verifying proofs:", verbose)
 
         wrapped_func = functools.partial(_proof_verify, self.context.elgamal_public_key)
@@ -404,7 +458,11 @@ class FastTallyEverythingResults(NamedTuple):
             return False
 
         if recheck_ballots_and_tallies:
-            # first, check each individual ballot's proofs; in this case, we're going to always
+            # first, try to load all the ballots and make sure there are no hash errors
+            if not self.all_files_present():
+                return False
+
+            # next, check each individual ballot's proofs; in this case, we're going to always
             # show the progress bar, even if verbose is false
             ballot_iter = tqdm(self.encrypted_ballots, desc="Ballot proofs")
             ballot_func = functools.partial(
@@ -500,14 +558,19 @@ class FastTallyEverythingResults(NamedTuple):
             ballot_styles, str
         ), "passed a string where a list or set of string was expected"
 
-        ballot_styles_set = set(ballot_styles)
-        ballot_style_ids: Set[str] = {
-            self.metadata.ballot_types[style] for style in ballot_styles_set
-        }
-
-        return [
-            b for b in self.encrypted_ballots if (b.ballot_style in ballot_style_ids)
+        matching_ballot_ids = [
+            bid
+            for bid in self.metadata.ballot_id_to_ballot_type.keys()
+            if self.metadata.ballot_id_to_ballot_type[bid] in ballot_styles
         ]
+        matching_ballots = [
+            self.get_encrypted_ballot(bid) for bid in matching_ballot_ids
+        ]
+        matching_ballots_not_none = [x for x in matching_ballots if x is not None]
+
+        # we're going to ignore missing ballots, for now, and march onward; an error will have been logged
+
+        return matching_ballots_not_none
 
 
 def _ballot_proof_verify(
@@ -655,7 +718,9 @@ def fast_tally_everything(
     return FastTallyEverythingResults(
         metadata=cvrs.metadata,
         election_description=ed,
-        encrypted_ballots=accepted_ballots,
+        encrypted_ballot_memos={
+            ballot.object_id: make_memo_value(ballot) for ballot in accepted_ballots
+        },
         tally=SelectionTally(reported_tally),
         context=cec,
     )

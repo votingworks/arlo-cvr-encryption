@@ -6,6 +6,7 @@ from typing import Optional, List, Tuple, Sequence, Dict, Final
 
 import ray
 from arlo_e2e.dominion import DominionCSV
+from arlo_e2e.memo import make_memo_value
 from arlo_e2e.utils import shard_list
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
@@ -274,7 +275,9 @@ def ray_tally_everything(
     return FastTallyEverythingResults(
         metadata=cvrs.metadata,
         election_description=ed,
-        encrypted_ballots=accepted_ballots,
+        encrypted_ballot_memos={
+            ballot.object_id: make_memo_value(ballot) for ballot in accepted_ballots
+        },
         tally=SelectionTally(reported_tally),
         context=cec,
     )

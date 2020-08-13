@@ -9,7 +9,6 @@ from electionguard.serializable import set_serializers, set_deserializers
 from arlo_e2e.admin import ElectionAdmin
 from arlo_e2e.dominion import read_dominion_csv
 from arlo_e2e.publish import write_fast_tally
-from arlo_e2e.ray_helpers import ray_shutdown_localhost
 from arlo_e2e.tally import fast_tally_everything
 from arlo_e2e.utils import load_json_helper
 
@@ -68,7 +67,6 @@ if __name__ == "__main__":
     )
     tally_end = timer()
     print(f"Tally rate:    {rows / (tally_end - tally_start): .3f} ballots/sec")
-    ray_shutdown_localhost()
     write_fast_tally(tally, tallydir)
     print(f"Tally written to {tallydir}")
 

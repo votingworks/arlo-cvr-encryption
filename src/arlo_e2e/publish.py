@@ -1,6 +1,7 @@
 from multiprocessing.pool import Pool
-from os import path, mkdir
-from typing import Final, Optional, TypeVar, List, cast
+from os import path
+from pathlib import PurePath
+from typing import Final, Optional, TypeVar, List, Dict
 
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.election import (
@@ -13,9 +14,10 @@ from electionguard.serializable import set_deserializers, Serializable, set_seri
 from tqdm import tqdm
 
 from arlo_e2e.manifest import make_fresh_manifest, make_existing_manifest
+from arlo_e2e.memo import Memo, make_memo_lambda
 from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.tally import FastTallyEverythingResults, SelectionTally
-from arlo_e2e.utils import mkdir_helper, load_json_helper, all_files_in_directory
+from arlo_e2e.utils import all_files_in_directory, mkdir_helper
 
 T = TypeVar("T")
 U = TypeVar("U", bound=Serializable)
@@ -42,8 +44,7 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> N
 
     results_dir = results_dir
     log_info("write_fast_tally: starting!")
-    if not path.exists(results_dir):
-        mkdir(results_dir)
+    mkdir_helper(results_dir)
 
     manifest = make_fresh_manifest(results_dir)
 
@@ -141,21 +142,23 @@ def load_fast_tally(
         return None
 
     ballots_dir = path.join(results_dir, "ballots")
-    ballot_files = all_files_in_directory(ballots_dir)
+    ballot_files: List[PurePath] = all_files_in_directory(ballots_dir)
 
-    encrypted_ballots: Optional[List[Optional[CiphertextAcceptedBallot]]] = [
-        manifest.read_json_file(s, CiphertextAcceptedBallot) for s in ballot_files
-    ]
-    if encrypted_ballots is None or None in encrypted_ballots:
-        # if even one of them fails, we're just going to give up and fail the whole thing
-        return None
-
-    # mypy isn't smart enough to notice the type change List[Optional[X]] --> List[X],
-    # so we need to cast it, below.
-    encrypted_ballots_cast = cast(List[CiphertextAcceptedBallot], encrypted_ballots)
+    # What's with the nexted lambdas? Python lambdas aren't real closures. This is a workaround.
+    # https://louisabraham.github.io/articles/python-lambda-closures.html
+    encrypted_ballot_memos: Dict[str, Memo[CiphertextAcceptedBallot]] = {
+        filename.stem: make_memo_lambda(
+            (
+                lambda filename, manifest: lambda: manifest.read_json_file(
+                    filename, CiphertextAcceptedBallot
+                )
+            )(filename, manifest)
+        )
+        for filename in ballot_files
+    }
 
     everything = FastTallyEverythingResults(
-        metadata, election_description, encrypted_ballots_cast, encrypted_tally, cec,
+        metadata, election_description, encrypted_ballot_memos, encrypted_tally, cec,
     )
 
     if check_proofs:

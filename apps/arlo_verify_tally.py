@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     pool = Pool(os.cpu_count())
 
-    print(f"Loading tallies from {tallydir}...")
+    print(f"Loading tallies and ballots from {tallydir}.")
     results: Optional[FastTallyEverythingResults] = load_fast_tally(
         tallydir, check_proofs=True, pool=pool
     )
@@ -45,7 +45,7 @@ if __name__ == "__main__":
         exit(1)
 
     print(
-        f"Verified {len(results.encrypted_ballots)} encrypted ballots for {results.metadata.election_name}."
+        f"Verified {results.num_ballots} encrypted ballots for {results.metadata.election_name}."
     )
     print("Tally proofs valid, and consistent with the encrypted ballots.")
 

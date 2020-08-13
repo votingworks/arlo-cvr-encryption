@@ -496,6 +496,8 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     }
     style_map: STYLE_MAP = {}
 
+    ballot_id_to_ballot_type: Dict[str, str] = {}
+
     # We're computing a set-union of all the non-empty contest fields we find, in any ballot
     # sharing a given BallotType setting, i.e., we're inferring which contests are actually
     # a part of each BallotType.
@@ -509,6 +511,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
 
     for index, row in df.iterrows():
         ballot_type = row["BallotType"]
+        ballot_id_to_ballot_type[row["BallotId"]] = ballot_type
         present_contests = {
             contest_key_to_title[k] for k in contest_keys if _nonempty_elem(row, k)
         }
@@ -522,6 +525,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
         ElectionMetadata(
             fix_strings(election_name),
             ballot_type_to_bsid,
+            ballot_id_to_ballot_type,
             all_parties,
             style_map,
             contest_map,

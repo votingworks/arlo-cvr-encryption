@@ -45,9 +45,7 @@ class TestManifestPublishing(unittest.TestCase):
             unique_by=lambda f: f.file_name,
         )
     )
-    @settings(
-        deadline=timedelta(milliseconds=50000),
-    )
+    @settings(deadline=timedelta(milliseconds=50000),)
     def test_manifest(self, files: List[FileNameAndContents]) -> None:
         self._removeTree()
         mkdir_helper(MANIFEST_TESTING_DIR)

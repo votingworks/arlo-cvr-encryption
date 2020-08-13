@@ -86,6 +86,12 @@ class ElectionMetadata(Serializable):
     values are the different object id's used in ElectionGuard for those ballot styles.
     """
 
+    ballot_id_to_ballot_type: Dict[str, str]
+    """
+    Keys are the ballot id numbers, corresponding to their file names on disk (and their ElectionGuard
+    object ids). Values are the ballot types (as provided by the election administrator).
+    """
+
     all_parties: Set[str]
     """
     Set of political parties (typically three-letter codes).
