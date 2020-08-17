@@ -24,7 +24,7 @@ if __name__ == "__main__":
         "--keys",
         type=str,
         nargs=1,
-        default=["secret_election_keys.json"],
+        default="secret_election_keys.json",
         help="file name for the election official's key materials (default: secret_election_keys.json)",
     )
     parser.add_argument(
@@ -38,14 +38,14 @@ if __name__ == "__main__":
         "--directory",
         type=str,
         nargs=1,
-        default=["tally_output"],
+        default="tally_output",
         help="directory name for where the tally is written (default: tally_output)",
     )
     args = parser.parse_args()
 
-    keyfile = args.keys[0]
+    keyfile = args.keys
     cvrfile = args.cvr_file[0]
-    tallydir = args.output[0]
+    tallydir = args.directory
 
     admin_state: Optional[ElectionAdmin] = load_json_helper(".", keyfile, ElectionAdmin)
     if admin_state is None or not admin_state.is_valid():

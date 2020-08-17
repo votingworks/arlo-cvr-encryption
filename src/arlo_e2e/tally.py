@@ -125,6 +125,7 @@ def fast_encrypt_ballots(
 
 # object_id -> nonce, ciphertext
 TALLY_TYPE = Dict[str, ElGamalCiphertext]
+TALLY_INPUT_TYPE = Union[Dict[str, ElGamalCiphertext], CiphertextBallot]
 
 
 def cballot_to_partial_tally(cballot: CiphertextBallot) -> TALLY_TYPE:
@@ -140,9 +141,7 @@ def cballot_to_partial_tally(cballot: CiphertextBallot) -> TALLY_TYPE:
     return result
 
 
-def sequential_tally(
-    ptallies: Sequence[Union[TALLY_TYPE, CiphertextBallot]],
-) -> TALLY_TYPE:
+def sequential_tally(ptallies: Sequence[TALLY_INPUT_TYPE],) -> TALLY_TYPE:
     """
     Internal function: sequentially tallies all of the ciphertext ballots, or other partial tallies,
     and returns a partial tally.
@@ -164,7 +163,7 @@ def sequential_tally(
     return result
 
 
-BALLOTS_PER_SHARD: Final[int] = 10
+BALLOTS_PER_SHARD: Final[int] = 5
 """
 For ballot tallying, we'll "shard" the list of ballots up into groups, and that
 will be the work unit.
@@ -185,7 +184,7 @@ def fast_tally_ballots(
     """
 
     iter_count = 1
-    ballots_iter: Sequence[Union[TALLY_TYPE, CiphertextBallot]] = ballots
+    ballots_iter: Sequence[TALLY_INPUT_TYPE] = ballots
 
     while True:
         if pool is None or len(ballots_iter) <= BALLOTS_PER_SHARD:
@@ -210,10 +209,14 @@ DECRYPT_OUTPUT_TYPE = Tuple[str, int, ChaumPedersenDecryptionProof]
 
 
 def _decrypt(
-    keypair: ElGamalKeyPair, decrypt_input: DECRYPT_INPUT_TYPE
+    cec: CiphertextElectionContext,
+    keypair: ElGamalKeyPair,
+    decrypt_input: DECRYPT_INPUT_TYPE,
 ) -> DECRYPT_OUTPUT_TYPE:  # pragma: no cover
     object_id, seed, c = decrypt_input
-    plaintext, proof = decrypt_ciphertext_with_proof(c, keypair, seed)
+    plaintext, proof = decrypt_ciphertext_with_proof(
+        c, keypair, seed, cec.crypto_extended_base_hash
+    )
     return object_id, plaintext, proof
 
 
@@ -223,6 +226,7 @@ DECRYPT_TALLY_OUTPUT_TYPE = Dict[str, Tuple[int, ChaumPedersenDecryptionProof]]
 
 def fast_decrypt_tally(
     tally: TALLY_TYPE,
+    cec: CiphertextElectionContext,
     keypair: ElGamalKeyPair,
     proof_seed: ElementModQ,
     pool: Optional[Pool] = None,
@@ -247,7 +251,7 @@ def fast_decrypt_tally(
     # don't actually have all that much data left to process. There's almost
     # certainly no benefit to distributing this on a cluster.
 
-    wrapped_func = functools.partial(_decrypt, keypair)
+    wrapped_func = functools.partial(_decrypt, cec, keypair)
     result: List[DECRYPT_OUTPUT_TYPE] = [
         wrapped_func(x) for x in inputs
     ] if pool is None else pool.map(func=wrapped_func, iterable=inputs)
@@ -289,10 +293,12 @@ class SelectionInfo(Serializable):
     Proof of the correspondence between `decrypted_tally` and `encrypted_tally`.
     """
 
-    def is_valid_proof(self, public_key: ElementModP) -> bool:
+    def is_valid_proof(
+        self, public_key: ElementModP, hash_header: Optional[ElementModQ] = None
+    ) -> bool:
         """Returns true if the plaintext, ciphertext, and proof are valid and consistent, false if not."""
         valid_proof: bool = self.proof.is_valid(
-            self.decrypted_tally, self.encrypted_tally, public_key
+            self.decrypted_tally, self.encrypted_tally, public_key, hash_header
         )
 
         if not valid_proof:  # pragma: no cover
@@ -318,9 +324,9 @@ class SelectionTally(Serializable):
 
 
 def _proof_verify(
-    public_key: ElementModP, s: SelectionInfo
+    public_key: ElementModP, hash_header: Optional[ElementModQ], s: SelectionInfo
 ) -> bool:  # pragma: no cover
-    return s.is_valid_proof(public_key)
+    return s.is_valid_proof(public_key, hash_header)
 
 
 class FastTallyEverythingResults(NamedTuple):
@@ -430,7 +436,11 @@ class FastTallyEverythingResults(NamedTuple):
 
         _log_and_print("Verifying proofs:", verbose)
 
-        wrapped_func = functools.partial(_proof_verify, self.context.elgamal_public_key)
+        wrapped_func = functools.partial(
+            _proof_verify,
+            self.context.elgamal_public_key,
+            self.context.crypto_extended_base_hash,
+        )
         start = timer()
 
         inputs = self.tally.map.values()
@@ -478,7 +488,7 @@ class FastTallyEverythingResults(NamedTuple):
             recomputed_tally = fast_tally_ballots(self.encrypted_ballots, pool, verbose)
 
             tally_success = True
-            # Dict[str, ElGamalCiphertext]
+
             for selection in recomputed_tally.keys():
                 recomputed_ciphertext: ElGamalCiphertext = recomputed_tally[selection]
                 provided_ciphertext: ElGamalCiphertext = self.tally.map[
@@ -672,7 +682,7 @@ def fast_tally_everything(
     if verbose:  # pragma: no cover
         print("\nDecryption & Proofs: ")
     decrypted_tally: DECRYPT_TALLY_OUTPUT_TYPE = fast_decrypt_tally(
-        tally, keypair, seed_hash, pool, verbose
+        tally, cec, keypair, seed_hash, pool, verbose
     )
     eg_decryption_time = timer()
     _log_and_print(

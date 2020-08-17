@@ -18,6 +18,7 @@ from arlo_e2e.tally import (
     _ciphertext_ballot_to_accepted,
     SelectionTally,
     sequential_tally,
+    TALLY_INPUT_TYPE,
 )
 from arlo_e2e.utils import shard_list
 from electionguard.ballot import PlaintextBallot, CiphertextBallot
@@ -97,7 +98,7 @@ def r_tally(ptallies: Sequence[ray.ObjectRef]) -> TALLY_TYPE:
     return sequential_tally(ray.get(ptallies))
 
 
-def ray_tally_ballots(ptallies: Sequence[ray.ObjectRef]) -> ray.ObjectRef:
+def ray_tally_ballots(ptallies: Sequence[ray.ObjectRef],) -> ray.ObjectRef:
     """
     Launches a parallel tally reduction tree, with a fanout of BALLOTS_PER_SHARD. Returns
     a Ray ObjectRef reference to the future result, which the caller will then need to call
@@ -118,19 +119,26 @@ def ray_tally_ballots(ptallies: Sequence[ray.ObjectRef]) -> ray.ObjectRef:
 
 @ray.remote
 def r_decrypt(
-    keypair: ElGamalKeyPair, decrypt_input: DECRYPT_INPUT_TYPE
+    cec: CiphertextElectionContext,
+    keypair: ElGamalKeyPair,
+    decrypt_input: DECRYPT_INPUT_TYPE,
 ) -> DECRYPT_OUTPUT_TYPE:
     """
     Remotely decrypts an ElGamalCiphertext (and its related data -- see DECRYPT_INPUT_TYPE)
     and returns the plaintext along with a Chaum-Pedersen proof (see DECRYPT_OUTPUT_TYPE).
     """
     object_id, seed, c = decrypt_input
-    plaintext, proof = decrypt_ciphertext_with_proof(c, keypair, seed)
+    plaintext, proof = decrypt_ciphertext_with_proof(
+        c, keypair, seed, cec.crypto_extended_base_hash
+    )
     return object_id, plaintext, proof
 
 
 def ray_decrypt_tally(
-    tally: TALLY_TYPE, keypair: ray.ObjectRef, proof_seed: ElementModQ,
+    tally: TALLY_TYPE,
+    cec: ray.ObjectRef,
+    keypair: ray.ObjectRef,
+    proof_seed: ElementModQ,
 ) -> DECRYPT_TALLY_OUTPUT_TYPE:
     """
     Given a tally, this decrypts the tally
@@ -138,8 +146,8 @@ def ray_decrypt_tally(
     total as well as a Chaum-Pedersen proof that the total corresponds to the ciphertext.
 
     :param tally: an election tally
-    :param public_key: a Ray ObjectRef containing an `ElementModP`
-    :param secret_key: a Ray ObjectRef containing an `ElementModQ`
+    :param cec: a Ray ObjectRef containing a `CiphertextElectionContext`
+    :param keypair: a Ray ObjectRef containing an `ElGamalKeyPair`
     :param proof_seed: an ElementModQ
     """
     tkeys = tally.keys()
@@ -152,7 +160,7 @@ def ray_decrypt_tally(
     # We can't be lazy here: we need to have all this data in hand so we can
     # rearrange it into a dictionary and return it.
     result: List[DECRYPT_OUTPUT_TYPE] = ray.get(
-        [r_decrypt.remote(keypair, x) for x in inputs]
+        [r_decrypt.remote(cec, keypair, x) for x in inputs]
     )
 
     return {k: (p, proof) for k, p, proof in result}
@@ -206,8 +214,6 @@ def ray_tally_everything(
     if seed_hash is None:
         seed_hash = rand_q()
     r_seed_hash = ray.put(seed_hash)
-    r_secret_key = ray.put(secret_key)
-    r_public_key = ray.put(public_key)
     r_keypair = ray.put(keypair)
 
     if master_nonce is None:
@@ -245,7 +251,7 @@ def ray_tally_everything(
     assert tally is not None, "tally failed!"
 
     decrypted_tally: DECRYPT_TALLY_OUTPUT_TYPE = ray_decrypt_tally(
-        tally, r_keypair, seed_hash
+        tally, r_cec, r_keypair, seed_hash
     )
 
     # Sanity-checking logic: make sure we don't have any unexpected keys, and that the decrypted totals
