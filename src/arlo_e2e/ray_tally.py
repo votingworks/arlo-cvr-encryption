@@ -7,7 +7,6 @@ from typing import Optional, List, Tuple, Sequence, Dict, Final
 import ray
 from arlo_e2e.dominion import DominionCSV
 from arlo_e2e.memo import make_memo_value
-from arlo_e2e.utils import shard_list
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
     _log_and_print,
@@ -20,8 +19,9 @@ from arlo_e2e.tally import (
     SelectionTally,
     sequential_tally,
 )
+from arlo_e2e.utils import shard_list
 from electionguard.ballot import PlaintextBallot, CiphertextBallot
-from electionguard.chaum_pedersen import make_constant_chaum_pedersen
+from electionguard.chaum_pedersen import decrypt_ciphertext_with_proof
 from electionguard.election import (
     CiphertextElectionContext,
     InternalElectionDescription,
@@ -30,15 +30,16 @@ from electionguard.election import (
 from electionguard.elgamal import (
     elgamal_keypair_random,
     elgamal_keypair_from_secret,
+    ElGamalKeyPair,
 )
 from electionguard.encrypt import encrypt_ballot
-from electionguard.group import ElementModQ, rand_q, ElementModP
+from electionguard.group import ElementModQ, rand_q
 from electionguard.nonces import Nonces
 from electionguard.utils import get_optional
 
 # High-level design: What Ray gives us is the ability to call a remote method -- decorated with
-# @ray.remote, called with methodname.remote(args), returning a ray.ObjectID immediately. That
-# ObjectID is a future or promise for a computation that hasn't (necessarily) happened yet.
+# @ray.remote, called with methodname.remote(args), returning a ray.ObjectRef immediately. That
+# ObjectRef is a future or promise for a computation that hasn't (necessarily) happened yet.
 # We can then pass it as an argument to another remote method, all without worrying about
 # whether the computation has happened or where the ultimate value might be stored.
 
@@ -47,14 +48,14 @@ from electionguard.utils import get_optional
 # features, so it will try to dispatch work to the data, rather than forcing the data to
 # migrate to where the compute is.
 
-# One nice feature about Ray is that all the values contained inside a ray.ObjectID are
+# One nice feature about Ray is that all the values contained inside a ray.ObjectRef are
 # immutable. That makes them easy to replicate, anybody who has the answer is as good
 # as anybody else, and if you need it recomputed, because a computer failed, then it shouldn't
 # be a problem. Functional programming for the win!
 
 # Also, if you've got a big value that you want to spread around, which is what we need to
 # do with ElectionGuard ElectionDefinition or CiphertextElectionContext objects, you can
-# preemptively shove them into a ray.ObjectID with ray.put(), and then they'll presumably
+# preemptively shove them into a ray.ObjectRef with ray.put(), and then they'll presumably
 # be replicated out once. This should improve the performance of our r_encrypt()
 # method, and perhaps other such things.
 
@@ -67,7 +68,7 @@ will be the work unit.
 
 # Design thoughts: we could redo r_encrypt to take a list of input tuples, and return a list of ballots.
 # This would allow for bigger data shards. At least right now, it's convenient that the remote call gives
-# us back a list of ObjectIDs, so we can shard that up for the tallying process. Tallying is much faster,
+# us back a list of ObjectRef, so we can shard that up for the tallying process. Tallying is much faster,
 # per ballot, than encrypting, so the sharding we do there is more essential than it would be here.
 
 
@@ -88,7 +89,7 @@ def r_encrypt(
 
 
 @ray.remote
-def r_tally(ptallies: Sequence[ray.ObjectID]) -> TALLY_TYPE:
+def r_tally(ptallies: Sequence[ray.ObjectRef]) -> TALLY_TYPE:
     """
     Remotely tallies a sequence of either encrypted ballots or partial tallies.
     On the remote node, the computation will be sequential.
@@ -96,20 +97,20 @@ def r_tally(ptallies: Sequence[ray.ObjectID]) -> TALLY_TYPE:
     return sequential_tally(ray.get(ptallies))
 
 
-def ray_tally_ballots(ptallies: Sequence[ray.ObjectID]) -> ray.ObjectID:
+def ray_tally_ballots(ptallies: Sequence[ray.ObjectRef]) -> ray.ObjectRef:
     """
     Launches a parallel tally reduction tree, with a fanout of BALLOTS_PER_SHARD. Returns
-    a Ray ObjectID reference to the future result, which the caller will then need to call
+    a Ray ObjectRef reference to the future result, which the caller will then need to call
     `ray.get()` to retrieve.
     """
 
     if len(ptallies) <= BALLOTS_PER_SHARD:
         return r_tally.remote(ptallies)
     else:
-        shards: Sequence[Sequence[ray.ObjectID]] = shard_list(
+        shards: Sequence[Sequence[ray.ObjectRef]] = shard_list(
             ptallies, BALLOTS_PER_SHARD
         )
-        partial_tallies: List[ray.ObjectID] = [
+        partial_tallies: List[ray.ObjectRef] = [
             ray_tally_ballots(shard) for shard in shards
         ]
         return r_tally.remote(partial_tallies)
@@ -117,23 +118,19 @@ def ray_tally_ballots(ptallies: Sequence[ray.ObjectID]) -> ray.ObjectID:
 
 @ray.remote
 def r_decrypt(
-    public_key: ElementModP, secret_key: ElementModQ, decrypt_input: DECRYPT_INPUT_TYPE
+    keypair: ElGamalKeyPair, decrypt_input: DECRYPT_INPUT_TYPE
 ) -> DECRYPT_OUTPUT_TYPE:
     """
     Remotely decrypts an ElGamalCiphertext (and its related data -- see DECRYPT_INPUT_TYPE)
     and returns the plaintext along with a Chaum-Pedersen proof (see DECRYPT_OUTPUT_TYPE).
     """
-    object_id, seed, nonce, c = decrypt_input
-    plaintext = c.decrypt(secret_key)
-    proof = make_constant_chaum_pedersen(c, plaintext, nonce, public_key, seed)
+    object_id, seed, c = decrypt_input
+    plaintext, proof = decrypt_ciphertext_with_proof(c, keypair, seed)
     return object_id, plaintext, proof
 
 
 def ray_decrypt_tally(
-    tally: TALLY_TYPE,
-    public_key: ray.ObjectID,
-    secret_key: ray.ObjectID,
-    proof_seed: ElementModQ,
+    tally: TALLY_TYPE, keypair: ray.ObjectRef, proof_seed: ElementModQ,
 ) -> DECRYPT_TALLY_OUTPUT_TYPE:
     """
     Given a tally, this decrypts the tally
@@ -141,21 +138,21 @@ def ray_decrypt_tally(
     total as well as a Chaum-Pedersen proof that the total corresponds to the ciphertext.
 
     :param tally: an election tally
-    :param public_key: a Ray ObjectID containing an `ElementModP`
-    :param secret_key: a Ray ObjectID containing an `ElementModQ`
+    :param public_key: a Ray ObjectRef containing an `ElementModP`
+    :param secret_key: a Ray ObjectRef containing an `ElementModQ`
     :param proof_seed: an ElementModQ
     """
     tkeys = tally.keys()
     proof_seeds: List[ElementModQ] = Nonces(proof_seed)[0 : len(tkeys)]
-    inputs = [
-        (object_id, seed, tally[object_id][0], tally[object_id][1])
+    inputs: List[DECRYPT_INPUT_TYPE] = [
+        (object_id, seed, tally[object_id])
         for seed, object_id in zip(proof_seeds, tkeys)
     ]
 
     # We can't be lazy here: we need to have all this data in hand so we can
     # rearrange it into a dictionary and return it.
     result: List[DECRYPT_OUTPUT_TYPE] = ray.get(
-        [r_decrypt.remote(public_key, secret_key, x) for x in inputs]
+        [r_decrypt.remote(keypair, x) for x in inputs]
     )
 
     return {k: (p, proof) for k, p, proof in result}
@@ -187,13 +184,13 @@ def ray_tally_everything(
     ed, ballots, id_map = cvrs.to_election_description(date=date)
     assert len(ballots) > 0, "can't have zero ballots!"
 
-    if secret_key is None:
-        secret_key, public_key = elgamal_keypair_random()
-
-    else:
-        tmp = elgamal_keypair_from_secret(secret_key)
-        assert tmp is not None, "unexpected failure with keypair computation"
-        public_key = tmp.public_key
+    keypair = (
+        elgamal_keypair_random()
+        if secret_key is None
+        else elgamal_keypair_from_secret(secret_key)
+    )
+    assert keypair is not None, "unexpected failure with keypair computation"
+    secret_key, public_key = keypair
 
     cec = make_ciphertext_election_context(
         number_of_guardians=1,
@@ -211,6 +208,7 @@ def ray_tally_everything(
     r_seed_hash = ray.put(seed_hash)
     r_secret_key = ray.put(secret_key)
     r_public_key = ray.put(public_key)
+    r_keypair = ray.put(keypair)
 
     if master_nonce is None:
         master_nonce = rand_q()
@@ -221,8 +219,8 @@ def ray_tally_everything(
     start_time = timer()
 
     # This immediately returns a list of futures and launches the computation,
-    # so the actual type is List[ray.ObjectID], not List[CiphertextBallot].
-    cballot_refs: List[ray.ObjectID] = [
+    # so the actual type is List[ray.ObjectRef], not List[CiphertextBallot].
+    cballot_refs: List[ray.ObjectRef] = [
         r_encrypt.remote(r_ied, r_cec, r_seed_hash, t) for t in inputs
     ]
 
@@ -246,7 +244,9 @@ def ray_tally_everything(
 
     assert tally is not None, "tally failed!"
 
-    decrypted_tally = ray_decrypt_tally(tally, r_public_key, r_secret_key, seed_hash)
+    decrypted_tally: DECRYPT_TALLY_OUTPUT_TYPE = ray_decrypt_tally(
+        tally, r_keypair, seed_hash
+    )
 
     # Sanity-checking logic: make sure we don't have any unexpected keys, and that the decrypted totals
     # match up with the columns in the original plaintext data.
@@ -261,7 +261,7 @@ def ray_tally_everything(
     reported_tally: Dict[str, SelectionInfo] = {
         k: SelectionInfo(
             object_id=k,
-            encrypted_tally=tally[k][1],
+            encrypted_tally=tally[k],
             # we need to forcibly convert mpz to int here to make serialization work properly
             decrypted_tally=int(decrypted_tally[k][0]),
             proof=decrypted_tally[k][1],

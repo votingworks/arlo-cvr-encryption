@@ -30,8 +30,8 @@ from electionguard.ballot import (
     _list_eq,
 )
 from electionguard.chaum_pedersen import (
-    ConstantChaumPedersenProof,
-    make_constant_chaum_pedersen,
+    decrypt_ciphertext_with_proof,
+    ChaumPedersenDecryptionProof,
 )
 from electionguard.election import (
     InternalElectionDescription,
@@ -45,11 +45,11 @@ from electionguard.elgamal import (
     elgamal_keypair_random,
     elgamal_encrypt,
     elgamal_keypair_from_secret,
+    ElGamalKeyPair,
 )
 from electionguard.encrypt import encrypt_ballot
 from electionguard.group import (
     ElementModQ,
-    add_q,
     ElementModP,
     rand_q,
     int_to_q_unchecked,
@@ -124,7 +124,7 @@ def fast_encrypt_ballots(
 
 
 # object_id -> nonce, ciphertext
-TALLY_TYPE = Dict[str, Tuple[Optional[ElementModQ], ElGamalCiphertext]]
+TALLY_TYPE = Dict[str, ElGamalCiphertext]
 
 
 def cballot_to_partial_tally(cballot: CiphertextBallot) -> TALLY_TYPE:
@@ -136,7 +136,7 @@ def cballot_to_partial_tally(cballot: CiphertextBallot) -> TALLY_TYPE:
     for c in cballot.contests:
         for s in c.ballot_selections:
             if not s.is_placeholder_selection:
-                result[s.object_id] = (s.nonce, s.ciphertext)
+                result[s.object_id] = s.ciphertext
     return result
 
 
@@ -157,15 +157,10 @@ def sequential_tally(
             if k not in result:
                 result[k] = ptally[k]
             else:
-                nonce_sum, counter_sum = result[k]
-                nonce_partial, counter_partial = ptally[k]
-                nonce_sum = (
-                    add_q(nonce_sum, nonce_partial)
-                    if (nonce_sum is not None and nonce_partial is not None)
-                    else None
-                )
+                counter_sum = result[k]
+                counter_partial = ptally[k]
                 counter_sum = elgamal_add(counter_sum, counter_partial)
-                result[k] = (nonce_sum, counter_sum)
+                result[k] = counter_sum
     return result
 
 
@@ -207,30 +202,28 @@ def fast_tally_ballots(
         ballots_iter = partial_tallies
 
 
-# object_id, seed, nonce, ciphertext
-DECRYPT_INPUT_TYPE = Tuple[str, ElementModQ, ElementModQ, ElGamalCiphertext]
+# object_id, seed, ciphertext
+DECRYPT_INPUT_TYPE = Tuple[str, ElementModQ, ElGamalCiphertext]
 
 # object_id, plaintext, proof
-DECRYPT_OUTPUT_TYPE = Tuple[str, int, ConstantChaumPedersenProof]
+DECRYPT_OUTPUT_TYPE = Tuple[str, int, ChaumPedersenDecryptionProof]
 
 
 def _decrypt(
-    public_key: ElementModP, secret_key: ElementModQ, decrypt_input: DECRYPT_INPUT_TYPE
+    keypair: ElGamalKeyPair, decrypt_input: DECRYPT_INPUT_TYPE
 ) -> DECRYPT_OUTPUT_TYPE:  # pragma: no cover
-    object_id, seed, nonce, c = decrypt_input
-    plaintext = c.decrypt(secret_key)
-    proof = make_constant_chaum_pedersen(c, plaintext, nonce, public_key, seed)
+    object_id, seed, c = decrypt_input
+    plaintext, proof = decrypt_ciphertext_with_proof(c, keypair, seed)
     return object_id, plaintext, proof
 
 
 # object_id -> plaintext, proof
-DECRYPT_TALLY_OUTPUT_TYPE = Dict[str, Tuple[int, ConstantChaumPedersenProof]]
+DECRYPT_TALLY_OUTPUT_TYPE = Dict[str, Tuple[int, ChaumPedersenDecryptionProof]]
 
 
 def fast_decrypt_tally(
     tally: TALLY_TYPE,
-    public_key: ElementModP,
-    secret_key: ElementModQ,
+    keypair: ElGamalKeyPair,
     proof_seed: ElementModQ,
     pool: Optional[Pool] = None,
     show_progress: bool = True,
@@ -243,7 +236,7 @@ def fast_decrypt_tally(
     tkeys = tally.keys()
     proof_seeds: List[ElementModQ] = Nonces(proof_seed)[0 : len(tkeys)]
     inputs = [
-        (object_id, seed, tally[object_id][0], tally[object_id][1])
+        (object_id, seed, tally[object_id])
         for seed, object_id in zip(proof_seeds, tkeys)
     ]
 
@@ -254,7 +247,7 @@ def fast_decrypt_tally(
     # don't actually have all that much data left to process. There's almost
     # certainly no benefit to distributing this on a cluster.
 
-    wrapped_func = functools.partial(_decrypt, public_key, secret_key)
+    wrapped_func = functools.partial(_decrypt, keypair)
     result: List[DECRYPT_OUTPUT_TYPE] = [
         wrapped_func(x) for x in inputs
     ] if pool is None else pool.map(func=wrapped_func, iterable=inputs)
@@ -291,23 +284,23 @@ class SelectionInfo(Serializable):
     Decrypted tally.
     """
 
-    proof: ConstantChaumPedersenProof
+    proof: ChaumPedersenDecryptionProof
     """
     Proof of the correspondence between `decrypted_tally` and `encrypted_tally`.
     """
 
     def is_valid_proof(self, public_key: ElementModP) -> bool:
         """Returns true if the plaintext, ciphertext, and proof are valid and consistent, false if not."""
-        valid_proof: bool = self.proof.is_valid(self.encrypted_tally, public_key)
-        same_constant: bool = self.proof.constant == self.decrypted_tally
+        valid_proof: bool = self.proof.is_valid(
+            self.decrypted_tally, self.encrypted_tally, public_key
+        )
 
-        valid = same_constant and valid_proof
-        if not valid:  # pragma: no cover
+        if not valid_proof:  # pragma: no cover
             log_error(
-                f"Chaum-Pedersen proof validation failed: valid_proof: {valid_proof}, same_constant: {same_constant}, selection_info: {str(self)}"
+                f"Chaum-Pedersen proof validation failed: valid_proof: {valid_proof}, selection_info: {str(self)}"
             )
 
-        return valid
+        return valid_proof
 
 
 @dataclass(eq=True)
@@ -465,9 +458,7 @@ class FastTallyEverythingResults(NamedTuple):
             # next, check each individual ballot's proofs; in this case, we're going to always
             # show the progress bar, even if verbose is false
             ballot_iter = tqdm(self.encrypted_ballots, desc="Ballot proofs")
-            ballot_func = functools.partial(
-                _ballot_proof_verify, self.context.elgamal_public_key
-            )
+            ballot_func = functools.partial(_ballot_proof_verify, self.context)
 
             ballot_start = timer()
             ballot_result: List[bool] = [
@@ -487,11 +478,9 @@ class FastTallyEverythingResults(NamedTuple):
             recomputed_tally = fast_tally_ballots(self.encrypted_ballots, pool, verbose)
 
             tally_success = True
-            # Dict[str, Tuple[Optional[ElementModQ], ElGamalCiphertext]]
+            # Dict[str, ElGamalCiphertext]
             for selection in recomputed_tally.keys():
-                recomputed_ciphertext: ElGamalCiphertext = recomputed_tally[selection][
-                    1
-                ]
+                recomputed_ciphertext: ElGamalCiphertext = recomputed_tally[selection]
                 provided_ciphertext: ElGamalCiphertext = self.tally.map[
                     selection
                 ].encrypted_tally
@@ -574,9 +563,11 @@ class FastTallyEverythingResults(NamedTuple):
 
 
 def _ballot_proof_verify(
-    public_key: ElementModP, ballot: CiphertextAcceptedBallot
+    cec: CiphertextElectionContext, ballot: CiphertextAcceptedBallot
 ) -> bool:  # pragma: no cover
-    return ballot.is_valid_encryption(ballot.description_hash, public_key)
+    return ballot.is_valid_encryption(
+        ballot.description_hash, cec.elgamal_public_key, cec.crypto_extended_base_hash
+    )
 
 
 def fast_tally_everything(
@@ -609,12 +600,13 @@ def fast_tally_everything(
     ed, ballots, id_map = cvrs.to_election_description(date=date)
     assert len(ballots) > 0, "can't have zero ballots!"
 
-    if secret_key is None:
-        secret_key, public_key = elgamal_keypair_random()
-    else:
-        tmp = elgamal_keypair_from_secret(secret_key)
-        assert tmp is not None, "unexpected failure with keypair computation"
-        public_key = tmp.public_key
+    keypair = (
+        elgamal_keypair_random()
+        if secret_key is None
+        else elgamal_keypair_from_secret(secret_key)
+    )
+    assert keypair is not None, "unexpected failure with keypair computation"
+    secret_key, public_key = keypair
 
     # This computation exists only to cause side-effects in the DLog engine, so the lame nonce is not an issue.
     assert len(ballots) == get_optional(
@@ -660,7 +652,7 @@ def fast_tally_everything(
 
     if verbose:  # pragma: no cover
         print("\nTallying:")
-    tally = fast_tally_ballots(cballots, pool, verbose)
+    tally: TALLY_TYPE = fast_tally_ballots(cballots, pool, verbose)
     eg_tabulate_time = timer()
 
     _log_and_print(
@@ -679,8 +671,8 @@ def fast_tally_everything(
 
     if verbose:  # pragma: no cover
         print("\nDecryption & Proofs: ")
-    decrypted_tally = fast_decrypt_tally(
-        tally, public_key, secret_key, seed_hash, pool, verbose
+    decrypted_tally: DECRYPT_TALLY_OUTPUT_TYPE = fast_decrypt_tally(
+        tally, keypair, seed_hash, pool, verbose
     )
     eg_decryption_time = timer()
     _log_and_print(
@@ -704,7 +696,7 @@ def fast_tally_everything(
     reported_tally: Dict[str, SelectionInfo] = {
         k: SelectionInfo(
             object_id=k,
-            encrypted_tally=tally[k][1],
+            encrypted_tally=tally[k],
             # we need to forcibly convert mpz to int here to make serialization work properly
             decrypted_tally=int(decrypted_tally[k][0]),
             proof=decrypted_tally[k][1],

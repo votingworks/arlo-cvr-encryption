@@ -56,7 +56,7 @@ class TestRayBasics(unittest.TestCase):
         ]
         serial_time = timer()
 
-        parallel_ciphertext_objects: List[ray.ObjectID] = [
+        parallel_ciphertext_objects: List[ray.ObjectRef] = [
             r_encrypt.remote(p, n, r_public_key) for p, n in zip(plaintexts, nonces)
         ]
         parallel_ciphertexts: List[ElGamalCiphertext] = ray.get(
