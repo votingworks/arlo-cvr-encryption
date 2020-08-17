@@ -17,10 +17,6 @@ from typing import (
     Iterable,
 )
 
-from arlo_e2e.dominion import DominionCSV
-from arlo_e2e.memo import Memo, make_memo_value
-from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.utils import shard_list
 from electionguard.ballot import (
     PlaintextBallot,
     CiphertextAcceptedBallot,
@@ -29,9 +25,10 @@ from electionguard.ballot import (
     from_ciphertext_ballot,
     _list_eq,
 )
-from electionguard.chaum_pedersen import (
+from electionguard.chaum_pedersen import ChaumPedersenDecryptionProof
+from electionguard.decrypt_with_secrets import (
+    ciphertext_ballot_to_dict,
     decrypt_ciphertext_with_proof,
-    ChaumPedersenDecryptionProof,
 )
 from electionguard.election import (
     InternalElectionDescription,
@@ -59,6 +56,11 @@ from electionguard.nonces import Nonces
 from electionguard.serializable import Serializable
 from electionguard.utils import get_optional
 from tqdm import tqdm
+
+from arlo_e2e.dominion import DominionCSV
+from arlo_e2e.memo import Memo, make_memo_value
+from arlo_e2e.metadata import ElectionMetadata
+from arlo_e2e.utils import shard_list
 
 
 def _encrypt(
@@ -123,25 +125,11 @@ def fast_encrypt_ballots(
     return result
 
 
-# object_id -> nonce, ciphertext
 TALLY_TYPE = Dict[str, ElGamalCiphertext]
 TALLY_INPUT_TYPE = Union[Dict[str, ElGamalCiphertext], CiphertextBallot]
 
 
-def cballot_to_partial_tally(cballot: CiphertextBallot) -> TALLY_TYPE:
-    """
-    Given a `CiphertextBallot`, extracts the relevant nonces and ciphertext counters used for
-    our tallies.
-    """
-    result: TALLY_TYPE = {}
-    for c in cballot.contests:
-        for s in c.ballot_selections:
-            if not s.is_placeholder_selection:
-                result[s.object_id] = s.ciphertext
-    return result
-
-
-def sequential_tally(ptallies: Sequence[TALLY_INPUT_TYPE],) -> TALLY_TYPE:
+def sequential_tally(ptallies: Sequence[TALLY_INPUT_TYPE]) -> TALLY_TYPE:
     """
     Internal function: sequentially tallies all of the ciphertext ballots, or other partial tallies,
     and returns a partial tally.
@@ -150,7 +138,7 @@ def sequential_tally(ptallies: Sequence[TALLY_INPUT_TYPE],) -> TALLY_TYPE:
     for ptally in ptallies:
         # we want do our computation purely in terms of TALLY_TYPE, so we'll convert CiphertextBallots
         if isinstance(ptally, CiphertextBallot):
-            ptally = cballot_to_partial_tally(ptally)
+            ptally = ciphertext_ballot_to_dict(ptally)
 
         for k in ptally.keys():
             if k not in result:

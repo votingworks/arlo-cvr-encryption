@@ -20,7 +20,7 @@ from arlo_e2e.dominion import (
     read_dominion_csv,
     DominionCSV,
 )
-from arlo_e2e.eg_helpers import decrypt_with_secret, UidMaker
+from arlo_e2e.eg_helpers import decrypt_tally_with_secret, UidMaker
 from arlo_e2e.metadata import SelectionMetadata
 from arlo_e2e_testing.dominion_hypothesis import (
     dominion_cvrs,
@@ -246,7 +246,7 @@ class TestDominionHypotheses(unittest.TestCase):
 
         tally = tally_ballots(ballot_box._store, ied, state.cec)
         self.assertIsNotNone(tally)
-        results = decrypt_with_secret(tally, state.secret_key)
+        results = decrypt_tally_with_secret(tally, state.secret_key)
 
         self.assertEqual(len(results.keys()), len(state.id_map.keys()))
         for obj_id in results.keys():

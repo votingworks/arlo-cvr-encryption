@@ -1,33 +1,13 @@
 import argparse
-import functools
-import os
-from multiprocessing import Pool
-from os import path
-from typing import Optional, List
+from typing import Optional
 
-from electionguard.ballot import CiphertextAcceptedBallot, PlaintextBallot
-from electionguard.decrypt_with_secrets import decrypt_ballot_with_secret
 from electionguard.election import InternalElectionDescription
-from electionguard.group import ElementModQ, ElementModP
 from electionguard.serializable import set_serializers, set_deserializers
 from tqdm import tqdm
 
+from arlo_e2e.decrypt import load_proven_ballot, verify_proven_ballot_proofs
 from arlo_e2e.publish import load_fast_tally
 from arlo_e2e.tally import FastTallyEverythingResults
-from arlo_e2e.utils import mkdir_helper
-
-
-def _decrypt(
-    ied: InternalElectionDescription,
-    extended_base_hash: ElementModQ,
-    public_key: ElementModP,
-    secret_key: ElementModQ,
-    ballot: CiphertextAcceptedBallot,
-) -> Optional[PlaintextBallot]:
-    return decrypt_ballot_with_secret(
-        ballot, ied, extended_base_hash, public_key, secret_key
-    )
-
 
 if __name__ == "__main__":
     set_serializers()
@@ -38,36 +18,36 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "-d",
-        "--directory",
+        "-t",
+        "--tallies",
         type=str,
         default="tally_output",
         help="directory name for where the tally artifacts can be found (default: tally_output)",
     )
 
     parser.add_argument(
-        "-o",
-        "--output",
+        "-d",
+        "--decrypted",
         type=str,
         default="decrypted_ballots",
-        help="directory name for where decrypted ballots can be found(default: decrypted_ballots)",
+        help="directory name for where decrypted ballots can be found (default: decrypted_ballots)",
     )
     parser.add_argument(
         "ballot_id", type=str, nargs="+", help="ballot identifiers to decode",
     )
 
     args = parser.parse_args()
-    tallydir = args.directory
-    outputdir = args.output
+    tally_dir = args.tallies
+    decrypted_dir = args.decrypted
     ballot_ids = args.ballot_id
 
-    print(f"Loading tallies from {tallydir}.")
+    print(f"Loading tallies from {tally_dir}.")
     results: Optional[FastTallyEverythingResults] = load_fast_tally(
-        tallydir, check_proofs=False
+        tally_dir, check_proofs=False
     )
 
     if results is None:
-        print(f"Failed to load results from {tallydir}")
+        print(f"Failed to load results from {tally_dir}")
         exit(1)
 
     for bid in ballot_ids:
@@ -76,35 +56,26 @@ if __name__ == "__main__":
 
     encrypted_ballots = [results.get_encrypted_ballot(bid) for bid in ballot_ids]
     if None in encrypted_ballots:
+        print("Missing files on disk. Exiting.")
         exit(1)
 
-    pool = Pool(os.cpu_count())
+    plaintext_ballots = [load_proven_ballot(bid, decrypted_dir) for bid in ballot_ids]
+    if None in plaintext_ballots:
+        print("Missing files on disk. Exiting.")
+        exit(1)
 
     ied = InternalElectionDescription(results.election_description)
     extended_base_hash = results.context.crypto_extended_base_hash
-    public_key = admin_state.keypair.public_key
-    secret_key = admin_state.keypair.secret_key
 
-    wrapped_decrypt = functools.partial(
-        _decrypt, ied, extended_base_hash, public_key, secret_key
-    )
-    inputs = tqdm(encrypted_ballots, desc="Decrypting ballots")
-    plaintext_ballots: List[Optional[PlaintextBallot]] = pool.map(
-        func=wrapped_decrypt, iterable=inputs
-    )
-    pool.close()
+    for encrypted, plaintext in tqdm(
+        list(zip(encrypted_ballots, plaintext_ballots)), desc="Proof validation"
+    ):
+        if not verify_proven_ballot_proofs(
+            results.context.crypto_extended_base_hash,
+            results.context.elgamal_public_key,
+            encrypted,
+            plaintext,
+        ):
+            print(f"Ballot {encrypted.object_id}: proof check failed!")
 
-    if None in plaintext_ballots:
-        print(
-            f"Decryption: only {len(plaintext_ballots)} of {len(encrypted_ballots)} decrypted successfully, exiting."
-        )
-        exit(1)
-
-    mkdir_helper(outputdir)
-    for ballot in tqdm(plaintext_ballots, desc="Writing ballots"):
-        ballot_name_prefix = ballot.object_id[0:4]  # letter b plus first three digits
-        subdir = path.join(outputdir, ballot_name_prefix)
-        mkdir_helper(subdir)
-        ballot.to_json_file(ballot.object_id, subdir)
-
-    pool.close()
+    # TODO: Print something useful about the plaintext ballots. Also verify them.

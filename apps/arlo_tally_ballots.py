@@ -28,24 +28,24 @@ if __name__ == "__main__":
         help="file name for the election official's key materials (default: secret_election_keys.json)",
     )
     parser.add_argument(
-        "cvr_file",
-        type=str,
-        nargs=1,
-        help="filename for the Dominion-style ballot CVR file",
-    )
-    parser.add_argument(
-        "-d",
-        "--directory",
+        "-t",
+        "--tallies",
         type=str,
         nargs=1,
         default="tally_output",
         help="directory name for where the tally is written (default: tally_output)",
     )
+    parser.add_argument(
+        "cvr_file",
+        type=str,
+        nargs=1,
+        help="filename for the Dominion-style ballot CVR file",
+    )
     args = parser.parse_args()
 
     keyfile = args.keys
     cvrfile = args.cvr_file[0]
-    tallydir = args.directory
+    tallydir = args.tallies
 
     admin_state: Optional[ElectionAdmin] = load_json_helper(".", keyfile, ElectionAdmin)
     if admin_state is None or not admin_state.is_valid():

@@ -4,7 +4,7 @@ from electionguard.group import ElementModQ
 from electionguard.tally import CiphertextTally
 
 
-def decrypt_with_secret(
+def decrypt_tally_with_secret(
     tally: CiphertextTally, secret_key: ElementModQ
 ) -> Dict[str, int]:
     """
