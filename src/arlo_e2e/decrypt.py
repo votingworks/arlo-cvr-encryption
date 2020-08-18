@@ -2,7 +2,7 @@ import functools
 from multiprocessing.pool import Pool
 from typing import Optional, Dict, List
 
-from electionguard.ballot import CiphertextAcceptedBallot
+from electionguard.ballot import CiphertextAcceptedBallot, PlaintextBallotSelection
 from electionguard.chaum_pedersen import ChaumPedersenDecryptionProof
 from electionguard.decrypt_with_secrets import (
     ProvenPlaintextBallot,
@@ -32,7 +32,9 @@ def verify_proven_ballot_proofs(
     # because we don't expect to be decrypting very many ballots at once, and it's really valuable
     # to do the extra checking for correctness.
 
-    selections: Dict[str, int] = plaintext_ballot_to_dict(pballot.ballot)
+    selections: Dict[str, PlaintextBallotSelection] = plaintext_ballot_to_dict(
+        pballot.ballot
+    )
     ciphertexts: Dict[str, ElGamalCiphertext] = ciphertext_ballot_to_dict(
         ciphertext_ballot
     )
@@ -46,8 +48,8 @@ def verify_proven_ballot_proofs(
             return False
 
         if not proofs[id].is_valid(
-            selections[id], ciphertexts[id], public_key, extended_base_hash
-        ):  # pragma: no cover
+            selections[id].to_int(), ciphertexts[id], public_key, extended_base_hash
+        ):
             log_error(f"Invalid proof for selection id {id}")
             return False
     return True

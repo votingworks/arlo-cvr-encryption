@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 from arlo_e2e.admin import ElectionAdmin
 from arlo_e2e.decrypt import decrypt_ballots, write_proven_ballot
+from arlo_e2e.eg_helpers import log_nothing_to_stdout
 from arlo_e2e.publish import load_fast_tally
 from arlo_e2e.tally import FastTallyEverythingResults
 from arlo_e2e.utils import load_json_helper, mkdir_helper
@@ -17,6 +18,7 @@ from arlo_e2e.utils import load_json_helper, mkdir_helper
 if __name__ == "__main__":
     set_serializers()
     set_deserializers()
+    log_nothing_to_stdout()
 
     parser = argparse.ArgumentParser(description="Decrypts a list of ballots")
 

@@ -36,7 +36,7 @@ def run_bench(filename: str, pool: Pool) -> None:
     tally_end = timer()
     assert tally.all_proofs_valid(verbose=True), "proof failure!"
 
-    print(f"starting ray.io parallelism")
+    print(f"\nstarting ray.io parallelism")
     rtally_start = timer()
     rtally = ray_tally_everything(cvrs)
     rtally_end = timer()
@@ -46,7 +46,7 @@ def run_bench(filename: str, pool: Pool) -> None:
     # of the random nonces and such generated internally. In tests/test_ray_tally.py,
     # the method test_ray_and_multiprocessing_agree does the extra work to test for equality.
 
-    print(f"OVERALL PERFORMANCE")
+    print(f"\nOVERALL PERFORMANCE")
     print(f"    Pool time:   {tally_end - tally_start: .3f} sec")
     print(f"    Pool rate:   {rows / (tally_end - tally_start): .3f} ballots/sec")
     print(f"    Ray time:    {rtally_end - rtally_start : .3f} sec")

@@ -5,6 +5,7 @@ from typing import Optional, Set
 
 from electionguard.serializable import set_serializers, set_deserializers
 
+from arlo_e2e.eg_helpers import log_nothing_to_stdout
 from arlo_e2e.metadata import SelectionMetadata
 from arlo_e2e.publish import load_fast_tally
 from arlo_e2e.tally import FastTallyEverythingResults, SelectionInfo
@@ -12,6 +13,7 @@ from arlo_e2e.tally import FastTallyEverythingResults, SelectionInfo
 if __name__ == "__main__":
     set_serializers()
     set_deserializers()
+    log_nothing_to_stdout()
 
     parser = argparse.ArgumentParser(
         description="Reads an arlo-e2e tally and verifies all the cryptographic artifacts"

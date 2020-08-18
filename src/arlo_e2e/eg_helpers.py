@@ -1,6 +1,8 @@
+import logging
 from typing import Dict, Tuple
 
 from electionguard.group import ElementModQ
+from electionguard.logs import LOG
 from electionguard.tally import CiphertextTally
 
 
@@ -52,3 +54,20 @@ class UidMaker:
         Fetches a UID string and increments the internal counter.
         """
         return self.next_int()[1]
+
+
+def log_nothing_to_stdout() -> None:
+    """
+    Hacks the ElectionGuard logging infrastructure. The full log still goes to `electionguard.log`,
+    but no log info at all goes to stdout. Useful for command-line tools so they're not writing
+    things we don't want to bother the users about.
+    """
+
+    logger: logging.Logger = LOG._ElectionGuardLog__logger
+
+    for h in logger.handlers.copy():
+        logger.removeHandler(h)
+
+    logger.addHandler(LOG._get_file_handler())
+
+    assert len(logger.handlers) == 1, "we failed to modify the logger!"
