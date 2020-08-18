@@ -443,6 +443,10 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
         lambda r: dominion_row_to_uid(r, election_name, ballot_metadata_fields), axis=1,
     )
 
+    # If the election official put numbers in as their ballot types, that's going to cause type
+    # errors, because we really want to deal with them as strings.
+    df['BallotType'] = df['BallotType'].apply(lambda s: str(s))
+
     # there's probably an easier way to do this, but it does what we want
     ballot_uid_iter = UidMaker("b")
     selection_uid_iter = UidMaker("s")
