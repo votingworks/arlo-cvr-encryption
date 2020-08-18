@@ -1,5 +1,5 @@
-import os
-from os import path, mkdir
+from stat import S_ISREG
+from os import path, mkdir, stat, walk
 from pathlib import PurePath, Path
 from typing import (
     TypeVar,
@@ -94,6 +94,34 @@ def compose_filename(
     return root_dir / file_name
 
 
+def file_exists_helper(
+    root_dir: str, file_name: Union[str, PurePath], subdirectories: List[str] = None,
+) -> bool:
+    """
+    Checks whether the desired file exists.
+
+    Note: if the file_name is a path-like object, the root_dir and subdirectories
+    are ignored and the file is directly loaded.
+
+    :param root_dir: top-level directory where we'll be reading files
+    :param file_name: name of the file, including any suffix
+    :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
+    :returns: True if the file is a regular file with non-zero size, otherwise False
+    """
+    if isinstance(file_name, PurePath):
+        full_name = file_name
+    else:
+        full_name = compose_filename(root_dir, file_name, subdirectories)
+
+    try:
+        s = stat(full_name)
+        return s.st_size > 0 and S_ISREG(s.st_mode)
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return False
+
+
 def load_file_helper(
     root_dir: str, file_name: Union[str, PurePath], subdirectories: List[str] = None,
 ) -> Optional[str]:
@@ -115,7 +143,7 @@ def load_file_helper(
         full_name = compose_filename(root_dir, file_name, subdirectories)
 
     try:
-        s = os.stat(full_name)
+        s = stat(full_name)
         if s.st_size == 0:  # pragma: no cover
             log_error(f"The file ({full_name}) is empty")
             return None
@@ -124,7 +152,10 @@ def load_file_helper(
             data = f.read()
 
             return data
-    except OSError as e:  # pragma: no cover
+    except FileNotFoundError as e:
+        log_error(f"Error reading file ({full_name}): {e}")
+        return None
+    except OSError as e:
         log_error(f"Error reading file ({full_name}): {e}")
         return None
 
@@ -224,7 +255,7 @@ def all_files_in_directory(root_dir: str) -> List[PurePath]:
     directory name will be prepended before each filename in the result.
     """
     results: List[str] = []
-    for root, dirs, files in os.walk(root_dir):
+    for root, dirs, files in walk(root_dir):
         for file in files:
             results.append(path.join(root, file))
     return [PurePath(x) for x in results]

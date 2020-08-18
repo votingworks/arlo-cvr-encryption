@@ -1,5 +1,5 @@
 import functools
-from multiprocessing import Pool
+from multiprocessing.pool import Pool
 from typing import Optional, Dict, List
 
 from electionguard.ballot import CiphertextAcceptedBallot
@@ -16,7 +16,7 @@ from electionguard.group import ElementModQ, ElementModP
 from electionguard.logs import log_error
 from tqdm import tqdm
 
-from arlo_e2e.utils import load_json_helper, write_json_helper
+from arlo_e2e.utils import load_json_helper, write_json_helper, file_exists_helper
 
 
 def verify_proven_ballot_proofs(
@@ -38,16 +38,16 @@ def verify_proven_ballot_proofs(
     )
     proofs: Dict[str, ChaumPedersenDecryptionProof] = pballot.proofs
     for id in selections.keys():
-        if id not in proofs:
+        if id not in proofs:  # pragma: no cover
             log_error(f"No proof found for selection id {id}")
             return False
-        if id not in ciphertexts:
+        if id not in ciphertexts:  # pragma: no cover
             log_error(f"No ciphertext found for selection id {id}")
             return False
 
         if not proofs[id].is_valid(
             selections[id], ciphertexts[id], public_key, extended_base_hash
-        ):
+        ):  # pragma: no cover
             log_error(f"Invalid proof for selection id {id}")
             return False
     return True
@@ -58,12 +58,15 @@ def _decrypt(
     extended_base_hash: ElementModQ,
     keypair: ElGamalKeyPair,
     ballot: CiphertextAcceptedBallot,
-) -> Optional[ProvenPlaintextBallot]:
+) -> Optional[ProvenPlaintextBallot]:  # pragma: no cover
     secret_key, public_key = keypair
 
     pballot = decrypt_ballot_with_secret_and_proofs(
         ballot, ied, extended_base_hash, public_key, secret_key
     )
+
+    if pballot is None:
+        return None
 
     if verify_proven_ballot_proofs(extended_base_hash, public_key, ballot, pballot):
         return pballot
@@ -112,10 +115,26 @@ def load_proven_ballot(
     """
     Reads a `ProvenPlaintextBallot` from the desired directory. On failure, returns `None`.
     """
+
+    # Special case here because normally load_json_helper would log an error, and we don't
+    # want that, since this case might happen frequently.
+    if not exists_proven_ballot(ballot_object_id, decrypted_dir):
+        return None
+
     ballot_name_prefix = ballot_object_id[0:4]  # letter b plus first three digits
     return load_json_helper(
         decrypted_dir,
         ballot_object_id + ".json",
         ProvenPlaintextBallot,
         [ballot_name_prefix],
+    )
+
+
+def exists_proven_ballot(ballot_object_id: str, decrypted_dir: str) -> bool:
+    """
+    Checks if the desired `ballot_object_id` has been decrypted and written to `decrypted_dir`.
+    """
+    ballot_name_prefix = ballot_object_id[0:4]  # letter b plus first three digits
+    return file_exists_helper(
+        decrypted_dir, ballot_object_id + ".json", [ballot_name_prefix],
     )

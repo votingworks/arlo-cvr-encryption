@@ -10,6 +10,8 @@ def decrypt_tally_with_secret(
     """
     Given an ElectionGuard "Tally" structure, returns a dict that
     maps from contest object_ids to their plaintext integer results.
+    Useful for testing, but it's preferable (and way faster) to use
+    the methods in `tally.py` or `ray_tally.py`.
     """
 
     # Borrowed from electionguard/tests/test_tally.py

@@ -6,9 +6,19 @@ from multiprocessing import Pool, cpu_count
 
 import coverage
 from electionguard.ballot import _list_eq
+from electionguard.election import InternalElectionDescription
+from electionguard.elgamal import ElGamalKeyPair
+from electionguardtest.elgamal import elgamal_keypairs
 from hypothesis import settings, given, HealthCheck, Phase
 from hypothesis.strategies import booleans
 
+from arlo_e2e.decrypt import (
+    decrypt_ballots,
+    verify_proven_ballot_proofs,
+    exists_proven_ballot,
+    write_proven_ballot,
+    load_proven_ballot,
+)
 from arlo_e2e.dominion import read_dominion_csv
 from arlo_e2e.publish import write_fast_tally, load_fast_tally
 from arlo_e2e.tally import fast_tally_everything, _log_and_print
@@ -32,7 +42,7 @@ class TestTallyPublishing(unittest.TestCase):
         self._removeTree()
         self.pool.close()
 
-    @given(dominion_cvrs(max_rows=50), booleans())
+    @given(dominion_cvrs(max_rows=50), booleans(), elgamal_keypairs())
     @settings(
         deadline=timedelta(milliseconds=50000),
         suppress_health_check=[HealthCheck.too_slow],
@@ -40,7 +50,9 @@ class TestTallyPublishing(unittest.TestCase):
         # disabling the "shrink" phase, because it runs very slowly
         phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
     )
-    def test_end_to_end_publications(self, input: str, check_proofs: bool) -> None:
+    def test_end_to_end_publications(
+        self, input: str, check_proofs: bool, keypair: ElGamalKeyPair
+    ) -> None:
         # nuke any pre-existing tally_testing tree, since we only want to see current output
 
         self._removeTree()
@@ -53,7 +65,9 @@ class TestTallyPublishing(unittest.TestCase):
         _, ballots, _ = cvrs.to_election_description()
         assert len(ballots) > 0, "can't have zero ballots!"
 
-        results = fast_tally_everything(cvrs, self.pool, verbose=True)
+        results = fast_tally_everything(
+            cvrs, self.pool, secret_key=keypair.secret_key, verbose=True
+        )
 
         self.assertTrue(results.all_proofs_valid(self.pool))
 
@@ -71,5 +85,38 @@ class TestTallyPublishing(unittest.TestCase):
 
         self.assertTrue(_list_eq(results.encrypted_ballots, results2.encrypted_ballots))
         self.assertEqual(set(results.tally.map.keys()), set(results2.tally.map.keys()))
+
+        # And lastly, while we're here, we'll use all this machinery to exercise the ballot decryption
+        # read/write facilities.
+
+        ied = InternalElectionDescription(results.election_description)
+
+        _log_and_print("decrypting one more time")
+        pballots = decrypt_ballots(
+            ied,
+            results.context.crypto_extended_base_hash,
+            keypair,
+            self.pool,
+            results.encrypted_ballots,
+        )
+        self.assertEqual(len(pballots), len(results.encrypted_ballots))
+        self.assertNotIn(None, pballots)
+
+        # for speed, we're only going to do this for the first ballot, not all of them
+        pballot = pballots[0]
+        eballot = results.encrypted_ballots[0]
+        bid = pballot.ballot.object_id
+        self.assertTrue(
+            verify_proven_ballot_proofs(
+                results.context.crypto_extended_base_hash,
+                keypair.public_key,
+                eballot,
+                pballot,
+            )
+        )
+        write_proven_ballot(pballot, "decrypted")
+        self.assertTrue(exists_proven_ballot(bid, "decrypted"))
+        self.assertFalse(exists_proven_ballot(bid + "0", "decrypted"))
+        self.assertEqual(pballot, load_proven_ballot(bid, "decrypted"))
 
         self._removeTree()

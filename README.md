@@ -47,9 +47,11 @@ in a tally directory.
 for ballots having the desired contest.  Demonstrates how to work with the metadata included
 in a tally directory.
 
-(*Tools not yet written.*)
-
 `arlo_decrypt_ballots`: Input is one or more JSON files (the `arlo_encrypt_cvrs` format), the *private* key of the election, and the identifier(s) for the ballot(s) to be decrypted. Output is some sort of JSON format containing the plaintext plus the decryption proof.
+
+`arlo_decode_ballots`: Given some ballot IDs, prints everything we know about those ballots. If they
+were previously decrypted, this will print their decryptions. Otherwise, just
+their ballot style.
 
 ## Implementation status
 
@@ -63,6 +65,9 @@ On top of this, we'll build the command-line tools, as above.
 
 At some point really soon, we'll need to support cluster parallelism
 for the encryption/tallying process, so we can scale to large elections.
+We already have prototyped tallying code using [Ray](https://ray.io/),
+which runs great locally and needs to be validated / enhanced to run properly
+on a real cluster.
 
 Not in version 1 but on the future wishlist:
 - Some sort of binary file format or use of a real database to store all the encrypted CVRs. JSON is inefficient,

@@ -5,24 +5,8 @@ from timeit import default_timer as timer
 from typing import Optional, List, Tuple, Sequence, Dict, Final
 
 import ray
-from arlo_e2e.dominion import DominionCSV
-from arlo_e2e.memo import make_memo_value
-from arlo_e2e.tally import (
-    FastTallyEverythingResults,
-    _log_and_print,
-    TALLY_TYPE,
-    DECRYPT_INPUT_TYPE,
-    DECRYPT_OUTPUT_TYPE,
-    DECRYPT_TALLY_OUTPUT_TYPE,
-    SelectionInfo,
-    _ciphertext_ballot_to_accepted,
-    SelectionTally,
-    sequential_tally,
-    TALLY_INPUT_TYPE,
-)
-from arlo_e2e.utils import shard_list
 from electionguard.ballot import PlaintextBallot, CiphertextBallot
-from electionguard.chaum_pedersen import decrypt_ciphertext_with_proof
+from electionguard.decrypt_with_secrets import decrypt_ciphertext_with_proof
 from electionguard.election import (
     CiphertextElectionContext,
     InternalElectionDescription,
@@ -37,6 +21,22 @@ from electionguard.encrypt import encrypt_ballot
 from electionguard.group import ElementModQ, rand_q
 from electionguard.nonces import Nonces
 from electionguard.utils import get_optional
+
+from arlo_e2e.dominion import DominionCSV
+from arlo_e2e.memo import make_memo_value
+from arlo_e2e.tally import (
+    FastTallyEverythingResults,
+    _log_and_print,
+    TALLY_TYPE,
+    DECRYPT_INPUT_TYPE,
+    DECRYPT_OUTPUT_TYPE,
+    DECRYPT_TALLY_OUTPUT_TYPE,
+    SelectionInfo,
+    _ciphertext_ballot_to_accepted,
+    SelectionTally,
+    sequential_tally,
+)
+from arlo_e2e.utils import shard_list
 
 # High-level design: What Ray gives us is the ability to call a remote method -- decorated with
 # @ray.remote, called with methodname.remote(args), returning a ray.ObjectRef immediately. That

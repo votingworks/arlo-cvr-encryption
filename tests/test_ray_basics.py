@@ -19,9 +19,9 @@ def r_encrypt(
     plaintext: int, nonce: ElementModQ, public_key: ElementModP
 ) -> ElGamalCiphertext:
     if not isinstance(public_key, ElementModP):
+        # paranoid type checking, while still getting used to working with Ray
         print(f"expected ElementModP, got {str(type(public_key))}")
 
-    # l_public_key: ElementModP = ray.get(public_key)
     return elgamal_encrypt(plaintext, nonce, public_key)
 
 

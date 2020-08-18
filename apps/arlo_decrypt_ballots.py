@@ -1,8 +1,9 @@
 import argparse
 import os
 from multiprocessing import Pool
-from typing import Optional
+from typing import Optional, cast, List
 
+from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.election import InternalElectionDescription
 from electionguard.serializable import set_serializers, set_deserializers
 from tqdm import tqdm
@@ -81,7 +82,11 @@ if __name__ == "__main__":
     ied = InternalElectionDescription(results.election_description)
     extended_base_hash = results.context.crypto_extended_base_hash
     decryptions = decrypt_ballots(
-        ied, extended_base_hash, admin_state.keypair, pool, encrypted_ballots
+        ied,
+        extended_base_hash,
+        admin_state.keypair,
+        pool,
+        cast(List[CiphertextAcceptedBallot], encrypted_ballots),
     )
 
     pool.close()
