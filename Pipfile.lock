@@ -180,7 +180,7 @@
         "electionguard": {
             "editable": true,
             "git": "https://github.com/microsoft/electionguard-python.git",
-            "ref": "7a6719ebb90f30ffbecf9d8ddd815e4420319261"
+            "ref": "dd8951f0d8471885f598de875305ab3f505eb77b"
         },
         "filelock": {
             "hashes": [
