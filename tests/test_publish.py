@@ -25,21 +25,24 @@ from arlo_e2e.tally import fast_tally_everything, _log_and_print
 from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 
 TALLY_TESTING_DIR = "tally_test"
+DECRYPTED_DIR = "decrypted_test"
 
 
 class TestTallyPublishing(unittest.TestCase):
-    def _removeTree(self) -> None:
+    def removeTree(self) -> None:
         try:
-            shutil.rmtree(TALLY_TESTING_DIR)
+            shutil.rmtree(TALLY_TESTING_DIR, ignore_errors=True)
+            shutil.rmtree(DECRYPTED_DIR, ignore_errors=True)
         except FileNotFoundError:
             # okay if it's not there
             pass
 
     def setUp(self) -> None:
+        self.removeTree()
         self.pool = Pool(cpu_count())
 
     def tearDown(self) -> None:
-        self._removeTree()
+        self.removeTree()
         self.pool.close()
 
     @given(dominion_cvrs(max_rows=50), booleans(), elgamal_keypairs())
@@ -53,11 +56,8 @@ class TestTallyPublishing(unittest.TestCase):
     def test_end_to_end_publications(
         self, input: str, check_proofs: bool, keypair: ElGamalKeyPair
     ) -> None:
-        # nuke any pre-existing tally_testing tree, since we only want to see current output
-
-        self._removeTree()
-
         coverage.process_startup()  # necessary for coverage testing to work in parallel
+        self.removeTree()  # if there's anything leftover from a prior run, get rid of it
 
         cvrs = read_dominion_csv(StringIO(input))
         self.assertIsNotNone(cvrs)
@@ -114,9 +114,9 @@ class TestTallyPublishing(unittest.TestCase):
                 pballot,
             )
         )
-        write_proven_ballot(pballot, "decrypted")
-        self.assertTrue(exists_proven_ballot(bid, "decrypted"))
-        self.assertFalse(exists_proven_ballot(bid + "0", "decrypted"))
-        self.assertEqual(pballot, load_proven_ballot(bid, "decrypted"))
+        write_proven_ballot(pballot, DECRYPTED_DIR)
+        self.assertTrue(exists_proven_ballot(bid, DECRYPTED_DIR))
+        self.assertFalse(exists_proven_ballot(bid + "0", DECRYPTED_DIR))
+        self.assertEqual(pballot, load_proven_ballot(bid, DECRYPTED_DIR))
 
-        self._removeTree()
+        self.removeTree()  # clean up our mess
