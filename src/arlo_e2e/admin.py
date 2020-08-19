@@ -41,9 +41,9 @@ class ElectionAdmin(Serializable):
         c2 = get_optional(elgamal_encrypt(m2, nonce2, self.keypair.public_key))
         csum = elgamal_add(c1, c2)
 
-        sum = csum.decrypt(self.keypair.secret_key)
+        psum = csum.decrypt(self.keypair.secret_key)
 
-        if sum != m1 + m2:
+        if psum != m1 + m2:
             log_error("The given keypair didn't work for basic ElGamal math")
             return False
 

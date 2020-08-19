@@ -51,13 +51,14 @@ from electionguard.group import (
     rand_q,
     int_to_q_unchecked,
 )
-from electionguard.logs import log_info, log_error
+from electionguard.logs import log_error
 from electionguard.nonces import Nonces
 from electionguard.serializable import Serializable
 from electionguard.utils import get_optional
 from tqdm import tqdm
 
 from arlo_e2e.dominion import DominionCSV
+from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.memo import Memo, make_memo_value
 from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.utils import shard_list
@@ -247,12 +248,6 @@ def fast_decrypt_tally(
     return {k: (p, proof) for k, p, proof in result}
 
 
-def _log_and_print(s: str, verbose: bool = True) -> None:
-    if verbose:  # pragma: no cover
-        print(f"    {s}")
-    log_info(s)
-
-
 @dataclass(eq=True)
 class SelectionInfo(Serializable):
     """
@@ -422,7 +417,7 @@ class FastTallyEverythingResults(NamedTuple):
         Any errors found will be logged.
         """
 
-        _log_and_print("Verifying proofs:", verbose)
+        log_and_print("Verifying proofs:", verbose)
 
         wrapped_func = functools.partial(
             _proof_verify,
@@ -439,8 +434,8 @@ class FastTallyEverythingResults(NamedTuple):
             wrapped_func(x) for x in inputs
         ] if pool is None else pool.map(func=wrapped_func, iterable=inputs)
         end = timer()
-        _log_and_print(f"Verification time: {end - start: .3f} sec", verbose)
-        _log_and_print(
+        log_and_print(f"Verification time: {end - start: .3f} sec", verbose)
+        log_and_print(
             f"Verification rate: {len(self.tally.map.keys()) / (end - start): .3f} selection/sec",
             verbose,
         )
@@ -464,7 +459,7 @@ class FastTallyEverythingResults(NamedTuple):
             ] if pool is None else pool.map(func=ballot_func, iterable=ballot_iter)
 
             ballot_end = timer()
-            _log_and_print(
+            log_and_print(
                 f"Ballot verification rate: {len(self.encrypted_ballots) / (ballot_end - ballot_start): .3f} ballot/sec",
                 verbose,
             )
@@ -472,7 +467,7 @@ class FastTallyEverythingResults(NamedTuple):
             if False in ballot_result:
                 return False
 
-            _log_and_print("Recomputing tallies:", verbose)
+            log_and_print("Recomputing tallies:", verbose)
             recomputed_tally = fast_tally_ballots(self.encrypted_ballots, pool, verbose)
 
             tally_success = True
@@ -593,7 +588,7 @@ def fast_tally_everything(
         date = datetime.now()
 
     parse_time = timer()
-    _log_and_print(f"Rows: {rows}, cols: {cols}", verbose)
+    log_and_print(f"Rows: {rows}, cols: {cols}", verbose)
 
     ed, ballots, id_map = cvrs.to_election_description(date=date)
     assert len(ballots) > 0, "can't have zero ballots!"
@@ -614,7 +609,7 @@ def fast_tally_everything(
     ).decrypt(secret_key), "got wrong ElGamal decryption!"
 
     dlog_prime_time = timer()
-    _log_and_print(
+    log_and_print(
         f"DLog prime time (n={len(ballots)}): {dlog_prime_time - parse_time: .3f} sec",
         verbose,
     )
@@ -640,10 +635,10 @@ def fast_tally_everything(
     cballots = fast_encrypt_ballots(ballots, ied, cec, seed_hash, nonces, pool, True)
     eg_encrypt_time = timer()
 
-    _log_and_print(
+    log_and_print(
         f"Encryption time: {eg_encrypt_time - dlog_prime_time: .3f} sec", verbose
     )
-    _log_and_print(
+    log_and_print(
         f"Encryption rate: {rows / (eg_encrypt_time - dlog_prime_time): .3f} ballot/sec",
         verbose,
     )
@@ -653,14 +648,14 @@ def fast_tally_everything(
     tally: TALLY_TYPE = fast_tally_ballots(cballots, pool, verbose)
     eg_tabulate_time = timer()
 
-    _log_and_print(
+    log_and_print(
         f"Tabulation time: {eg_tabulate_time - eg_encrypt_time: .3f} sec", verbose
     )
-    _log_and_print(
+    log_and_print(
         f"Tabulation rate: {rows / (eg_tabulate_time - eg_encrypt_time): .3f} ballot/sec",
         verbose,
     )
-    _log_and_print(
+    log_and_print(
         f"Encryption and tabulation: {rows} ballots / {eg_tabulate_time - dlog_prime_time: .3f} sec = {rows / (eg_tabulate_time - dlog_prime_time): .3f} ballot/sec",
         verbose,
     )
@@ -673,10 +668,10 @@ def fast_tally_everything(
         tally, cec, keypair, seed_hash, pool, verbose
     )
     eg_decryption_time = timer()
-    _log_and_print(
+    log_and_print(
         f"Decryption time: {eg_decryption_time - eg_tabulate_time: .3f} sec", verbose
     )
-    _log_and_print(
+    log_and_print(
         f"Decryption rate: {len(decrypted_tally.keys()) / (eg_decryption_time - eg_tabulate_time): .3f} selection/sec",
         verbose,
     )

@@ -170,14 +170,14 @@ def dominion_cvrs(draw: _DrawType, max_rows: int = 300, max_votes_per_race: int 
     ]
 
     # We need both the "for" and "against" for each referendum.
-    repeated_referenda_names: Sequence[str] = flatmap(
-        lambda name: [name, name], referenda_names
-    )
+    repeated_referenda_names = list(flatmap(lambda name: [name, name], referenda_names))
 
     # Different contests have different numbers of candidates, so we need different repetition.
-    repeated_contest_names: Sequence[str] = flatmap(
-        lambda n: [contest_names[n]] * len(candidates_and_parties[n]),
-        range(0, num_human_contests),
+    repeated_contest_names = list(
+        flatmap(
+            lambda n: [contest_names[n]] * len(candidates_and_parties[n]),
+            range(0, num_human_contests),
+        )
     )
 
     # header row 2: a bunch of blanks, then the contest/referenda names
@@ -192,7 +192,7 @@ def dominion_cvrs(draw: _DrawType, max_rows: int = 300, max_votes_per_race: int 
     )
 
     # header row 3: candidate names, or FOR/AGAINST for referenda
-    row3_output: List[str] = [""] * total_metadata_columns
+    row3_output = [""] * total_metadata_columns
     for contest in candidates_and_parties:
         for c in contest:
             row3_output.append(c[0])

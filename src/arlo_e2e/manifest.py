@@ -101,14 +101,14 @@ class Manifest:
             )
 
         mkdir_list_helper(self.root_dir, subdirectories)
-        hash = sha256_hash(file_contents)
+        h = sha256_hash(file_contents)
         file_content_bytes = len(file_contents.encode("utf-8"))
         self.bytes_written += file_content_bytes
         full_name = compose_filename(self.root_dir, file_name, subdirectories)
-        self.hashes[manifest_name] = FileInfo(hash, file_content_bytes)
+        self.hashes[manifest_name] = FileInfo(h, file_content_bytes)
         with open(full_name, WRITE) as f:
             f.write(file_contents)
-        return hash
+        return h
 
     def write_html_indices(self, title: str, front_page_contents: str) -> None:
         # TODO: write out index.html files that have links to every other file in the indices as well

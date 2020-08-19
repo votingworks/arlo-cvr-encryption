@@ -21,7 +21,8 @@ from arlo_e2e.decrypt import (
 )
 from arlo_e2e.dominion import read_dominion_csv
 from arlo_e2e.publish import write_fast_tally, load_fast_tally
-from arlo_e2e.tally import fast_tally_everything, _log_and_print
+from arlo_e2e.tally import fast_tally_everything
+from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 
 TALLY_TESTING_DIR = "tally_test"
@@ -73,7 +74,7 @@ class TestTallyPublishing(unittest.TestCase):
 
         # dump files out to disk
         write_fast_tally(results, TALLY_TESTING_DIR)
-        _log_and_print("tally_testing written, proceeding to read it back in again")
+        log_and_print("tally_testing written, proceeding to read it back in again")
 
         # now, read it back again!
         results2 = load_fast_tally(
@@ -81,7 +82,7 @@ class TestTallyPublishing(unittest.TestCase):
         )
         self.assertIsNotNone(results2)
 
-        _log_and_print("tally_testing got non-null result!")
+        log_and_print("tally_testing got non-null result!")
 
         self.assertTrue(_list_eq(results.encrypted_ballots, results2.encrypted_ballots))
         self.assertEqual(set(results.tally.map.keys()), set(results2.tally.map.keys()))
@@ -91,7 +92,7 @@ class TestTallyPublishing(unittest.TestCase):
 
         ied = InternalElectionDescription(results.election_description)
 
-        _log_and_print("decrypting one more time")
+        log_and_print("decrypting one more time")
         pballots = decrypt_ballots(
             ied,
             results.context.crypto_extended_base_hash,

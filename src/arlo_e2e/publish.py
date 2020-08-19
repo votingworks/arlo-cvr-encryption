@@ -148,11 +148,9 @@ def load_fast_tally(
     # https://louisabraham.github.io/articles/python-lambda-closures.html
     encrypted_ballot_memos: Dict[str, Memo[CiphertextAcceptedBallot]] = {
         filename.stem: make_memo_lambda(
-            (
-                lambda filename, manifest: lambda: manifest.read_json_file(
-                    filename, CiphertextAcceptedBallot
-                )
-            )(filename, manifest)
+            (lambda f, m: lambda: m.read_json_file(f, CiphertextAcceptedBallot))(
+                filename, manifest
+            )
         )
         for filename in ballot_files
     }

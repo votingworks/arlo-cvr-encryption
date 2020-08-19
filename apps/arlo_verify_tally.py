@@ -61,7 +61,7 @@ if __name__ == "__main__":
         print(contest_title)
         selections: Set[SelectionMetadata] = results.metadata.contest_map[contest_title]
         first = True
-        for s in sorted(selections, key=lambda s: s.sequence_number):
+        for s in sorted(selections, key=lambda ss: ss.sequence_number):
             if s.object_id not in results.tally.map:
                 print(
                     f"Internal error: didn't find {s.object_id} for {s.to_string()} in the tally!"

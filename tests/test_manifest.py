@@ -24,18 +24,19 @@ MANIFEST_TESTING_DIR = "manifest_testing"
 
 
 class TestManifestPublishing(unittest.TestCase):
-    def _removeTree(self) -> None:
+    def removeTree(self) -> None:
         try:
-            shutil.rmtree(MANIFEST_TESTING_DIR)
+            shutil.rmtree(MANIFEST_TESTING_DIR, ignore_errors=True)
         except FileNotFoundError:
             # okay if it's not there
             pass
 
     def tearDown(self) -> None:
-        self._removeTree()
+        self.removeTree()
 
     def setUp(self) -> None:
         log_warning("EXPECT MANY ERRORS TO BE LOGGED. THIS IS NORMAL.")
+        self.removeTree()
 
     @given(
         lists(
@@ -47,7 +48,7 @@ class TestManifestPublishing(unittest.TestCase):
     )
     @settings(deadline=timedelta(milliseconds=50000),)
     def test_manifest(self, files: List[FileNameAndContents]) -> None:
-        self._removeTree()
+        self.removeTree()
         mkdir_helper(MANIFEST_TESTING_DIR)
 
         for f in files:
@@ -81,7 +82,7 @@ class TestManifestPublishing(unittest.TestCase):
                 MANIFEST_TESTING_DIR,
                 PurePath(
                     path.join(
-                        path.join(MANIFEST_TESTING_DIR, *(f.file_path)), f.file_name
+                        path.join(MANIFEST_TESTING_DIR, *f.file_path), f.file_name
                     )
                 ),
             )
@@ -102,4 +103,4 @@ class TestManifestPublishing(unittest.TestCase):
                 manifest2.validate_contents(manifest_names[1], files[0].file_contents)
             )
 
-        self._removeTree()
+        self.removeTree()

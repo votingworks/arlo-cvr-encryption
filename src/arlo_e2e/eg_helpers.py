@@ -2,7 +2,7 @@ import logging
 from typing import Dict, Tuple
 
 from electionguard.group import ElementModQ
-from electionguard.logs import LOG
+from electionguard.logs import LOG, log_info
 from electionguard.tally import CiphertextTally
 
 
@@ -75,3 +75,13 @@ def log_nothing_to_stdout() -> None:
     logger.addHandler(LOG._get_file_handler())
 
     assert len(logger.handlers) == 1, "we failed to modify the logger!"
+
+
+def log_and_print(s: str, verbose: bool = True) -> None:
+    """
+    Given the string, feeds it to `log_info` and, if `verbose` is True (by default, it is),
+    also prints the string to stdout.
+    """
+    if verbose:  # pragma: no cover
+        print(f"    {s}")
+    log_info(s)

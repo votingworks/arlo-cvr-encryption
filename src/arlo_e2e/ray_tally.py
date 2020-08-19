@@ -26,7 +26,6 @@ from arlo_e2e.dominion import DominionCSV
 from arlo_e2e.memo import make_memo_value
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
-    _log_and_print,
     TALLY_TYPE,
     DECRYPT_INPUT_TYPE,
     DECRYPT_OUTPUT_TYPE,
@@ -36,6 +35,7 @@ from arlo_e2e.tally import (
     SelectionTally,
     sequential_tally,
 )
+from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.utils import shard_list
 
 # High-level design: What Ray gives us is the ability to call a remote method -- decorated with
@@ -243,7 +243,7 @@ def ray_tally_everything(
 
     tabulate_time = timer()
 
-    _log_and_print(
+    log_and_print(
         f"Encryption and tabulation: {rows} ballots / {tabulate_time - start_time: .3f} sec = {rows / (tabulate_time - start_time): .3f} ballot/sec",
         verbose,
     )

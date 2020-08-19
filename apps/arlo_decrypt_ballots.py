@@ -93,7 +93,7 @@ if __name__ == "__main__":
 
     pool.close()
 
-    num_successful_decryptions = {len([d for d in decryptions if d != None])}
+    num_successful_decryptions = {len([d for d in decryptions if d is not None])}
 
     if num_successful_decryptions != len(encrypted_ballots) in decryptions:
         print(
