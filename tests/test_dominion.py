@@ -41,12 +41,12 @@ _sel_uid_iter = UidMaker("s")  # see read_dominion_csv; we're need the same uid 
 
 _uid_int, _uid_str = _sel_uid_iter.next_int()
 _expected_alice_metadata = SelectionMetadata(
-    _uid_str, _uid_int, "Representative - District X (Vote For=1)", "Alice", "DEM"
+    _uid_str, _uid_int, "Representative - District X", "Alice", "DEM"
 )
 
 _uid_int, _uid_str = _sel_uid_iter.next_int()
 _expected_bob_metadata = SelectionMetadata(
-    _uid_str, _uid_int, "Representative - District X (Vote For=1)", "Bob", "REP"
+    _uid_str, _uid_int, "Representative - District X", "Bob", "REP"
 )
 
 _uid_int, _uid_str = _sel_uid_iter.next_int()
@@ -113,26 +113,18 @@ class TestDominionBasics(unittest.TestCase):
         else:
             self.assertEqual("2018 Test Election", result.metadata.election_name)
             self.assertEqual(2, len(result.metadata.contest_map.keys()))
-            self.assertIn(
-                "Representative - District X (Vote For=1)", result.metadata.contest_map
-            )
+            self.assertIn("Representative - District X", result.metadata.contest_map)
             self.assertIn("Referendum", result.metadata.contest_map)
-            rep_list = result.metadata.contest_map[
-                "Representative - District X (Vote For=1)"
-            ]
+            rep_list = result.metadata.contest_map["Representative - District X"]
             self.assertIsNotNone(rep_list)
             self.assertIn(_expected_alice_metadata, rep_list)
             self.assertIn(_expected_bob_metadata, rep_list)
             self.assertEqual(
-                "Representative - District X (Vote For=1) | Alice | DEM",
+                "Representative - District X | Alice | DEM",
                 _expected_alice_metadata.to_string(),
             )
-            self.assertIn(
-                "Representative - District X (Vote For=1) | Alice | DEM", result.data
-            )
-            self.assertIn(
-                "Representative - District X (Vote For=1) | Bob | REP", result.data
-            )
+            self.assertIn("Representative - District X | Alice | DEM", result.data)
+            self.assertIn("Representative - District X | Bob | REP", result.data)
             referendum_list = result.metadata.contest_map["Referendum"]
             self.assertIsNotNone(referendum_list)
             self.assertIn(_expected_ref_for_metadata, referendum_list)
@@ -190,8 +182,7 @@ class TestDominionBasics(unittest.TestCase):
             self.assertEqual(2, len(rows))
 
             self.assertSetEqual(
-                {"Representative - District X (Vote For=1)"},
-                result.metadata.style_map["T1"],
+                {"Representative - District X"}, result.metadata.style_map["T1"],
             )
 
             self.assertSetEqual({"Referendum"}, result.metadata.style_map["T2"])

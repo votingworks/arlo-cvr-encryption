@@ -1,4 +1,5 @@
 import csv
+import re
 from datetime import datetime
 from io import StringIO
 from math import floor, isnan
@@ -127,7 +128,10 @@ def _nonempty_elem(row: pd.Series, key: str) -> bool:
     """
     Decides whether the particular key in this row is present or absent.
     """
-    val = getattr(row, key)
+    try:
+        val = getattr(row, key)
+    except AttributeError:
+        assert False, f"key should always be present; key: ({key}), row: ({row})"
 
     # seems that we'll sometimes get None and other times get NaN, so we
     # have to be extra paranoid.
@@ -437,45 +441,50 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
         filtered_columns[1][1:],
     ] + filtered_columns[2:]
 
-    df.columns = [" | ".join(x) for x in column_names]
+    # new_column_names, max_votes_for_map = _fixup_column_names(column_names)
 
-    df["Guid"] = df.apply(
-        lambda r: dominion_row_to_uid(r, election_name, ballot_metadata_fields), axis=1,
-    )
-
-    # If the election official put numbers in as their ballot types, that's going to cause type
-    # errors, because we really want to deal with them as strings.
-    df['BallotType'] = df['BallotType'].apply(lambda s: str(s))
-
-    # there's probably an easier way to do this, but it does what we want
-    ballot_uid_iter = UidMaker("b")
+    max_votes_for_map: Dict[str, int] = {}
+    vote_for_n_pattern = re.compile(r"\s*\(Vote For=(\d+)\)$")
+    new_column_names: List[str] = []
+    contests = []
     selection_uid_iter = UidMaker("s")
-    df["BallotId"] = df.apply(lambda r: ballot_uid_iter.next(), axis=1,)
 
-    if "BallotType" not in df:
-        return None
+    for column in column_names:
+        vote_for_n = 1  # until proven otherwise
+        title = column[0]
+        vote_for_n_match: Optional[re.Match] = vote_for_n_pattern.search(title)
 
-    ballotstyle_uids = UidMaker("ballotstyle")
-    all_types = sorted(set(df["BallotType"]))
-    ballot_type_to_bsid = {bt: ballotstyle_uids.next() for bt in all_types}
+        if vote_for_n_match is not None:
+            vote_for_n = int(vote_for_n_match.group(1))
+            # chop off the "(Vote For=N)" part
+            title = title[0 : vote_for_n_match.span()[0]]
 
-    # Now we're going to extract a mapping from contest titles to all the choices.
-    contests = [x for x in filtered_columns[2:] if len(x) > 1]
+        max_votes_for_map[title] = vote_for_n
+        new_column = [title] + column[1:]
+        new_column_names.append(" | ".join(new_column))
+
+        # Now we're going to extract a mapping from contest titles to all the choices.
+        if len(column) > 1:
+            contests.append(new_column)
+
     contest_keys = set()
 
     all_parties: Set[str] = set()
     contest_map_builder: Dict[str, List[SelectionMetadata]] = {}
-
     contest_key_to_title: Dict[str, str] = {}
     for contest in contests:
-        title = contest[0]
-        candidate = contest[1]
+        title = str(contest[0])
+        candidate = str(contest[1])
         party = fix_party_string(contest[2]) if len(contest) > 2 else ""
 
         if party not in all_parties and party != "":
             all_parties.add(party)
 
-        key = " | ".join(contest)
+        if party != "":
+            key = " | ".join([title, candidate, party])
+        else:
+            key = " | ".join([title, candidate])
+
         contest_keys.add(key)
 
         if title not in contest_map_builder:
@@ -494,6 +503,27 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
 
         # goes from "Representative - District 1 | Alice | DEM" to "Representative - District 1"
         contest_key_to_title[metadata.to_string()] = title
+
+    df.columns = new_column_names
+
+    df["Guid"] = df.apply(
+        lambda r: dominion_row_to_uid(r, election_name, ballot_metadata_fields), axis=1,
+    )
+
+    # If the election official put numbers in as their ballot types, that's going to cause type
+    # errors, because we really want to deal with them as strings.
+    df["BallotType"] = df["BallotType"].apply(lambda s: str(s))
+
+    # there's probably an easier way to do this, but it does what we want
+    ballot_uid_iter = UidMaker("b")
+    df["BallotId"] = df.apply(lambda r: ballot_uid_iter.next(), axis=1,)
+
+    if "BallotType" not in df:
+        return None
+
+    ballotstyle_uids = UidMaker("ballotstyle")
+    all_types = sorted(set(df["BallotType"]))
+    ballot_type_to_bsid = {bt: ballotstyle_uids.next() for bt in all_types}
 
     contest_map: CONTEST_MAP = {
         k: set(contest_map_builder[k]) for k in contest_map_builder.keys()
@@ -533,6 +563,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
             all_parties,
             style_map,
             contest_map,
+            max_votes_for_map,
         ),
         df,
     )

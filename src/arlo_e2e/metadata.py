@@ -106,3 +106,9 @@ class ElectionMetadata(Serializable):
     """
     A dictionary mapping from contest titles to a set of `SelectionMetadata` instances.
     """
+
+    max_votes_for_map: Dict[str, int]
+    """
+    A dictionary mapping from contest titles to the maximum number of selections a voter can legally pick
+    (i.e., the k in a k-for-n contest).
+    """

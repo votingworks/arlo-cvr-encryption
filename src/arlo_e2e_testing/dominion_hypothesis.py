@@ -59,8 +59,40 @@ def _encode_list_as_csv(
     return ",".join(encoded_line)
 
 
+def _append_ballot_selections(
+    draw: _DrawType,
+    output: List[Union[str, int]],
+    num_candidates_per_contest: int,
+    max_votes_per_contest: int,
+) -> None:
+    assert (
+        max_votes_per_contest <= num_candidates_per_contest
+    ), "malformed contest max votes"
+
+    num_selections = draw(integers(0, max_votes_per_contest))
+    choices: List[int] = [1] * num_selections + [0] * (
+        num_candidates_per_contest - num_selections
+    )
+    assert len(choices) == num_candidates_per_contest
+
+    # now we need to randomly permute the choices; this is a hack, but it will do
+    swaps: List[int] = draw(
+        lists(
+            integers(min_value=0, max_value=num_candidates_per_contest - 1),
+            min_size=num_candidates_per_contest,
+            max_size=num_candidates_per_contest,
+        )
+    )
+    for i in range(0, len(choices)):
+        tmp = choices[i]
+        choices[i] = choices[swaps[i]]
+        choices[swaps[i]] = tmp
+
+    output.extend(choices)
+
+
 @composite
-def dominion_cvrs(draw: _DrawType, max_rows: int = 300):
+def dominion_cvrs(draw: _DrawType, max_rows: int = 300, max_votes_per_race: int = 1):
     """
     This strategy creates a multiline text string, with comma-separated-values, corresponding to the
     many different styles of Dominion CVRs that we might see. For the following fields, the returned
@@ -83,6 +115,19 @@ def dominion_cvrs(draw: _DrawType, max_rows: int = 300):
         )
     )
 
+    max_votes_per_contest_bound: List[int] = draw(
+        lists(
+            integers(1, max_votes_per_race),
+            min_size=len(num_candidates_per_contest),
+            max_size=len(num_candidates_per_contest),
+        )
+    )
+
+    max_votes_per_contest = [
+        min(a, b)
+        for a, b in zip(num_candidates_per_contest, max_votes_per_contest_bound)
+    ]
+
     party_strings = [f"PARTY{i}" for i in range(1, max_candidates_per_contest + 1)]
     candidates_and_parties: List[List[Tuple[str, str]]] = [
         draw(
@@ -96,7 +141,10 @@ def dominion_cvrs(draw: _DrawType, max_rows: int = 300):
     ]
     num_human_contests = len(candidates_and_parties)
 
-    contest_names: List[str] = [f"Contest{i}" for i in range(1, num_human_contests + 1)]
+    contest_names: List[str] = [
+        f"Contest{i + 1} (Vote For={max_votes_per_contest[i]})"
+        for i in range(0, num_human_contests)
+    ]
     referenda_names: List[str] = [f"Referendum{i}" for i in range(1, num_referenda + 1)]
 
     num_ballot_styles: int = draw(integers(1, 10))
@@ -233,21 +281,20 @@ def dominion_cvrs(draw: _DrawType, max_rows: int = 300):
 
         for c in range(0, num_human_contests):
             if contest_in_bs[bs_drawn][c]:
-                # -1 == undervote
-                # otherwise, it's the position of the 1 vote
-                selection: int = draw(integers(-1, num_candidates_per_contest[c] - 1))
-                for pos in range(0, num_candidates_per_contest[c]):
-                    output.append(1 if selection == pos else 0)
+                _append_ballot_selections(
+                    draw,
+                    output,
+                    num_candidates_per_contest[c],
+                    max_votes_per_contest[c],
+                )
             else:
                 for pos in range(0, num_candidates_per_contest[c]):
                     output.append("")
         for c in range(0, num_referenda):
             if contest_in_bs[bs_drawn][c + num_human_contests]:
-                # -1 == undervote
-                # otherwise, it's the position of the 1 vote
-                selection: int = draw(integers(-1, 1))
-                for pos in [0, 1]:
-                    output.append(1 if selection == pos else 0)
+                _append_ballot_selections(
+                    draw, output, num_candidates_per_contest=2, max_votes_per_contest=1
+                )
             else:
                 output.append("")
                 output.append("")

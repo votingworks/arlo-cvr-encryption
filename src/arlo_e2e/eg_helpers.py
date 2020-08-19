@@ -63,7 +63,11 @@ def log_nothing_to_stdout() -> None:
     things we don't want to bother the users about.
     """
 
-    logger: logging.Logger = LOG._ElectionGuardLog__logger
+    # We're trying to get to a private field in LOG. That means the name is "mangled" to have the
+    # class name in front of it, and mypy will have an error, saying it doesn't exist. The special
+    # "ignore" comment tells mypy to skip this line.
+
+    logger: logging.Logger = LOG._ElectionGuardLog__logger  # type: ignore
 
     for h in logger.handlers.copy():
         logger.removeHandler(h)
