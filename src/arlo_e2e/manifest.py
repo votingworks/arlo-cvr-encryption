@@ -1,4 +1,5 @@
 import shutil
+from base64 import b64encode
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import PurePath
@@ -20,8 +21,15 @@ from arlo_e2e.utils import (
 
 @dataclass(eq=True, unsafe_hash=True)
 class FileInfo(Serializable):
-    hash: int
+    hash: str
+    """
+    SHA256 hash of the file, represented as a base64 string
+    """
+
     num_bytes: int
+    """
+    Length of the file in bytes
+    """
 
 
 @dataclass(eq=True, unsafe_hash=True)
@@ -66,7 +74,7 @@ class Manifest:
         file_name: str,
         content_obj: Serializable,
         subdirectories: List[str] = None,
-    ) -> int:
+    ) -> str:
         """
         Given a filename, subdirectory, and contents of the file, writes the contents out to the file. As a
         side-effect, the full filename and its contents' hash are remembered in `self.hashes`, to be written
@@ -83,7 +91,7 @@ class Manifest:
 
     def write_file(
         self, file_name: str, file_contents: str, subdirectories: List[str] = None
-    ) -> int:
+    ) -> str:
         """
         Given a filename, subdirectory, and contents of the file, writes the contents out to the file. As a
         side-effect, the full filename and its contents' hash are remembered in `self.hashes`, to be written
@@ -116,7 +124,7 @@ class Manifest:
         #   and some sort of navigation hyperlinks.
         pass
 
-    def write_manifest(self) -> int:
+    def write_manifest(self) -> str:
         """
         Writes out `MANIFEST.json` into the existing `root_dir`, providing a mapping from filenames
         to their SHA256 hashes.
@@ -246,14 +254,14 @@ def make_existing_manifest(root_dir: str) -> Optional[Manifest]:
     return flatmap_optional(manifest_ex, lambda m: m.to_manifest(root_dir))
 
 
-def sha256_hash(input: str) -> int:
+def sha256_hash(input: str) -> str:
     """
-    Given a string, returns an integer representing the 256-bit SHA2-256
-    hash of that input string, encoded as UTF-8 bytes.
+    Given a string, returns an base64-encoded string representing the 256-bit SHA2-256
+    hash of that input string.
     """
     h = sha256()
     h.update(input.encode("utf-8"))
-    return int.from_bytes(h.digest(), byteorder="big")
+    return b64encode(h.digest()).decode("utf-8")
 
 
 def compose_manifest_name(file_name: str, subdirectories: List[str] = None) -> str:
