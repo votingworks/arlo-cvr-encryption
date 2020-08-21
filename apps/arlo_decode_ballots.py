@@ -103,7 +103,10 @@ if __name__ == "__main__":
 
         encrypted_ballot_dict = ciphertext_ballot_to_dict(encrypted)
         contests = sorted(results.metadata.style_map[ballot_type])
-        for c in contests:
+        for c in results.metadata.contest_name_order:
+            if c not in contests:
+                continue
+
             print(f"    {c}")
             if plaintext is not None:
                 plaintext_dict = plaintext_ballot_to_dict(plaintext.ballot)
