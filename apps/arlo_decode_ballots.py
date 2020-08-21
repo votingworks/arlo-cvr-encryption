@@ -1,5 +1,6 @@
 import argparse
 from typing import Optional
+from sys import exit
 
 from electionguard.decrypt_with_secrets import (
     plaintext_ballot_to_dict,

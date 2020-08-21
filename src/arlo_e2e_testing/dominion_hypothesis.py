@@ -319,7 +319,8 @@ def ballots_and_context(draw: _DrawType):
     Wrapper around ElectionGuard's own `ciphertext_elections` strategy and our `dominion_cvrs`, returns
     an instance of `DominionBallotsAndContext` with everything you need for subsequent testing.
     """
-    raw_cvrs = draw(dominion_cvrs())
+    max_votes_per_race = draw(integers(1, 3))
+    raw_cvrs = draw(dominion_cvrs(max_votes_per_race=max_votes_per_race))
     parsed: Optional[DominionCSV] = read_dominion_csv(StringIO(raw_cvrs))
     assert parsed is not None, "CVR parser shouldn't fail!"
     ed, ballots, id_map = parsed.to_election_description()

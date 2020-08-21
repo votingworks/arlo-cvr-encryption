@@ -3,6 +3,7 @@ from multiprocessing import Pool
 from os import cpu_count
 from timeit import default_timer as timer
 from typing import Optional
+from sys import exit
 
 from electionguard.serializable import set_serializers, set_deserializers
 

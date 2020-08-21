@@ -1,7 +1,8 @@
 import argparse
 import os
 from multiprocessing import Pool
-from typing import Optional, Set
+from typing import Optional, Set, Dict, Tuple
+from sys import exit
 
 from electionguard.serializable import set_serializers, set_deserializers
 
@@ -57,11 +58,17 @@ if __name__ == "__main__":
         exit(0)
 
     print()
-    for contest_title in sorted(results.metadata.contest_map.keys()):
-        print(contest_title)
+    for contest_title in results.metadata.contest_name_order:
+        max_votes_per_contest = results.metadata.max_votes_for_map[contest_title]
+        explanation = (
+            "" if max_votes_per_contest == 1 else f" (VOTE FOR={max_votes_per_contest})"
+        )
+        print(f"{contest_title}{explanation}")
+
         selections: Set[SelectionMetadata] = results.metadata.contest_map[contest_title]
-        first = True
-        for s in sorted(selections, key=lambda ss: ss.sequence_number):
+        contest_result: Dict[str, Tuple[int, int]] = {}
+
+        for s in selections:
             if s.object_id not in results.tally.map:
                 print(
                     f"Internal error: didn't find {s.object_id} for {s.to_string()} in the tally!"
@@ -69,4 +76,30 @@ if __name__ == "__main__":
                 exit(1)
 
             tally: SelectionInfo = results.tally.map[s.object_id]
-            print(f"    {s.to_string_no_contest()}: {tally.decrypted_tally}")
+            contest_result[s.to_string_no_contest()] = (
+                tally.decrypted_tally,
+                s.sequence_number,
+            )
+
+        sorted_result = sorted(
+            [
+                (name, contest_result[name][0], contest_result[name][1])
+                for name in contest_result.keys()
+            ],
+            key=lambda t: t[1],
+            reverse=True,
+        )
+
+        winners = [
+            (name, result, sequence_number, " (*)")
+            for name, result, sequence_number in sorted_result[:max_votes_per_contest]
+        ]
+        losers = [
+            (name, result, sequence_number, "")
+            for name, result, sequence_number in sorted_result[max_votes_per_contest:]
+        ]
+
+        for name, result, sequence_number, asterisk in sorted(
+            winners + losers, key=lambda ss: ss[2]
+        ):
+            print(f"    {name}: {result}{asterisk}")

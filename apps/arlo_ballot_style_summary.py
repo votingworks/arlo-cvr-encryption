@@ -1,5 +1,6 @@
 import argparse
 from typing import Optional, Dict
+from sys import exit
 
 from electionguard.serializable import set_serializers, set_deserializers
 

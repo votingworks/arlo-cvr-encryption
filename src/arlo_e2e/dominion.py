@@ -254,14 +254,22 @@ class DominionCSV(NamedTuple):
         )
 
         id_number, id_str = contest_uid_maker.next_int()
+        number_elected = self.metadata.max_votes_for_map[name]
+        vote_variation_type = (
+            VoteVariationType.one_of_m
+            if number_elected == 1
+            else VoteVariationType.n_of_m
+        )
+        vote_allowed = None if number_elected < 2 else number_elected
+
         return (
             ContestDescription(
                 object_id=id_str,
                 electoral_district_id=gp.object_id,
                 sequence_order=id_number,
-                vote_variation=VoteVariationType.one_of_m,  # for now
-                number_elected=1,
-                votes_allowed=None,
+                vote_variation=vote_variation_type,
+                number_elected=number_elected,
+                votes_allowed=vote_allowed,
                 name=name,
                 ballot_selections=selections,
                 ballot_title=_str_to_internationalized_text_en(name),
@@ -391,7 +399,6 @@ class DominionCSV(NamedTuple):
             ballots,
             all_candidate_ids_to_columns,
         )
-        pass
 
 
 def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
@@ -472,6 +479,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     all_parties: Set[str] = set()
     contest_map_builder: Dict[str, List[SelectionMetadata]] = {}
     contest_key_to_title: Dict[str, str] = {}
+    contest_titles: List[str] = []
     for contest in contests:
         title = str(contest[0])
         candidate = str(contest[1])
@@ -489,6 +497,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
 
         if title not in contest_map_builder:
             contest_map_builder[title] = []
+            contest_titles.append(title)
 
         # goes from ["Representative - District 1"] to a list of SelectionMetadata objects
         uid_int, uid_str = selection_uid_iter.next_int()
@@ -564,6 +573,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
             style_map,
             contest_map,
             max_votes_for_map,
+            contest_titles,
         ),
         df,
     )

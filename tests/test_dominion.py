@@ -27,6 +27,7 @@ from arlo_e2e_testing.dominion_hypothesis import (
     ballots_and_context,
     DominionBallotsAndContext,
 )
+from hypothesis.strategies import integers
 
 _good_dominion_cvrs = """
 "2018 Test Election","5.2.16.1","","","","","","","","","",""
@@ -153,7 +154,7 @@ class TestDominionBasics(unittest.TestCase):
         if result is None:
             self.fail("Expected not none")
         else:
-            election_description, ballots, id_map = result.to_election_description()
+            election_description, ballots, _ = result.to_election_description()
             self.assertEqual(2, len(election_description.ballot_styles))
             self.assertEqual(2, len(election_description.contests))
             self.assertEqual(4, len(election_description.candidates))
@@ -189,7 +190,11 @@ class TestDominionBasics(unittest.TestCase):
 
 
 class TestDominionHypotheses(unittest.TestCase):
-    @given(dominion_cvrs(max_rows=50))
+    @given(
+        integers(1, 3).flatmap(
+            lambda i: dominion_cvrs(max_rows=50, max_votes_per_race=i)
+        )
+    )
     @settings(
         deadline=timedelta(milliseconds=10000),
         suppress_health_check=[HealthCheck.too_slow],

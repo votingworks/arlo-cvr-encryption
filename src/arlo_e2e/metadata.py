@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Set
+from typing import Dict, Set, List
 
 from electionguard.serializable import Serializable
 
@@ -111,4 +111,9 @@ class ElectionMetadata(Serializable):
     """
     A dictionary mapping from contest titles to the maximum number of selections a voter can legally pick
     (i.e., the k in a k-for-n contest).
+    """
+
+    contest_name_order: List[str]
+    """
+    Names of all of the contests, in the order they appear on the ballot.
     """

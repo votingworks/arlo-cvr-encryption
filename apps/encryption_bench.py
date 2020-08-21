@@ -5,6 +5,7 @@ import sys
 from os import cpu_count
 from multiprocessing.pool import Pool
 from timeit import default_timer as timer
+from sys import exit
 
 import ray
 from electionguard.logs import log_info

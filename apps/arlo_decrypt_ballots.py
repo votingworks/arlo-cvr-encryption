@@ -2,6 +2,7 @@ import argparse
 import os
 from multiprocessing import Pool
 from typing import Optional, cast, List
+from sys import exit
 
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.election import InternalElectionDescription
