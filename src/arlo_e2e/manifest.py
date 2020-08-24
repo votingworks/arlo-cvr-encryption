@@ -116,8 +116,13 @@ class Manifest:
         # bring the "results" back here so we can stuff them into the manifest. That means we
         # won't even start the for-loop until after every file has been written.
 
+        root_dir_ref = ray.put(self.root_dir)
+
         results: List[Tuple[str, FileInfo]] = ray.get(
-            [_r_write_json_file.remote(spec) for spec in remote_write_specs]
+            [
+                _r_write_json_file.remote(root_dir_ref, spec)
+                for spec in remote_write_specs
+            ]
         )
         for manifest_name, file_info in results:
             if manifest_name in self.hashes:

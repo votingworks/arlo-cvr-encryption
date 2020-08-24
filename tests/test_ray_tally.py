@@ -1,3 +1,4 @@
+import shutil
 import unittest
 from datetime import timedelta, datetime
 from io import StringIO
@@ -6,6 +7,8 @@ from os import cpu_count
 
 import coverage
 from arlo_e2e.dominion import read_dominion_csv
+from arlo_e2e.manifest import make_existing_manifest
+from arlo_e2e.publish import write_fast_tally, write_ray_tally
 from arlo_e2e.ray_helpers import ray_init_localhost, ray_shutdown_localhost
 from arlo_e2e.ray_tally import ray_tally_everything
 from arlo_e2e.tally import fast_tally_everything
@@ -18,14 +21,24 @@ from hypothesis.strategies import booleans
 
 
 class TestRayTallies(unittest.TestCase):
+    def removeTree(self) -> None:
+        try:
+            shutil.rmtree("ftally_output", ignore_errors=True)
+            shutil.rmtree("rtally_output", ignore_errors=True)
+        except FileNotFoundError:
+            # okay if it's not there
+            pass
+
     def setUp(self) -> None:
         cpus = cpu_count()
         ray_init_localhost(num_cpus=cpus)
         self.pool = Pool(cpus)
+        self.removeTree()
 
     def tearDown(self) -> None:
         ray_shutdown_localhost()
         self.pool.close()
+        self.removeTree()
 
     @given(dominion_cvrs(max_rows=50), elgamal_keypairs(), booleans())
     @settings(
@@ -47,12 +60,27 @@ class TestRayTallies(unittest.TestCase):
         assert len(ballots) > 0, "can't have zero ballots!"
 
         if use_keypair:
-            tally = ray_tally_everything(
+            rtally = ray_tally_everything(
                 cvrs, verbose=True, secret_key=keypair.secret_key
             )
         else:
-            tally = ray_tally_everything(cvrs, verbose=True)
-        self.assertTrue(tally.to_fast_tally().all_proofs_valid(verbose=False))
+            rtally = ray_tally_everything(cvrs, verbose=True)
+
+        ftally = rtally.to_fast_tally()
+        self.assertTrue(ftally.all_proofs_valid(verbose=False))
+
+        # now, we'll write everything to the filesystem and make sure we get the
+        # same stuff
+
+        write_fast_tally(ftally, "ftally_output")
+        write_ray_tally(rtally, "rtally_output")
+
+        fmanifest = make_existing_manifest("ftally_output")
+        rmanifest = make_existing_manifest("rtally_output")
+
+        # we can't just assert equality of the manifests, because the root_dirs are different
+        self.assertEqual(fmanifest.hashes, rmanifest.hashes)
+        self.removeTree()
 
     @given(dominion_cvrs(max_rows=5), elgamal_keypairs())
     @settings(

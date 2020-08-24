@@ -133,6 +133,8 @@ def write_ray_tally(results: RayTallyEverythingResults, results_dir: str) -> Non
 
     log_info("write_ray_tally: writing ballots")
 
+    assert results.remote_encrypted_ballot_refs is not None, "got no remote ballot refs"
+
     manifest_specs = [
         _r_ballot_to_manifest_write_spec.remote(ballot)
         for ballot in results.remote_encrypted_ballot_refs
