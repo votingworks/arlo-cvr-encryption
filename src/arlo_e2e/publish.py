@@ -89,10 +89,11 @@ def _write_tally_shared(
     return manifest
 
 
-def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> None:
+def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> Manifest:
     """
     Writes out a directory with the full contents of the tally structure. Each ciphertext ballot
-    will end up in its own file. Everything is JSON.
+    will end up in its own file. Everything is JSON. Returns a `Manifest` object that reflects
+    everything that was written.
     """
     manifest = _write_tally_shared(
         results_dir,
@@ -116,11 +117,14 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> N
     log_info("write_fast_tally: writing MANIFEST.json")
     manifest.write_manifest()
 
+    return manifest
 
-def write_ray_tally(results: RayTallyEverythingResults, results_dir: str) -> None:
+
+def write_ray_tally(results: RayTallyEverythingResults, results_dir: str) -> Manifest:
     """
     Writes out a directory with the full contents of the tally structure. Each ciphertext ballot
-    will end up in its own file. Everything is JSON.
+    will end up in its own file. Everything is JSON. Returns a `Manifest` object that reflects
+    everything that was written.
     """
     manifest = _write_tally_shared(
         results_dir,
@@ -143,6 +147,8 @@ def write_ray_tally(results: RayTallyEverythingResults, results_dir: str) -> Non
 
     log_info("write_ray_tally: writing MANIFEST.json")
     manifest.write_manifest()
+
+    return manifest
 
 
 def load_fast_tally(

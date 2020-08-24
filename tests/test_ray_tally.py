@@ -72,11 +72,8 @@ class TestRayTallies(unittest.TestCase):
         # now, we'll write everything to the filesystem and make sure we get the
         # same stuff
 
-        write_fast_tally(ftally, "ftally_output")
-        write_ray_tally(rtally, "rtally_output")
-
-        fmanifest = make_existing_manifest("ftally_output")
-        rmanifest = make_existing_manifest("rtally_output")
+        fmanifest = write_fast_tally(ftally, "ftally_output")
+        rmanifest = write_ray_tally(rtally, "rtally_output")
 
         # we can't just assert equality of the manifests, because the root_dirs are different
         self.assertEqual(fmanifest.hashes, rmanifest.hashes)
