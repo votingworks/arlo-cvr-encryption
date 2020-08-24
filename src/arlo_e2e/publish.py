@@ -3,6 +3,18 @@ from os import path
 from pathlib import PurePath
 from typing import Final, Optional, TypeVar, List, Dict
 
+import ray
+from arlo_e2e.manifest import (
+    make_fresh_manifest,
+    make_existing_manifest,
+    ManifestFileWriteSpec,
+    Manifest,
+)
+from arlo_e2e.memo import Memo, make_memo_lambda
+from arlo_e2e.metadata import ElectionMetadata
+from arlo_e2e.ray_tally import RayTallyEverythingResults
+from arlo_e2e.tally import FastTallyEverythingResults, SelectionTally
+from arlo_e2e.utils import all_files_in_directory, mkdir_helper
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.election import (
     ElectionConstants,
@@ -11,13 +23,6 @@ from electionguard.election import (
 )
 from electionguard.logs import log_error, log_info
 from electionguard.serializable import set_deserializers, Serializable, set_serializers
-from tqdm import tqdm
-
-from arlo_e2e.manifest import make_fresh_manifest, make_existing_manifest
-from arlo_e2e.memo import Memo, make_memo_lambda
-from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.tally import FastTallyEverythingResults, SelectionTally
-from arlo_e2e.utils import all_files_in_directory, mkdir_helper
 
 T = TypeVar("T")
 U = TypeVar("U", bound=Serializable)
@@ -29,9 +34,59 @@ CRYPTO_CONSTANTS: Final[str] = "constants.json"
 CRYPTO_CONTEXT: Final[str] = "cryptographic_context.json"
 
 
-# Contents of this file loosely based on ElectionGuard's publish.py, and leveraging all the serialization
-# built into ElectionGuard. We're doing a bit more error checking than they do, and we're trying to
-# avoid directories with a million files if there are a million ballots.
+@ray.remote
+def _r_ballot_to_manifest_write_spec(
+    ballot: CiphertextAcceptedBallot,
+) -> ManifestFileWriteSpec:
+    # This prefix stuff: ballot uids are encoded as 'b' plus a 7-digit number.
+    # Ballot #3 should be 'b0000003'. By taking the first 4 digits, and making
+    # that into a directory, we get a max of 10,000 files per directory, which
+    # should be good enough. We never want to type 'ls' in a directory and have
+    # it wedge because it's trying to digest a million filenmes.
+
+    ballot_name = ballot.object_id
+    ballot_name_prefix = ballot_name[0:4]  # letter b plus first three digits
+
+    return ManifestFileWriteSpec(
+        file_name=ballot_name + ".json",
+        content=ballot,
+        subdirectories=["ballots", ballot_name_prefix],
+    )
+
+
+def _write_tally_shared(
+    results_dir: str,
+    election_description: ElectionDescription,
+    context: CiphertextElectionContext,
+    constants: ElectionConstants,
+    tally: SelectionTally,
+    metadata: ElectionMetadata,
+) -> Manifest:
+    set_serializers()
+    set_deserializers()
+
+    results_dir = results_dir
+    log_info("_write_tally_shared: starting!")
+    mkdir_helper(results_dir)
+
+    manifest = make_fresh_manifest(results_dir)
+
+    log_info("_write_tally_shared: writing election_description")
+    manifest.write_json_file(ELECTION_DESCRIPTION, election_description)
+
+    log_info("_write_tally_shared: writing crypto context")
+    manifest.write_json_file(CRYPTO_CONTEXT, context)
+
+    log_info("_write_tally_shared: writing crypto constants")
+    manifest.write_json_file(CRYPTO_CONSTANTS, constants)
+
+    log_info("_write_tally_shared: writing tally")
+    manifest.write_json_file(ENCRYPTED_TALLY, tally)
+
+    log_info("_write_tally_shared: writing metadata")
+    manifest.write_json_file(ELECTION_METADATA, metadata)
+
+    return manifest
 
 
 def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> None:
@@ -39,47 +94,52 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> N
     Writes out a directory with the full contents of the tally structure. Each ciphertext ballot
     will end up in its own file. Everything is JSON.
     """
-    set_serializers()
-    set_deserializers()
-
-    results_dir = results_dir
-    log_info("write_fast_tally: starting!")
-    mkdir_helper(results_dir)
-
-    manifest = make_fresh_manifest(results_dir)
-
-    log_info("write_fast_tally: writing election_description")
-    manifest.write_json_file(ELECTION_DESCRIPTION, results.election_description)
-
-    log_info("write_fast_tally: writing crypto context")
-    manifest.write_json_file(CRYPTO_CONTEXT, results.context)
-
-    log_info("write_fast_tally: writing crypto constants")
-    manifest.write_json_file(CRYPTO_CONSTANTS, ElectionConstants())
-
-    log_info("write_fast_tally: writing tally")
-    manifest.write_json_file(ENCRYPTED_TALLY, results.tally)
-
-    log_info("write_fast_tally: writing metadata")
-    manifest.write_json_file(ELECTION_METADATA, results.metadata)
+    manifest = _write_tally_shared(
+        results_dir,
+        results.election_description,
+        results.context,
+        ElectionConstants(),
+        results.tally,
+        results.metadata,
+    )
 
     log_info("write_fast_tally: writing ballots")
 
-    for ballot in tqdm(results.encrypted_ballots, desc="Writing ballots"):
+    for ballot in results.encrypted_ballots:
+        # See comment in _r_ballot_to_manifest_write_specs.
         ballot_name = ballot.object_id
-
-        # This prefix stuff: ballot uids are encoded as 'b' plus a 7-digit number.
-        # Ballot #3 should be 'b0000003'. By taking the first 4 digits, and making
-        # that into a directory, we get a max of 10,000 files per directory, which
-        # should be good enough. We never want to type 'ls' in a directory and have
-        # it wedge because it's trying to digest a million filenmes.
-
-        ballot_name_prefix = ballot_name[0:4]  # letter b plus first three digits
+        ballot_name_prefix = ballot_name[0:4]
         manifest.write_json_file(
             ballot_name + ".json", ballot, ["ballots", ballot_name_prefix]
         )
 
     log_info("write_fast_tally: writing MANIFEST.json")
+    manifest.write_manifest()
+
+
+def write_ray_tally(results: RayTallyEverythingResults, results_dir: str) -> None:
+    """
+    Writes out a directory with the full contents of the tally structure. Each ciphertext ballot
+    will end up in its own file. Everything is JSON.
+    """
+    manifest = _write_tally_shared(
+        results_dir,
+        results.election_description,
+        results.context,
+        ElectionConstants(),
+        results.tally,
+        results.metadata,
+    )
+
+    log_info("write_ray_tally: writing ballots")
+
+    manifest_specs = [
+        _r_ballot_to_manifest_write_spec.remote(ballot)
+        for ballot in results.remote_encrypted_ballot_refs
+    ]
+    manifest.write_remote_json_files(manifest_specs)
+
+    log_info("write_ray_tally: writing MANIFEST.json")
     manifest.write_manifest()
 
 
@@ -90,7 +150,7 @@ def load_fast_tally(
     verbose: bool = False,
 ) -> Optional[FastTallyEverythingResults]:
     """
-    Given the directory name / path-name to a disk represntation of a fast-tally structure, this reads
+    Given the directory name / path-name to a disk representation of a fast-tally structure, this reads
     it back in, makes sure it's well-formed, and optionally checks the cryptographic proofs. If any
     checks fail, `None` is returned. Errors are logged. Optional `pool` allows for some parallelism
     in the verification process.

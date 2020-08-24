@@ -41,7 +41,7 @@ def run_bench(filename: str, pool: Pool) -> None:
     rtally_start = timer()
     rtally = ray_tally_everything(cvrs)
     rtally_end = timer()
-    assert rtally.all_proofs_valid(verbose=True), "proof failure!"
+    assert rtally.to_fast_tally().all_proofs_valid(verbose=True), "proof failure!"
 
     # Note: we're not testing here for identical tallies. They're going to differ because
     # of the random nonces and such generated internally. In tests/test_ray_tally.py,

@@ -55,6 +55,7 @@ from electionguard.logs import log_error
 from electionguard.nonces import Nonces
 from electionguard.serializable import Serializable
 from electionguard.utils import get_optional
+from ray import ObjectRef
 from tqdm import tqdm
 
 from arlo_e2e.dominion import DominionCSV

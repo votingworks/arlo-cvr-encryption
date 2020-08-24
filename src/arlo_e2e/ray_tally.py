@@ -2,28 +2,13 @@
 # code in tally.py, and should yield identical results, just much faster on big cluster computers.
 from datetime import datetime
 from timeit import default_timer as timer
-from typing import Optional, List, Tuple, Sequence, Dict, Final
+from typing import Optional, List, Tuple, Sequence, Dict, Final, NamedTuple
 
 import ray
-from electionguard.ballot import PlaintextBallot, CiphertextBallot
-from electionguard.decrypt_with_secrets import decrypt_ciphertext_with_proof
-from electionguard.election import (
-    CiphertextElectionContext,
-    InternalElectionDescription,
-    make_ciphertext_election_context,
-)
-from electionguard.elgamal import (
-    elgamal_keypair_random,
-    elgamal_keypair_from_secret,
-    ElGamalKeyPair,
-)
-from electionguard.encrypt import encrypt_ballot
-from electionguard.group import ElementModQ, rand_q
-from electionguard.nonces import Nonces
-from electionguard.utils import get_optional
-
 from arlo_e2e.dominion import DominionCSV
+from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.memo import make_memo_value
+from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
     TALLY_TYPE,
@@ -35,30 +20,49 @@ from arlo_e2e.tally import (
     SelectionTally,
     sequential_tally,
 )
-from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.utils import shard_list
-
-# High-level design: What Ray gives us is the ability to call a remote method -- decorated with
-# @ray.remote, called with methodname.remote(args), returning a ray.ObjectRef immediately. That
-# ObjectRef is a future or promise for a computation that hasn't (necessarily) happened yet.
-# We can then pass it as an argument to another remote method, all without worrying about
-# whether the computation has happened or where the ultimate value might be stored.
-
-# Ray tries to be clever enough to do a topological sort on the dependency graph, as it's
-# being constructed, and dispatch work to your cluster. It also claims to have some affinity
-# features, so it will try to dispatch work to the data, rather than forcing the data to
-# migrate to where the compute is.
-
-# One nice feature about Ray is that all the values contained inside a ray.ObjectRef are
-# immutable. That makes them easy to replicate, anybody who has the answer is as good
-# as anybody else, and if you need it recomputed, because a computer failed, then it shouldn't
-# be a problem. Functional programming for the win!
+from electionguard.ballot import (
+    PlaintextBallot,
+    CiphertextBallot,
+    CiphertextAcceptedBallot,
+)
+from electionguard.decrypt_with_secrets import decrypt_ciphertext_with_proof
+from electionguard.election import (
+    CiphertextElectionContext,
+    InternalElectionDescription,
+    make_ciphertext_election_context,
+    ElectionDescription,
+)
+from electionguard.elgamal import (
+    elgamal_keypair_random,
+    elgamal_keypair_from_secret,
+    ElGamalKeyPair,
+)
+from electionguard.encrypt import encrypt_ballot
+from electionguard.group import ElementModQ, rand_q
+from electionguard.nonces import Nonces
+from electionguard.utils import get_optional
 
 # Also, if you've got a big value that you want to spread around, which is what we need to
 # do with ElectionGuard ElectionDefinition or CiphertextElectionContext objects, you can
 # preemptively shove them into a ray.ObjectRef with ray.put(), and then they'll presumably
 # be replicated out once. This should improve the performance of our r_encrypt()
 # method, and perhaps other such things.
+from ray import ObjectRef
+
+# High-level design: What Ray gives us is the ability to call a remote method -- decorated with
+# @ray.remote, called with methodname.remote(args), returning a ray.ObjectRef immediately. That
+# ObjectRef is a future or promise for a computation that hasn't (necessarily) happened yet.
+# We can then pass it as an argument to another remote method, all without worrying about
+# whether the computation has happened or where the ultimate value might be stored.
+# Ray tries to be clever enough to do a topological sort on the dependency graph, as it's
+# being constructed, and dispatch work to your cluster. It also claims to have some affinity
+# features, so it will try to dispatch work to the data, rather than forcing the data to
+# migrate to where the compute is.
+# One nice feature about Ray is that all the values contained inside a ray.ObjectRef are
+# immutable. That makes them easy to replicate, anybody who has the answer is as good
+# as anybody else, and if you need it recomputed, because a computer failed, then it shouldn't
+# be a problem. Functional programming for the win!
 
 BALLOTS_PER_SHARD: Final[int] = 10
 """
@@ -71,6 +75,11 @@ will be the work unit.
 # This would allow for bigger data shards. At least right now, it's convenient that the remote call gives
 # us back a list of ObjectRef, so we can shard that up for the tallying process. Tallying is much faster,
 # per ballot, than encrypting, so the sharding we do there is more essential than it would be here.
+
+
+@ray.remote
+def r_strip_nonce(cballot: CiphertextBallot) -> CiphertextAcceptedBallot:
+    return _ciphertext_ballot_to_accepted(cballot)
 
 
 @ray.remote
@@ -173,7 +182,7 @@ def ray_tally_everything(
     seed_hash: Optional[ElementModQ] = None,
     master_nonce: Optional[ElementModQ] = None,
     secret_key: Optional[ElementModQ] = None,
-) -> FastTallyEverythingResults:
+) -> "RayTallyEverythingResults":
     """
     This top-level function takes a collection of Dominion CVRs and produces everything that
     we might want for arlo-e2e: a list of encrypted ballots, their encrypted and decrypted tally,
@@ -236,18 +245,11 @@ def ray_tally_everything(
 
     # At this point, all of the CiphertextBallots are spread out across the cluster.
     # We need to bring them back here, so we can ultimately write them out.
-    cballots: List[CiphertextBallot] = ray.get(cballot_refs)
-    assert (
-        len(cballots) == rows
-    ), f"missing ballots? only have {len(cballots)} of {rows}"
-
-    tabulate_time = timer()
-
-    log_and_print(
-        f"Encryption and tabulation: {rows} ballots / {tabulate_time - start_time: .3f} sec = {rows / (tabulate_time - start_time): .3f} ballot/sec",
-        verbose,
-    )
-
+    # cballots: List[CiphertextBallot] = ray.get(cballot_refs)
+    # assert (
+    #     len(cballots) == rows
+    # ), f"missing ballots? only have {len(cballots)} of {rows}"
+    #
     assert tally is not None, "tally failed!"
 
     decrypted_tally: DECRYPT_TALLY_OUTPUT_TYPE = ray_decrypt_tally(
@@ -276,14 +278,66 @@ def ray_tally_everything(
     }
 
     # strips the ballots of their nonces, which is important because those could allow for decryption
-    accepted_ballots = [_ciphertext_ballot_to_accepted(x) for x in cballots]
+    accepted_ballot_refs = [r_strip_nonce.remote(x) for x in cballot_refs]
 
-    return FastTallyEverythingResults(
+    tabulate_time = timer()
+
+    log_and_print(
+        f"Encryption and tabulation: {rows} ballots / {tabulate_time - start_time: .3f} sec = {rows / (tabulate_time - start_time): .3f} ballot/sec",
+        verbose,
+    )
+
+    return RayTallyEverythingResults(
         metadata=cvrs.metadata,
         election_description=ed,
-        encrypted_ballot_memos={
-            ballot.object_id: make_memo_value(ballot) for ballot in accepted_ballots
-        },
+        remote_encrypted_ballot_refs=accepted_ballot_refs,
         tally=SelectionTally(reported_tally),
         context=cec,
     )
+
+
+class RayTallyEverythingResults(NamedTuple):
+    metadata: ElectionMetadata
+    """
+    All the public metadata we know about this election. Useful when interacting
+    with `election_description`.
+    """
+
+    election_description: ElectionDescription
+    """
+    ElectionGuard top-level data structure that describes everything about the election: 
+    the candidates, the parties, and so forth.
+    """
+
+    tally: SelectionTally
+    """
+    A mapping from selection object_ids to a structure that includes the encrypted and
+    decrypted tallies and a proof of their correspondence.
+    """
+
+    context: CiphertextElectionContext
+    """
+    Cryptographic context used in creating the tally.
+    """
+
+    remote_encrypted_ballot_refs: List[ObjectRef]
+    """
+    List of remote references to CiphertextAcceptedBallots.
+    """
+
+    def to_fast_tally(self) -> FastTallyEverythingResults:
+        """
+        Converts from the "Ray" tally result to the "Fast" tally result used elsewhere. This will collect
+        all of the possibly-remote ballots into a single data structure on the caller's node, so could
+        potentially take a while to run.
+        """
+        return FastTallyEverythingResults(
+            metadata=self.metadata,
+            election_description=self.election_description,
+            tally=self.tally,
+            context=self.context,
+            encrypted_ballot_memos={
+                ballot.object_id: make_memo_value(ballot)
+                for ballot in ray.get(self.remote_encrypted_ballot_refs)
+            },
+        )

@@ -3,8 +3,9 @@ from base64 import b64encode
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import PurePath
-from typing import Dict, Optional, Type, List, Union
+from typing import Dict, Optional, Type, List, Union, Tuple
 
+import ray
 from electionguard.logs import log_error, log_warning
 from electionguard.serializable import WRITE, Serializable
 from electionguard.utils import flatmap_optional
@@ -17,6 +18,7 @@ from arlo_e2e.utils import (
     mkdir_list_helper,
     decode_json_file_contents,
 )
+from ray import ObjectRef
 
 
 @dataclass(eq=True, unsafe_hash=True)
@@ -50,6 +52,38 @@ class ManifestExternal(Serializable):
 
 
 @dataclass(eq=True, unsafe_hash=True)
+class ManifestFileWriteSpec:
+    file_name: str
+    content: Serializable
+    subdirectories: List[str]
+
+
+def _write_file(
+    root_dir: str, subdirectories: List[str], file_name: str, file_contents: str
+) -> Tuple[str, FileInfo]:
+    manifest_name = compose_manifest_name(file_name, subdirectories)
+
+    mkdir_list_helper(root_dir, subdirectories)
+    h = sha256_hash(file_contents)
+    file_content_bytes = len(file_contents.encode("utf-8"))
+    full_name = compose_filename(root_dir, file_name, subdirectories)
+    with open(full_name, WRITE) as f:
+        f.write(file_contents)
+    return manifest_name, FileInfo(h, file_content_bytes)
+
+
+@ray.remote
+def _r_write_json_file(
+    root_dir: str, spec: ManifestFileWriteSpec
+) -> Tuple[str, FileInfo]:
+    assert isinstance(
+        spec, ManifestFileWriteSpec
+    ), "something went wrong with Ray: got the wrong type here: " + str(type(spec))
+    json_txt = spec.content.to_json(strip_privates=True)
+    return _write_file(root_dir, spec.subdirectories, spec.file_name, json_txt)
+
+
+@dataclass(eq=True, unsafe_hash=True)
 class Manifest:
     """
     This class is a front-end for writing files to disk that can also generate two useful things:
@@ -68,6 +102,31 @@ class Manifest:
         Converts this to a ManifestExternal class, suitable for serializing to disk.
         """
         return ManifestExternal(self.hashes, self.bytes_written)
+
+    def write_remote_json_files(self, remote_write_specs: List[ObjectRef]) -> None:
+        """
+        Given a list of references to `ManifestFileWriteSpec`, whose contents are basically the same
+        as the arguments to `write_json_file`, except the object is stored remotely
+        and we've only got a ray.ObjectRef to it. This launches concurrent writes from
+        whatever nodes have those objects, and collects back all the relevant hash information
+        and stores it in the manifest.
+        """
+
+        # This will launch writes on all the remote nodes to dump the files to disk, and then
+        # bring the "results" back here so we can stuff them into the manifest. That means we
+        # won't even start the for-loop until after every file has been written.
+
+        results: List[Tuple[str, FileInfo]] = ray.get(
+            [_r_write_json_file.remote(spec) for spec in remote_write_specs]
+        )
+        for manifest_name, file_info in results:
+            if manifest_name in self.hashes:
+                log_warning(
+                    f"Writing a file through a manifest that has already been written: {manifest_name}"
+                )
+
+            self.bytes_written += file_info.num_bytes
+            self.hashes[manifest_name] = file_info
 
     def write_json_file(
         self,
@@ -102,21 +161,21 @@ class Manifest:
         :param file_contents: string to be written to the file
         :returns: the SHA256 hash of `file_contents`
         """
-        manifest_name = compose_manifest_name(file_name, subdirectories)
+
+        if subdirectories is None:
+            subdirectories = []
+
+        manifest_name, file_info = _write_file(
+            self.root_dir, subdirectories, file_name, file_contents
+        )
         if manifest_name in self.hashes:
             log_warning(
                 f"Writing a file through a manifest that has already been written: {manifest_name}"
             )
 
-        mkdir_list_helper(self.root_dir, subdirectories)
-        h = sha256_hash(file_contents)
-        file_content_bytes = len(file_contents.encode("utf-8"))
-        self.bytes_written += file_content_bytes
-        full_name = compose_filename(self.root_dir, file_name, subdirectories)
-        self.hashes[manifest_name] = FileInfo(h, file_content_bytes)
-        with open(full_name, WRITE) as f:
-            f.write(file_contents)
-        return h
+        self.bytes_written += file_info.num_bytes
+        self.hashes[manifest_name] = file_info
+        return file_info.hash
 
     def write_html_indices(self, title: str, front_page_contents: str) -> None:
         # TODO: write out index.html files that have links to every other file in the indices as well
