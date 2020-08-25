@@ -23,6 +23,11 @@ from ray import ObjectRef
 
 @dataclass(eq=True, unsafe_hash=True)
 class FileInfo(Serializable):
+    """
+    Internal helper class: When we write a file to disk, we need to know its SHA256 hash
+    and length (in bytes). This is returned from methods that write some things to disk.
+    """
+
     hash: str
     """
     SHA256 hash of the file, represented as a base64 string
@@ -53,6 +58,10 @@ class ManifestExternal(Serializable):
 
 @dataclass(eq=True, unsafe_hash=True)
 class ManifestFileWriteSpec:
+    """
+    Internal helper class: Used to support parallel file writing with Ray.io.
+    """
+
     file_name: str
     content: Serializable
     subdirectories: List[str]
@@ -192,17 +201,17 @@ class Manifest:
         """
         Writes out `MANIFEST.json` into the existing `root_dir`, providing a mapping from filenames
         to their SHA256 hashes.
-        :returns: the SHA256 hash of `MANIFEST.json`
+        :returns: the SHA256 hash of `MANIFEST.json`, itself
         """
 
-        # As a side-effect, this will also add a hash for the manifest itself into hashes, but that's
-        # something of an oddball case that won't ever matter in practice.
+        # As a side-effect, this will also add a hash for the manifest itself into the `hashes` dictionary,
+        # but that's something of an oddball case that won't ever matter in practice.
         return self.write_json_file("MANIFEST.json", self.to_manifest_external(), [])
 
     def _get_hash_required(self, filename: str) -> Optional[FileInfo]:
         """
         Gets the hash for the requested filename (fully composed path, such as we might get from
-        utils.compose_filename). If absent, logs an error and returns None.
+        `utils.compose_filename`). If absent, logs an error and returns None.
         """
         hash = self.hashes[filename]
         if hash is None:
@@ -219,14 +228,15 @@ class Manifest:
         """
         Reads the requested file, by name, returning its contents as a Python object for the given class handle.
         If no hash for the file is present, if the file doesn't match its known hash, or if the JSON deserialization
-        process fails, then `None` will be returned and an error will be logged. If the file_name
+        process fails, then `None` will be returned and an error will be logged. If the `file_name`
         is actually a path-like object, the subdirectories are ignored.
 
-        :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
-        :param file_name: name of the file, including any suffix
-        :param class_handle: the class, itself, that we're trying to deserialize to (if None, then you get back
-          whatever the JSON becomes, e.g., a dict)
-        :returns: the contents of the file, or `None` if there was an error
+        :param subdirectories: Path elements to be introduced between `root_dir` and the file; empty-list means
+          no subdirectory. Ignored if the file_name is a path-like object.
+        :param file_name: Name of the file, including any suffix, or a path-like object.
+        :param class_handle: The class, itself, that we're trying to deserialize to (if None, then you get back
+          whatever the JSON becomes, e.g., a dict).
+        :returns: The contents of the file, or `None` if there was an error.
         """
 
         # this loads the file and verifies the hashes
@@ -272,9 +282,10 @@ class Manifest:
         hash, then `None` will be returned and an error will be logged. If the file_name
         is actually a path-like object, the subdirectories are ignored.
 
-        :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
-        :param file_name: name of the file, including any suffix
-        :returns: the contents of the file, or `None` if there was an error
+        :param subdirectories: Path elements to be introduced between `root_dir` and the file; empty-list means
+          no subdirectory. Ignored if the file_name is a path-like object.
+        :param file_name: Name of the file, including any suffix, or a path-like object.
+        :returns: The contents of the file, or `None` if there was an error.
         """
         if isinstance(file_name, PurePath):
             full_name = file_name
@@ -320,8 +331,8 @@ def make_existing_manifest(root_dir: str) -> Optional[Manifest]:
 
 def sha256_hash(input: str) -> str:
     """
-    Given a string, returns an base64-encoded string representing the 256-bit SHA2-256
-    hash of that input string.
+    Given a string, returns an base64-encoded representation of the 256-bit SHA2-256
+    hash of that input string (in utf8).
     """
     h = sha256()
     h.update(input.encode("utf-8"))

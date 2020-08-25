@@ -107,7 +107,7 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> M
     log_info("write_fast_tally: writing ballots")
 
     for ballot in results.encrypted_ballots:
-        # See comment in _r_ballot_to_manifest_write_specs.
+        # See comment in _r_ballot_to_manifest_write_spec for more on what's going on here.
         ballot_name = ballot.object_id
         ballot_name_prefix = ballot_name[0:4]
         manifest.write_json_file(
@@ -125,6 +125,14 @@ def write_ray_tally(results: RayTallyEverythingResults, results_dir: str) -> Man
     Writes out a directory with the full contents of the tally structure. Each ciphertext ballot
     will end up in its own file. Everything is JSON. Returns a `Manifest` object that reflects
     everything that was written.
+
+    This method is explicitly engineered around the use of Ray.io for cluster computing. We expect
+    to have encrypted ballots spread across a huge cluster. Our assumption is that every node has
+    access to a common filesystem, perhaps mounted via NFS or SMB, so that we'll have every node
+    writing its local ballots out but we'll get a shared result in a single location.
+
+    All the file hash information, necessary to write out `MANIFEST.json` is collected back to
+    the main compute node and written from there.
     """
     manifest = _write_tally_shared(
         results_dir,
@@ -156,6 +164,7 @@ def load_fast_tally(
     check_proofs: bool = True,
     pool: Optional[Pool] = None,
     verbose: bool = False,
+    recheck_ballots_and_tallies: bool = False,
 ) -> Optional[FastTallyEverythingResults]:
     """
     Given the directory name / path-name to a disk representation of a fast-tally structure, this reads
@@ -165,6 +174,12 @@ def load_fast_tally(
     """
     set_serializers()
     set_deserializers()
+
+    # Engineering grumble: if ever there was an argument in favor of monadic error handling
+    # code, it's the absence of it in the code below. We could wrap this in a try/except
+    # block, except none of these things raise exceptions, they just return None. We could
+    # use a deeply nested set of calls to flatmap_optional, each defining a new lambda,
+    # but that's pretty ugly as well. So what do we do? All of these checks for None.
 
     if not path.exists(results_dir):
         log_error(f"Path ({results_dir}) not found, cannot load the fast-tally")
@@ -212,7 +227,7 @@ def load_fast_tally(
     ballots_dir = path.join(results_dir, "ballots")
     ballot_files: List[PurePath] = all_files_in_directory(ballots_dir)
 
-    # What's with the nexted lambdas? Python lambdas aren't real closures. This is a workaround.
+    # What's with the nested lambdas? Python lambdas aren't real closures. This is a workaround.
     # https://louisabraham.github.io/articles/python-lambda-closures.html
     encrypted_ballot_memos: Dict[str, Memo[CiphertextAcceptedBallot]] = {
         filename.stem: make_memo_lambda(
@@ -228,7 +243,9 @@ def load_fast_tally(
     )
 
     if check_proofs:
-        proofs_good = everything.all_proofs_valid(pool, verbose, True)
+        proofs_good = everything.all_proofs_valid(
+            pool, verbose, recheck_ballots_and_tallies
+        )
         if not proofs_good:
             # we don't need to log errors here; that will have happened internally
             return None

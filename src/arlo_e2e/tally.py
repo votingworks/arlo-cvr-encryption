@@ -17,6 +17,11 @@ from typing import (
     Iterable,
 )
 
+from arlo_e2e.dominion import DominionCSV
+from arlo_e2e.eg_helpers import log_and_print
+from arlo_e2e.memo import Memo, make_memo_value
+from arlo_e2e.metadata import ElectionMetadata
+from arlo_e2e.utils import shard_list
 from electionguard.ballot import (
     PlaintextBallot,
     CiphertextAcceptedBallot,
@@ -55,14 +60,7 @@ from electionguard.logs import log_error
 from electionguard.nonces import Nonces
 from electionguard.serializable import Serializable
 from electionguard.utils import get_optional
-from ray import ObjectRef
 from tqdm import tqdm
-
-from arlo_e2e.dominion import DominionCSV
-from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.memo import Memo, make_memo_value
-from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.utils import shard_list
 
 
 def _encrypt(
@@ -415,7 +413,10 @@ class FastTallyEverythingResults(NamedTuple):
     ) -> bool:
         """
         Checks all the proofs used in this tally, returns True if everything is good.
-        Any errors found will be logged.
+        Any errors found will be logged. Normally, this only checks the proofs associated
+        with the totals. If you want to also recompute the tally (i.e., tabulate the
+        encrypted ballots) and verify every individual ballot proof, then set
+        `recheck_ballots_and_tallies` to True.
         """
 
         log_and_print("Verifying proofs:", verbose)

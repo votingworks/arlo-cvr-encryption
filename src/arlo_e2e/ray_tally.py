@@ -243,8 +243,12 @@ def ray_tally_everything(
     # the ballots computed yet. Ray will deal with scheduling the computation.
     tally: TALLY_TYPE = ray.get(ray_tally_ballots(cballot_refs))
 
-    # At this point, all of the CiphertextBallots are spread out across the cluster.
-    # We need to bring them back here, so we can ultimately write them out.
+    # Below: original code to bring all the encrypted ballots back to the
+    # main compute node. We don't want to do this, because for millions of
+    # ballots, we'd rapidly run out of available memory. Instead, we're
+    # maintaining a list of remote references to those ballots (cballot_refs)
+    # and processing them remotely.
+
     # cballots: List[CiphertextBallot] = ray.get(cballot_refs)
     # assert (
     #     len(cballots) == rows

@@ -29,18 +29,20 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--details", action="store_true", help="prints additional details on each race"
+        "--totals",
+        action="store_true",
+        help="prints the verified totals for every race",
     )
     args = parser.parse_args()
 
     tallydir = args.tallies
-    details = args.details
+    totals = args.totals
 
     pool = Pool(os.cpu_count())
 
     print(f"Loading tallies and ballots from {tallydir}.")
     results: Optional[FastTallyEverythingResults] = load_fast_tally(
-        tallydir, check_proofs=True, pool=pool
+        tallydir, check_proofs=True, pool=pool, recheck_ballots_and_tallies=True
     )
 
     if results is None:
@@ -54,7 +56,7 @@ if __name__ == "__main__":
 
     pool.close()
 
-    if not details:
+    if not totals:
         exit(0)
 
     print()

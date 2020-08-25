@@ -78,7 +78,11 @@ class TestTallyPublishing(unittest.TestCase):
 
         # now, read it back again!
         results2 = load_fast_tally(
-            TALLY_TESTING_DIR, check_proofs=check_proofs, pool=self.pool, verbose=True
+            TALLY_TESTING_DIR,
+            check_proofs=check_proofs,
+            pool=self.pool,
+            verbose=True,
+            recheck_ballots_and_tallies=True,
         )
         self.assertIsNotNone(results2)
 
