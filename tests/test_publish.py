@@ -89,7 +89,7 @@ class TestTallyPublishing(unittest.TestCase):
         log_and_print("tally_testing got non-null result!")
 
         self.assertTrue(_list_eq(results.encrypted_ballots, results2.encrypted_ballots))
-        self.assertEqual(set(results.tally.map.keys()), set(results2.tally.map.keys()))
+        self.assertTrue(results.equivalent(results2, keypair))
 
         # And lastly, while we're here, we'll use all this machinery to exercise the ballot decryption
         # read/write facilities.

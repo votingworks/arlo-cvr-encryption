@@ -1,10 +1,12 @@
 # Uses Ray to achieve cluster parallelism for tallying. Note that this code is patterned closely after the
 # code in tally.py, and should yield identical results, just much faster on big cluster computers.
-from datetime import datetime
-from timeit import default_timer as timer
-from typing import Optional, List, Tuple, Sequence, Dict, Final, NamedTuple
 
 import ray
+from datetime import datetime
+from math import sqrt, ceil
+from timeit import default_timer as timer
+from typing import Optional, List, Tuple, Sequence, Dict, NamedTuple
+
 from arlo_e2e.dominion import DominionCSV
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.memo import make_memo_value
@@ -20,12 +22,8 @@ from arlo_e2e.tally import (
     SelectionTally,
     sequential_tally,
 )
-from arlo_e2e.utils import shard_list
-from electionguard.ballot import (
-    PlaintextBallot,
-    CiphertextBallot,
-    CiphertextAcceptedBallot,
-)
+from arlo_e2e.utils import shard_list, flatmap
+from electionguard.ballot import PlaintextBallot
 from electionguard.decrypt_with_secrets import decrypt_ciphertext_with_proof
 from electionguard.election import (
     CiphertextElectionContext,
@@ -43,12 +41,6 @@ from electionguard.group import ElementModQ, rand_q
 from electionguard.nonces import Nonces
 from electionguard.utils import get_optional
 
-# Also, if you've got a big value that you want to spread around, which is what we need to
-# do with ElectionGuard ElectionDefinition or CiphertextElectionContext objects, you can
-# preemptively shove them into a ray.ObjectRef with ray.put(), and then they'll presumably
-# be replicated out once. This should improve the performance of our r_encrypt()
-# method, and perhaps other such things.
-from ray import ObjectRef
 
 # High-level design: What Ray gives us is the ability to call a remote method -- decorated with
 # @ray.remote, called with methodname.remote(args), returning a ray.ObjectRef immediately. That
@@ -59,27 +51,38 @@ from ray import ObjectRef
 # being constructed, and dispatch work to your cluster. It also claims to have some affinity
 # features, so it will try to dispatch work to the data, rather than forcing the data to
 # migrate to where the compute is.
+
 # One nice feature about Ray is that all the values contained inside a ray.ObjectRef are
 # immutable. That makes them easy to replicate, anybody who has the answer is as good
 # as anybody else, and if you need it recomputed, because a computer failed, then it shouldn't
 # be a problem. Functional programming for the win!
 
-BALLOTS_PER_SHARD: Final[int] = 10
-"""
-For ballot tallying, we'll "shard" the list of ballots up into groups, and that
-will be the work unit.
-"""
+# Our general plan is that we're going to "shard" up the plaintext ballots into lists of ballots,
+# and that's the unit of work that we'll dispatch out to remote workers. Those ciphertexts will
+# remain on the remote nodes, giving us significant efficiencies as part of the tallying, since
+# the initial round of tallying will just be to tally all the ballots in each shard, which will
+# still be resident on the node where they were computed. We might call this "tally affinity".
+
+# So, if each shard has ten ballots, the amount of communication required in the first round of
+# the tally is zero. In the *second* round, we'd have only one tenth as much data that would have
+# to move around the network, since the size of a tally subtotal is roughly the same as the size
+# of one ciphertext ballot.
+
+# The exact number of ballots per shard should vary with the number of ballots. With huge numbers
+# of ballots, tally affinity is going to be a more dominant factor, so we've got a dedicated
+# function to compute it. We want something roughly on the order of the square root of the number
+# of ballots (so, 10k ballots -> 200 shards of 50 ballots per shard). We'll cap the ballots per
+# shard at 100, so if we get millions of ballots, we can scale to mammoth clusters while still
+# getting most of the benefits of tally affinity.
 
 
-# Design thoughts: we could redo r_encrypt to take a list of input tuples, and return a list of ballots.
-# This would allow for bigger data shards. At least right now, it's convenient that the remote call gives
-# us back a list of ObjectRef, so we can shard that up for the tallying process. Tallying is much faster,
-# per ballot, than encrypting, so the sharding we do there is more essential than it would be here.
-
-
-@ray.remote
-def r_strip_nonce(cballot: CiphertextBallot) -> CiphertextAcceptedBallot:
-    return _ciphertext_ballot_to_accepted(cballot)
+def ballots_per_shard(num_ballots: int) -> int:
+    """
+    Computes the number of ballots per shard that we'll use. Scales in proportion
+    to the square root of the number of ballots. The result will never be less
+    than 4 or greater than 100.
+    """
+    return min(100, max(4, int(ceil(sqrt(num_ballots) / 2))))
 
 
 @ray.remote
@@ -87,15 +90,24 @@ def r_encrypt(
     ied: InternalElectionDescription,
     cec: CiphertextElectionContext,
     seed_hash: ElementModQ,
-    input_tuple: Tuple[PlaintextBallot, ElementModQ],
-) -> CiphertextBallot:
+    input_tuples: Sequence[Tuple[PlaintextBallot, ElementModQ]],
+) -> List[ray.ObjectRef]:
     """
-    Remotely encrypts a ballot.
+    Remotely encrypts a list of ballots and their associated nonces. Returns a list of
+    Ray ObjectRefs to `CiphertextBallot` objects.
     """
-    b, n = input_tuple
-    return get_optional(
-        encrypt_ballot(b, ied, cec, seed_hash, n, should_verify_proofs=False)
-    )
+    return [
+        ray.put(
+            _ciphertext_ballot_to_accepted(
+                get_optional(
+                    encrypt_ballot(
+                        b, ied, cec, seed_hash, n, should_verify_proofs=False
+                    )
+                )
+            )
+        )
+        for b, n in input_tuples
+    ]
 
 
 @ray.remote
@@ -103,27 +115,49 @@ def r_tally(ptallies: Sequence[ray.ObjectRef]) -> TALLY_TYPE:
     """
     Remotely tallies a sequence of either encrypted ballots or partial tallies.
     On the remote node, the computation will be sequential.
+
+    If Ray supported type parameters, the actual type of the input would be
+    `Sequence[ObjectRef[CiphertextBallot]]]]`.
     """
     return sequential_tally(ray.get(ptallies))
 
 
-def ray_tally_ballots(ptallies: Sequence[ray.ObjectRef],) -> ray.ObjectRef:
+def ray_tally_ballots(ptallies: Sequence[ray.ObjectRef], bps: int) -> ray.ObjectRef:
     """
-    Launches a parallel tally reduction tree, with a fanout of BALLOTS_PER_SHARD. Returns
+    Launches a parallel tally reduction tree, with a fanout based on `bps` ballots per shard. Returns
     a Ray ObjectRef reference to the future result, which the caller will then need to call
-    `ray.get()` to retrieve.
+    `ray.get()` to retrieve. The input is expected to be a sequence of references to ballots.
+
+    If Ray supported type parameters, the actual type of the input would be
+    `Sequence[ObjectRef[CiphertextBallot]]]]`.
     """
 
-    if len(ptallies) <= BALLOTS_PER_SHARD:
+    if len(ptallies) <= bps:
         return r_tally.remote(ptallies)
     else:
-        shards: Sequence[Sequence[ray.ObjectRef]] = shard_list(
-            ptallies, BALLOTS_PER_SHARD
-        )
-        partial_tallies: List[ray.ObjectRef] = [
-            ray_tally_ballots(shard) for shard in shards
+        shards: Sequence[ray.ObjectRef] = [
+            ray.put(x) for x in shard_list(ptallies, bps)
         ]
-        return r_tally.remote(partial_tallies)
+        return ray_tally_ballot_shards(shards, bps)
+
+
+def ray_tally_ballot_shards(
+    partial_tally_shards: Sequence[ray.ObjectRef], bps: int
+) -> ray.ObjectRef:
+    """
+    Launches a parallel tally reduction tree, with a fanout based on `bps` ballots per shard. Returns
+    a Ray ObjectRef reference to the future result, which the caller will then need to call
+    `ray.get()` to retrieve. The input is expected to be a sequence of Ray ObjectRefs to shards
+    (i.e., a sequence of references to sequences of references to ballots).
+
+    If Ray supported type parameters, the actual type of the input would be
+    `Sequence[ObjectRef[Sequence[ObjectRef[CiphertextBallot]]]]`.
+    """
+
+    partial_tallies: List[ray.ObjectRef] = [
+        ray_tally_ballots(ray.get(shard), bps) for shard in partial_tally_shards
+    ]
+    return r_tally.remote(partial_tallies)
 
 
 @ray.remote
@@ -229,31 +263,24 @@ def ray_tally_everything(
         master_nonce = rand_q()
     nonces: List[ElementModQ] = Nonces(master_nonce)[0 : len(ballots)]
 
-    inputs = zip(ballots, nonces)
+    inputs = list(zip(ballots, nonces))
+    bps = ballots_per_shard(len(ballots))
+    sharded_inputs: Sequence[
+        Sequence[Tuple[PlaintextBallot, ElementModQ]]
+    ] = shard_list(inputs, bps)
 
     start_time = timer()
 
-    # This immediately returns a list of futures and launches the computation,
-    # so the actual type is List[ray.ObjectRef], not List[CiphertextBallot].
+    # If Ray had type parameters, the actual type of cballot_refs would
+    # be List[ObjectRef[List[ObjectRef[CiphertextBallot]]]].
     cballot_refs: List[ray.ObjectRef] = [
-        r_encrypt.remote(r_ied, r_cec, r_seed_hash, t) for t in inputs
+        r_encrypt.remote(r_ied, r_cec, r_seed_hash, t) for t in sharded_inputs
     ]
 
     # We're now starting a computation on the tally even though we don't have
     # the ballots computed yet. Ray will deal with scheduling the computation.
-    tally: TALLY_TYPE = ray.get(ray_tally_ballots(cballot_refs))
+    tally: TALLY_TYPE = ray.get(ray_tally_ballot_shards(cballot_refs, bps))
 
-    # Below: original code to bring all the encrypted ballots back to the
-    # main compute node. We don't want to do this, because for millions of
-    # ballots, we'd rapidly run out of available memory. Instead, we're
-    # maintaining a list of remote references to those ballots (cballot_refs)
-    # and processing them remotely.
-
-    # cballots: List[CiphertextBallot] = ray.get(cballot_refs)
-    # assert (
-    #     len(cballots) == rows
-    # ), f"missing ballots? only have {len(cballots)} of {rows}"
-    #
     assert tally is not None, "tally failed!"
 
     decrypted_tally: DECRYPT_TALLY_OUTPUT_TYPE = ray_decrypt_tally(
@@ -281,9 +308,6 @@ def ray_tally_everything(
         for k in tally.keys()
     }
 
-    # strips the ballots of their nonces, which is important because those could allow for decryption
-    accepted_ballot_refs = [r_strip_nonce.remote(x) for x in cballot_refs]
-
     tabulate_time = timer()
 
     log_and_print(
@@ -291,10 +315,22 @@ def ray_tally_everything(
         verbose,
     )
 
+    # cballot_refs is a list of references to remote slices of ballots. We want to get all the *references*
+    # back here to the main node without moving the ballots themselves. The only time we'll ever consolidate
+    # the actual ballots on a single node is with RayTallyEverythingResults.to_fast_tally, which is meant
+    # to be the sort of thing you'd use on a single node to hold everything.
+
+    # If Ray had type parameters, the actual type of flat_ballot_refs would be List[List[ObjectRef[CiphertextBallot]]].
+    # and the actual type of flatter_ballot_refs would be List[ObjectRef[CiphertextBallot]].
+    flat_ballot_refs: List[List[ray.ObjectRef]] = ray.get(cballot_refs)
+    flatter_ballot_refs: List[ray.ObjectRef] = list(
+        flatmap(lambda x: x, flat_ballot_refs)
+    )
+
     return RayTallyEverythingResults(
         metadata=cvrs.metadata,
         election_description=ed,
-        remote_encrypted_ballot_refs=accepted_ballot_refs,
+        remote_encrypted_ballot_refs=flatter_ballot_refs,
         tally=SelectionTally(reported_tally),
         context=cec,
     )
@@ -324,7 +360,7 @@ class RayTallyEverythingResults(NamedTuple):
     Cryptographic context used in creating the tally.
     """
 
-    remote_encrypted_ballot_refs: List[ObjectRef]
+    remote_encrypted_ballot_refs: List[ray.ObjectRef]
     """
     List of remote references to CiphertextAcceptedBallots.
     """
@@ -333,7 +369,8 @@ class RayTallyEverythingResults(NamedTuple):
         """
         Converts from the "Ray" tally result to the "Fast" tally result used elsewhere. This will collect
         all of the possibly-remote ballots into a single data structure on the caller's node, so could
-        potentially take a while to run.
+        take a while to run. Great for tests and for small numbers of ballots. If you've got a million
+        ballots, this could explode the memory of the node where it's running.
         """
         return FastTallyEverythingResults(
             metadata=self.metadata,

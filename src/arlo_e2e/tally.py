@@ -34,6 +34,7 @@ from electionguard.chaum_pedersen import ChaumPedersenDecryptionProof
 from electionguard.decrypt_with_secrets import (
     ciphertext_ballot_to_dict,
     decrypt_ciphertext_with_proof,
+    decrypt_ballot_with_secret,
 )
 from electionguard.election import (
     InternalElectionDescription,
@@ -159,9 +160,7 @@ will be the work unit.
 
 
 def fast_tally_ballots(
-    ballots: Sequence[CiphertextBallot],
-    pool: Optional[Pool] = None,
-    verbose: bool = False,
+    ballots: Sequence[CiphertextBallot], pool: Optional[Pool] = None,
 ) -> TALLY_TYPE:
     """
     This function does a tally of the given list of ballots, returning a dictionary that maps
@@ -179,8 +178,6 @@ def fast_tally_ballots(
             return sequential_tally(ballots_iter)
 
         shards = shard_list(ballots_iter, BALLOTS_PER_SHARD)
-        if verbose:
-            print(f"Tally shards: {len(shards)}")
         partial_tallies: Sequence[TALLY_TYPE] = pool.map(
             func=sequential_tally, iterable=shards
         )
@@ -299,11 +296,6 @@ class SelectionTally(Serializable):
 
     map: Dict[str, SelectionInfo]
 
-    # @classmethod
-    # def from_json(cls, data_str: str):
-    #     data = loads(data_str)
-    #     return cls(map=data["map"])
-
 
 def _proof_verify(
     public_key: ElementModP, hash_header: Optional[ElementModQ], s: SelectionInfo
@@ -326,7 +318,8 @@ class FastTallyEverythingResults(NamedTuple):
 
     encrypted_ballot_memos: Dict[str, Memo[CiphertextAcceptedBallot]]
     """
-    Dictionary from ballot ids to ballots.
+    Dictionary from ballot ids to memoized ballots. (This allows those ballots to
+    be loaded lazily, on-demand.)
     """
 
     tally: SelectionTally
@@ -470,7 +463,7 @@ class FastTallyEverythingResults(NamedTuple):
                 return False
 
             log_and_print("Recomputing tallies:", verbose)
-            recomputed_tally = fast_tally_ballots(self.encrypted_ballots, pool, verbose)
+            recomputed_tally = fast_tally_ballots(self.encrypted_ballots, pool)
 
             tally_success = True
 
@@ -555,6 +548,72 @@ class FastTallyEverythingResults(NamedTuple):
         # we're going to ignore missing ballots, for now, and march onward; an error will have been logged
 
         return matching_ballots_not_none
+
+    def equivalent(
+        self, other: "FastTallyEverythingResults", keys: ElGamalKeyPair
+    ) -> bool:
+        """
+        The built-in equality checking (__eq__) will determine if two tally results are absolutely
+        identical, but with the non-determinism built into ElGamal encryption, we need a somewhat
+        more general equality checker that knows how to decrypt the ciphertexts first. Note that
+        this method doesn't check the Chaum-Pedersen proofs, and assumes that the tally decryptions
+        already present are correct. That makes this method much faster when used in a testing
+        context, but more limited if used elsewhere.
+        """
+
+        same_metadata = self.metadata == other.metadata
+
+        my_ied = InternalElectionDescription(self.election_description)
+        other_ied = InternalElectionDescription(other.election_description)
+        my_cballots = self.encrypted_ballots
+        other_cballots = other.encrypted_ballots
+
+        my_pballots: List[PlaintextBallot] = sorted(
+            [
+                get_optional(
+                    decrypt_ballot_with_secret(
+                        cballot,
+                        my_ied,
+                        self.context.crypto_extended_base_hash,
+                        keys.public_key,
+                        keys.secret_key,
+                        True,
+                        True,
+                    )
+                )
+                for cballot in tqdm(my_cballots, desc="Equivalent (1/2)")
+            ],
+            key=lambda x: x.object_id,
+        )
+        other_pballots: List[PlaintextBallot] = sorted(
+            [
+                get_optional(
+                    decrypt_ballot_with_secret(
+                        cballot,
+                        other_ied,
+                        self.context.crypto_extended_base_hash,
+                        keys.public_key,
+                        keys.secret_key,
+                        True,
+                        True,
+                    )
+                )
+                for cballot in tqdm(other_cballots, desc="Equivalent (2/2)")
+            ],
+            key=lambda x: x.object_id,
+        )
+
+        same_ballots = my_pballots == other_pballots
+        my_decrypted_tallies = {
+            k: self.tally.map[k].decrypted_tally for k in self.tally.map.keys()
+        }
+        other_decrypted_tallies = {
+            k: other.tally.map[k].decrypted_tally for k in other.tally.map.keys()
+        }
+        same_tallies = my_decrypted_tallies == other_decrypted_tallies
+
+        success = same_metadata and same_ballots and same_tallies
+        return success
 
 
 def _ballot_proof_verify(
@@ -646,8 +705,8 @@ def fast_tally_everything(
     )
 
     if verbose:  # pragma: no cover
-        print("\nTallying:")
-    tally: TALLY_TYPE = fast_tally_ballots(cballots, pool, verbose)
+        print("Tallying:")
+    tally: TALLY_TYPE = fast_tally_ballots(cballots, pool)
     eg_tabulate_time = timer()
 
     log_and_print(
@@ -665,7 +724,7 @@ def fast_tally_everything(
     assert tally is not None, "tally failed!"
 
     if verbose:  # pragma: no cover
-        print("\nDecryption & Proofs: ")
+        print("Decryption & Proofs: ")
     decrypted_tally: DECRYPT_TALLY_OUTPUT_TYPE = fast_decrypt_tally(
         tally, cec, keypair, seed_hash, pool, verbose
     )
