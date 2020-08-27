@@ -24,5 +24,7 @@ def file_name_and_contents(draw: _DrawType):
         )
     )
 
-    file_name = draw(text(min_size=4, max_size=5, alphabet=atoz),)
+    file_name = draw(
+        text(min_size=4, max_size=5, alphabet=atoz),
+    )
     return FileNameAndContents(file_name, file_path, file_contents)

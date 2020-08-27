@@ -206,7 +206,10 @@ class DominionCSV(NamedTuple):
         return column_map[cd_map[sd.candidate_id]]
 
     def _contest_name_to_description(
-        self, name: str, contest_uid_maker: UidMaker, gp_uid_maker: UidMaker,
+        self,
+        name: str,
+        contest_uid_maker: UidMaker,
+        gp_uid_maker: UidMaker,
     ) -> Tuple[ContestDescription, List[Candidate], GeopoliticalUnit, Dict[str, str]]:
 
         selections: List[SelectionDescription] = []
@@ -250,7 +253,9 @@ class DominionCSV(NamedTuple):
             candidate_to_column[candidate.object_id] = c.to_string()
 
         gp = GeopoliticalUnit(
-            object_id=gp_uid_maker.next(), name=name, type=ReportingUnitType.unknown,
+            object_id=gp_uid_maker.next(),
+            name=name,
+            type=ReportingUnitType.unknown,
         )
 
         id_number, id_str = contest_uid_maker.next_int()
@@ -324,7 +329,9 @@ class DominionCSV(NamedTuple):
                 gp,
                 candidate_id_to_column,
             ) = self._contest_name_to_description(
-                name=name, contest_uid_maker=contest_uids, gp_uid_maker=gp_uids,
+                name=name,
+                contest_uid_maker=contest_uids,
+                gp_uid_maker=gp_uids,
             )
             contest_map[name] = contest_description
             all_candidates = all_candidates + candidates
@@ -371,7 +378,8 @@ class DominionCSV(NamedTuple):
                 ]
                 pbcontests.append(
                     PlaintextBallotContest(
-                        object_id=contest.object_id, ballot_selections=plaintexts,
+                        object_id=contest.object_id,
+                        ballot_selections=plaintexts,
                     )
                 )
 
@@ -516,7 +524,8 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     df.columns = new_column_names
 
     df["Guid"] = df.apply(
-        lambda r: dominion_row_to_uid(r, election_name, ballot_metadata_fields), axis=1,
+        lambda r: dominion_row_to_uid(r, election_name, ballot_metadata_fields),
+        axis=1,
     )
 
     # If the election official put numbers in as their ballot types, that's going to cause type
@@ -525,7 +534,10 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
 
     # there's probably an easier way to do this, but it does what we want
     ballot_uid_iter = UidMaker("b")
-    df["BallotId"] = df.apply(lambda r: ballot_uid_iter.next(), axis=1,)
+    df["BallotId"] = df.apply(
+        lambda r: ballot_uid_iter.next(),
+        axis=1,
+    )
 
     if "BallotType" not in df:
         return None

@@ -93,9 +93,11 @@ def decrypt_ballots(
     wrapped_decrypt = functools.partial(_decrypt, ied, extended_base_hash, keypair)
     inputs = tqdm(encrypted_ballots, desc="Decrypting ballots")
 
-    decryptions: List[Optional[ProvenPlaintextBallot]] = pool.map(
-        func=wrapped_decrypt, iterable=inputs
-    ) if pool is not None else [wrapped_decrypt(x) for x in inputs]
+    decryptions: List[Optional[ProvenPlaintextBallot]] = (
+        pool.map(func=wrapped_decrypt, iterable=inputs)
+        if pool is not None
+        else [wrapped_decrypt(x) for x in inputs]
+    )
 
     return decryptions
 
@@ -138,5 +140,7 @@ def exists_proven_ballot(ballot_object_id: str, decrypted_dir: str) -> bool:
     """
     ballot_name_prefix = ballot_object_id[0:4]  # letter b plus first three digits
     return file_exists_helper(
-        decrypted_dir, ballot_object_id + ".json", [ballot_name_prefix],
+        decrypted_dir,
+        ballot_object_id + ".json",
+        [ballot_name_prefix],
     )

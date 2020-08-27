@@ -95,7 +95,9 @@ def compose_filename(
 
 
 def file_exists_helper(
-    root_dir: str, file_name: Union[str, PurePath], subdirectories: List[str] = None,
+    root_dir: str,
+    file_name: Union[str, PurePath],
+    subdirectories: List[str] = None,
 ) -> bool:
     """
     Checks whether the desired file exists.
@@ -123,7 +125,9 @@ def file_exists_helper(
 
 
 def load_file_helper(
-    root_dir: str, file_name: Union[str, PurePath], subdirectories: List[str] = None,
+    root_dir: str,
+    file_name: Union[str, PurePath],
+    subdirectories: List[str] = None,
 ) -> Optional[str]:
     """
     Reads the requested file, by name, returning its contents as a Python string.

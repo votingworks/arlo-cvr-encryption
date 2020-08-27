@@ -24,7 +24,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "contest", type=str, nargs="+", help="text prefix(es) for contest",
+        "contest",
+        type=str,
+        nargs="+",
+        help="text prefix(es) for contest",
     )
 
     args = parser.parse_args()

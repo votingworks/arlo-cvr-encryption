@@ -21,7 +21,7 @@ typish = '*'
 jsons = '==1.1.2'
 tqdm = "4.47.0"
 cryptography = "2.9.2"
-ray = "0.8.6"
+ray = "0.8.7"
 electionguard = {editable = true, git = "https://github.com/microsoft/electionguard-python.git", ref = "feature/generic_chaum_petersen"}
 
 [requires]

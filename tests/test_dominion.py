@@ -183,7 +183,8 @@ class TestDominionBasics(unittest.TestCase):
             self.assertEqual(2, len(rows))
 
             self.assertSetEqual(
-                {"Representative - District X"}, result.metadata.style_map["T1"],
+                {"Representative - District X"},
+                result.metadata.style_map["T1"],
             )
 
             self.assertSetEqual({"Referendum"}, result.metadata.style_map["T2"])

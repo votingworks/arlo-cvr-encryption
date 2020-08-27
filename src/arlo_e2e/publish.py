@@ -239,7 +239,11 @@ def load_fast_tally(
     }
 
     everything = FastTallyEverythingResults(
-        metadata, election_description, encrypted_ballot_memos, encrypted_tally, cec,
+        metadata,
+        election_description,
+        encrypted_ballot_memos,
+        encrypted_tally,
+        cec,
     )
 
     if check_proofs:

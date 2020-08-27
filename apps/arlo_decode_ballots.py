@@ -42,7 +42,10 @@ if __name__ == "__main__":
         help="directory name for where decrypted ballots can be found (default: decrypted_ballots)",
     )
     parser.add_argument(
-        "ballot_id", type=str, nargs="+", help="ballot identifiers to decode",
+        "ballot_id",
+        type=str,
+        nargs="+",
+        help="ballot identifiers to decode",
     )
 
     args = parser.parse_args()

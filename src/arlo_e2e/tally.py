@@ -119,9 +119,11 @@ def fast_encrypt_ballots(
     # the performance bottleneck for the whole computation, which means that this code would
     # benefit most from being distributed on a cluster.
 
-    result: List[CiphertextBallot] = [
-        wrapped_func(x) for x in inputs
-    ] if pool is None else pool.map(func=wrapped_func, iterable=inputs)
+    result: List[CiphertextBallot] = (
+        [wrapped_func(x) for x in inputs]
+        if pool is None
+        else pool.map(func=wrapped_func, iterable=inputs)
+    )
 
     return result
 
@@ -160,7 +162,8 @@ will be the work unit.
 
 
 def fast_tally_ballots(
-    ballots: Sequence[CiphertextBallot], pool: Optional[Pool] = None,
+    ballots: Sequence[CiphertextBallot],
+    pool: Optional[Pool] = None,
 ) -> TALLY_TYPE:
     """
     This function does a tally of the given list of ballots, returning a dictionary that maps
@@ -237,9 +240,11 @@ def fast_decrypt_tally(
     # certainly no benefit to distributing this on a cluster.
 
     wrapped_func = functools.partial(_decrypt, cec, keypair)
-    result: List[DECRYPT_OUTPUT_TYPE] = [
-        wrapped_func(x) for x in inputs
-    ] if pool is None else pool.map(func=wrapped_func, iterable=inputs)
+    result: List[DECRYPT_OUTPUT_TYPE] = (
+        [wrapped_func(x) for x in inputs]
+        if pool is None
+        else pool.map(func=wrapped_func, iterable=inputs)
+    )
 
     return {k: (p, proof) for k, p, proof in result}
 
@@ -425,9 +430,11 @@ class FastTallyEverythingResults(NamedTuple):
         if verbose:  # pragma: no cover
             inputs = tqdm(list(inputs), "Tally proof")
 
-        result: List[bool] = [
-            wrapped_func(x) for x in inputs
-        ] if pool is None else pool.map(func=wrapped_func, iterable=inputs)
+        result: List[bool] = (
+            [wrapped_func(x) for x in inputs]
+            if pool is None
+            else pool.map(func=wrapped_func, iterable=inputs)
+        )
         end = timer()
         log_and_print(f"Verification time: {end - start: .3f} sec", verbose)
         log_and_print(
@@ -449,9 +456,11 @@ class FastTallyEverythingResults(NamedTuple):
             ballot_func = functools.partial(_ballot_proof_verify, self.context)
 
             ballot_start = timer()
-            ballot_result: List[bool] = [
-                ballot_func(x) for x in ballot_iter
-            ] if pool is None else pool.map(func=ballot_func, iterable=ballot_iter)
+            ballot_result: List[bool] = (
+                [ballot_func(x) for x in ballot_iter]
+                if pool is None
+                else pool.map(func=ballot_func, iterable=ballot_iter)
+            )
 
             ballot_end = timer()
             log_and_print(
