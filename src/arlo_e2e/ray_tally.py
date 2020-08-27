@@ -63,14 +63,17 @@ from electionguard.utils import get_optional
 # the initial round of tallying will just be to tally all the ballots in each shard, which will
 # still be resident on the node where they were computed. We might call this "tally affinity".
 
-# So, if each shard has ten ballots, the amount of communication required in the first round of
-# the tally is zero. In the *second* round, we'd have only one tenth as much data that would have
-# to move around the network, since the size of a tally subtotal is roughly the same as the size
-# of one ciphertext ballot.
+# So, round one of the tally just accumulates everything in each initial shard, which was all
+# computed on teh same node. As such, the amount of communication required in the first round of
+# the tally is *zero*. In the *second* round, we'd have some fraction as much data to move around
+# the network (what fraction? 1 / ballots_per_shard), since the size of a tally subtotal is roughly
+# the same as the size of one ciphertext ballot.
 
 # The exact number of ballots per shard should vary with the number of ballots. With huge numbers
-# of ballots, tally affinity is going to be a more dominant factor, so we've got a dedicated
-# function to compute it. We want something roughly on the order of the square root of the number
+# of ballots, tally affinity is going to be really important and the bandwidth savings will
+# be significant, whereas for small numbers of ballots we'd rather have smaller batches that
+# can run on many more nodes. Solution: we've got a dedicated function to compute the
+# ballots_per_shard. We want something roughly on the order of the square root of the number
 # of ballots (so, 10k ballots -> 200 shards of 50 ballots per shard). We'll cap the ballots per
 # shard at 100, so if we get millions of ballots, we can scale to mammoth clusters while still
 # getting most of the benefits of tally affinity.
