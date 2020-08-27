@@ -78,6 +78,14 @@ from electionguard.utils import get_optional
 # shard at 100, so if we get millions of ballots, we can scale to mammoth clusters while still
 # getting most of the benefits of tally affinity.
 
+# The code for ray_tally_ballots and ray_tally_ballot_shards is subtle but really interesting.
+# These two functions are mutually recursive, but neither does any actual work. All they're
+# doing is establishing futures. This is all lazy computation, so the recursion completes before
+# any tallying has begun! Instead, when we try to add up the final list of sub-tallies, they
+# won't exist yet, so they'll be dispatched out to nodes for computation. And that will, in
+# turn, cause a cascade of dispatches, which will ultimately bottom out at the sharded list
+# of encrypted ballots being tallied.
+
 
 def ballots_per_shard(num_ballots: int) -> int:
     """
