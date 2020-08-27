@@ -30,7 +30,7 @@ if __name__ == "__main__":
         "-t",
         "--tallies",
         type=str,
-        default="tally_output",
+        default=["tally_output"],
         help="directory name for where the tally artifacts can be found (default: tally_output)",
     )
 
@@ -38,7 +38,7 @@ if __name__ == "__main__":
         "-d",
         "--decrypted",
         type=str,
-        default="decrypted_ballots",
+        default=["decrypted_ballots"],
         help="directory name for where decrypted ballots can be found (default: decrypted_ballots)",
     )
     parser.add_argument(
@@ -46,8 +46,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    tally_dir = args.tallies
-    decrypted_dir = args.decrypted
+    tally_dir = args.tallies[0]
+    decrypted_dir = args.decrypted[0]
     ballot_ids = args.ballot_id
 
     print(f"Loading tallies from {tally_dir}.")

@@ -27,7 +27,7 @@ if __name__ == "__main__":
         "-t",
         "--tallies",
         type=str,
-        default="tally_output",
+        default=["tally_output"],
         help="directory name for where the tally artifacts can be found (default: tally_output)",
     )
     parser.add_argument(
@@ -35,14 +35,14 @@ if __name__ == "__main__":
         "--keys",
         type=str,
         nargs=1,
-        default="secret_election_keys.json",
+        default=["secret_election_keys.json"],
         help="file name for where the information is written (default: secret_election_keys.json)",
     )
     parser.add_argument(
         "-d",
         "--decrypted",
         type=str,
-        default="decrypted_ballots",
+        default=["decrypted_ballots"],
         help="directory name for where decrypted ballots will be written (default: decrypted_ballots)",
     )
     parser.add_argument(
@@ -53,9 +53,9 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    keyfile = args.keys
-    tally_dir = args.tallies
-    decrypted_dir = args.decrypted
+    keyfile = args.keys[0]
+    tally_dir = args.tallies[0]
+    decrypted_dir = args.decrypted[0]
     ballot_ids = args.ballot_id
 
     admin_state: Optional[ElectionAdmin] = load_json_helper(".", keyfile, ElectionAdmin)

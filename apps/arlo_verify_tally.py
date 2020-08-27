@@ -24,7 +24,7 @@ if __name__ == "__main__":
         "-t",
         "--tallies",
         type=str,
-        default="tally_output",
+        default=["tally_output"],
         help="directory name for where the tally artifacts can be found (default: tally_output)",
     )
 
@@ -35,7 +35,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    tallydir = args.tallies
+    tallydir = args.tallies[0]
     totals = args.totals
 
     pool = Pool(os.cpu_count())

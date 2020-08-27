@@ -19,7 +19,7 @@ if __name__ == "__main__":
         "-d",
         "--directory",
         type=str,
-        default="tally_output",
+        default=["tally_output"],
         help="directory name for where the tally artifacts can be found (default: tally_output)",
     )
 
@@ -29,7 +29,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    tallydir = args.directory
+    tallydir = args.directory[0]
     contest_prefixes = args.contest
 
     results: Optional[FastTallyEverythingResults] = load_fast_tally(
