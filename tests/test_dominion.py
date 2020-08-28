@@ -1,4 +1,5 @@
 import unittest
+import csv
 from datetime import timedelta
 from io import StringIO
 from typing import Optional
@@ -203,7 +204,7 @@ class TestDominionHypotheses(unittest.TestCase):
         # disabling the "shrink" phase, because it runs very slowly
         phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
     )
-    def test_sanity(self, cvrs: str) -> None:
+    def test_max_votes_per_race_sanity(self, cvrs: str) -> None:
         parsed = read_dominion_csv(StringIO(cvrs))
         self.assertIsNotNone(parsed)
 
@@ -251,3 +252,21 @@ class TestDominionHypotheses(unittest.TestCase):
             cvr_sum = int(state.dominion_cvrs.data[state.id_map[obj_id]].sum())
             decryption = results[obj_id]
             self.assertEqual(cvr_sum, decryption)
+
+    @given(dominion_cvrs(max_rows=10))
+    @settings(
+        deadline=timedelta(milliseconds=50000),
+        suppress_health_check=[HealthCheck.too_slow],
+        max_examples=5,
+        # disabling the "shrink" phase, because it runs very slowly
+        phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
+    )
+    def test_csv_metadata_roundtrip(self, cvrs: str) -> None:
+        parsed = read_dominion_csv(StringIO(cvrs))
+        self.assertIsNotNone(parsed)
+
+        original_metadata = parsed.dataframe_without_selections()
+        csv_data = original_metadata.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC)
+        reloaded_metadata = pd.read_csv(StringIO(csv_data))
+
+        self.assertTrue(original_metadata.equals(reloaded_metadata))

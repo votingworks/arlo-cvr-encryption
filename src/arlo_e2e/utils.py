@@ -1,3 +1,4 @@
+import sys
 from os import path, stat, walk
 from pathlib import PurePath, Path
 from stat import S_ISREG

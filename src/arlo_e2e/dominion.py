@@ -160,6 +160,12 @@ class DominionCSV(NamedTuple):
     with the name of the election. No two ballots should ever have the same UID.
     """
 
+    metadata_columns: List[str]
+    """
+    Columns of `data` that contain metadata, i.e., everything that isn't
+    actual selections from the voter.
+    """
+
     def _all_parties_for_contests(self, contests: Iterable[str]) -> Set[str]:
         selections = flatmap(
             lambda contest: self.metadata.contest_map[contest], contests
@@ -283,6 +289,13 @@ class DominionCSV(NamedTuple):
             gp,
             candidate_to_column,
         )
+
+    def dataframe_without_selections(self) -> pd.DataFrame:
+        """
+        Returns a Pandas DataFrame containing all the metadata about every CVR, but
+        excluding all of the voters' individual ballot selections.
+        """
+        return self.data[self.metadata_columns]
 
     def to_election_description(
         self, date: Optional[datetime] = None
@@ -444,7 +457,7 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     # The first two columns have the election name and a version number in them, so we have to treat those specially,
     # otherwise, we're looking for columns with only one thing in them, which says that they're not a contest (with
     # choices) but instead they're one of the metadata columns.
-    ballot_metadata_fields = (
+    ballot_metadata_fields: List[str] = (
         filtered_columns[0][1:]
         + filtered_columns[1][1:]
         + [x[0] for x in filtered_columns[2:] if len(x) == 1]
@@ -588,4 +601,5 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
             contest_titles,
         ),
         df,
+        ballot_metadata_fields + ["Guid", "BallotId"],
     )

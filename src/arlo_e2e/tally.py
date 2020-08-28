@@ -1,4 +1,5 @@
 import functools
+import pandas as pd
 from dataclasses import dataclass
 from datetime import datetime
 from multiprocessing.pool import Pool
@@ -352,6 +353,12 @@ class FastTallyEverythingResults(NamedTuple):
     with `election_description`.
     """
 
+    cvr_metadata: pd.DataFrame
+    """
+    A Pandas DataFrame containing all the metadata about every CVR, but
+    excluding all of the voters' individual ballot selections.
+    """
+
     election_description: ElectionDescription
     """
     ElectionGuard top-level data structure that describes everything about the election: 
@@ -646,7 +653,9 @@ class FastTallyEverythingResults(NamedTuple):
         }
         same_tallies = my_decrypted_tallies == other_decrypted_tallies
 
-        success = same_metadata and same_ballots and same_tallies
+        same_cvr_metadata = self.cvr_metadata.equals(other.cvr_metadata)
+
+        success = same_metadata and same_ballots and same_tallies and same_cvr_metadata
         return success
 
 
@@ -800,6 +809,7 @@ def fast_tally_everything(
 
     return FastTallyEverythingResults(
         metadata=cvrs.metadata,
+        cvr_metadata=cvrs.dataframe_without_selections(),
         election_description=ed,
         encrypted_ballot_memos={
             ballot.object_id: make_memo_value(ballot) for ballot in accepted_ballots

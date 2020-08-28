@@ -1,6 +1,7 @@
 # Uses Ray to achieve cluster parallelism for tallying. Note that this code is patterned closely after the
 # code in tally.py, and should yield identical results, just much faster on big cluster computers.
 
+import pandas as pd
 from datetime import datetime
 from math import sqrt, ceil
 from timeit import default_timer as timer
@@ -342,6 +343,7 @@ def ray_tally_everything(
 
     return RayTallyEverythingResults(
         metadata=cvrs.metadata,
+        cvr_metadata=cvrs.dataframe_without_selections(),
         election_description=ed,
         remote_encrypted_ballot_refs=flatter_ballot_refs,
         tally=SelectionTally(reported_tally),
@@ -385,6 +387,12 @@ class RayTallyEverythingResults(NamedTuple):
     """
     All the public metadata we know about this election. Useful when interacting
     with `election_description`.
+    """
+
+    cvr_metadata: pd.DataFrame
+    """
+    A Pandas DataFrame containing all the metadata about every CVR, but
+    excluding all of the voters' individual ballot selections.
     """
 
     election_description: ElectionDescription
@@ -527,6 +535,7 @@ class RayTallyEverythingResults(NamedTuple):
         """
         return FastTallyEverythingResults(
             metadata=self.metadata,
+            cvr_metadata=self.cvr_metadata,
             election_description=self.election_description,
             tally=self.tally,
             context=self.context,

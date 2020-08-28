@@ -1,9 +1,12 @@
+import csv
 from multiprocessing.pool import Pool
 from os import path
+from io import StringIO
 from pathlib import PurePath
 from typing import Final, Optional, TypeVar, List, Dict, Tuple, Sequence
 
 import ray
+import pandas as pd
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.election import (
     ElectionConstants,
@@ -29,6 +32,7 @@ T = TypeVar("T")
 U = TypeVar("U", bound=Serializable)
 
 ELECTION_METADATA: Final[str] = "election_metadata.json"
+CVR_METADATA: Final[str] = "cvr_metadata.csv"
 ELECTION_DESCRIPTION: Final[str] = "election_description.json"
 ENCRYPTED_TALLY: Final[str] = "encrypted_tally.json"
 CRYPTO_CONSTANTS: Final[str] = "constants.json"
@@ -62,6 +66,7 @@ def _write_tally_shared(
     constants: ElectionConstants,
     tally: SelectionTally,
     metadata: ElectionMetadata,
+    cvr_metadata: pd.DataFrame,
 ) -> Manifest:
     set_serializers()
     set_deserializers()
@@ -87,6 +92,11 @@ def _write_tally_shared(
     log_info("_write_tally_shared: writing metadata")
     manifest.write_json_file(ELECTION_METADATA, metadata)
 
+    log_info("_write_tally_shared: writing cvr metadata")
+    manifest.write_file(
+        CVR_METADATA, cvr_metadata.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC)
+    )
+
     return manifest
 
 
@@ -103,6 +113,7 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> M
         ElectionConstants(),
         results.tally,
         results.metadata,
+        results.cvr_metadata,
     )
 
     log_info("write_fast_tally: writing ballots")
@@ -142,6 +153,7 @@ def write_ray_tally(results: RayTallyEverythingResults, results_dir: str) -> Man
         ElectionConstants(),
         results.tally,
         results.metadata,
+        results.cvr_metadata,
     )
 
     log_info("write_ray_tally: writing ballots")
@@ -169,6 +181,7 @@ def _load_tally_shared(
         CiphertextElectionContext,
         SelectionTally,
         ElectionMetadata,
+        pd.DataFrame,
     ]
 ]:
     # Engineering grumble: if ever there was an argument in favor of monadic error handling
@@ -223,7 +236,20 @@ def _load_tally_shared(
     if metadata is None:
         return None
 
-    return manifest, election_description, cec, encrypted_tally, metadata
+    cvr_metadata = manifest.read_file(CVR_METADATA)
+    if cvr_metadata is None:
+        return None
+
+    try:
+        df = pd.read_csv(
+            StringIO(cvr_metadata),
+            sep=",",
+            engine="python",
+        )
+    except pd.errors.ParserError:
+        return None
+
+    return manifest, election_description, cec, encrypted_tally, metadata, df
 
 
 @ray.remote
@@ -255,7 +281,14 @@ def load_ray_tally(
     if result is None:
         return None
 
-    manifest, election_description, cec, encrypted_tally, metadata = result
+    (
+        manifest,
+        election_description,
+        cec,
+        encrypted_tally,
+        metadata,
+        cvr_metadata,
+    ) = result
 
     ballots_dir = path.join(results_dir, "ballots")
     ballot_files: List[PurePath] = all_files_in_directory(ballots_dir)
@@ -284,7 +317,12 @@ def load_ray_tally(
     )
 
     everything = RayTallyEverythingResults(
-        metadata, election_description, encrypted_tally, cec, flatter_cballot_refs
+        metadata,
+        cvr_metadata,
+        election_description,
+        encrypted_tally,
+        cec,
+        flatter_cballot_refs,
     )
 
     if check_proofs:
@@ -314,7 +352,14 @@ def load_fast_tally(
     if result is None:
         return None
 
-    manifest, election_description, cec, encrypted_tally, metadata = result
+    (
+        manifest,
+        election_description,
+        cec,
+        encrypted_tally,
+        metadata,
+        cvr_metadata,
+    ) = result
 
     ballots_dir = path.join(results_dir, "ballots")
     ballot_files: List[PurePath] = all_files_in_directory(ballots_dir)
@@ -332,6 +377,7 @@ def load_fast_tally(
 
     everything = FastTallyEverythingResults(
         metadata,
+        cvr_metadata,
         election_description,
         encrypted_ballot_memos,
         encrypted_tally,
