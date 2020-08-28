@@ -42,7 +42,7 @@ CRYPTO_CONTEXT: Final[str] = "cryptographic_context.json"
 @ray.remote
 def _r_ballot_to_manifest_write_spec(
     ballot: CiphertextAcceptedBallot,
-) -> ManifestFileWriteSpec:
+) -> ManifestFileWriteSpec:  # pragma: no cover
     # This prefix stuff: ballot uids are encoded as 'b' plus a 7-digit number.
     # Ballot #3 should be 'b0000003'. By taking the first 4 digits, and making
     # that into a directory, we get a max of 10,000 files per directory, which
@@ -255,7 +255,7 @@ def _load_tally_shared(
 @ray.remote
 def r_load_ballots(
     m: Manifest, filenames: Sequence[PurePath]
-) -> Sequence[ray.ObjectRef]:
+) -> Sequence[ray.ObjectRef]:  # pragma: no cover
     """
     Given a list of filenames, loads them, returning a sequence of ray ObjectRef's
     to CiphertextBallots.

@@ -66,12 +66,17 @@ from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.utils import shard_list
 
 
-def _encrypt(
+def encrypt_ballot_helper(
     ied: InternalElectionDescription,
     cec: CiphertextElectionContext,
     seed_hash: ElementModQ,
     input_tuple: Tuple[PlaintextBallot, ElementModQ],
 ) -> CiphertextBallot:  # pragma: no cover
+    """
+    Given a ballot and the associated metadata, encrypt it. Note that this method
+    is meant to be used with `functools.partial`, so we can create a function
+    that only takes the final tuple argument while remembering all the rest.
+    """
     b, n = input_tuple
 
     # Coverage note: you'll see a directive on this method and on the other methods
@@ -87,9 +92,13 @@ def _encrypt(
     )
 
 
-def _ciphertext_ballot_to_accepted(
+def ciphertext_ballot_to_accepted(
     ballot: CiphertextBallot,
 ) -> CiphertextAcceptedBallot:
+    """
+    Given a CiphertextBallot, returns a CiphertextAcceptedBallot (and thus, with
+    with nonces removed).
+    """
     return from_ciphertext_ballot(ballot, BallotBoxState.CAST)
 
 
@@ -110,7 +119,7 @@ def fast_encrypt_ballots(
     """
 
     assert len(ballots) == len(nonces), "need one nonce per ballot"
-    wrapped_func = functools.partial(_encrypt, ied, cec, seed_hash)
+    wrapped_func = functools.partial(encrypt_ballot_helper, ied, cec, seed_hash)
 
     inputs = zip(ballots, nonces)
     if show_progress:  # pragma: no cover
@@ -805,7 +814,7 @@ def fast_tally_everything(
     }
 
     # strips the ballots of their nonces, which is important because those could allow for decryption
-    accepted_ballots = [_ciphertext_ballot_to_accepted(x) for x in cballots]
+    accepted_ballots = [ciphertext_ballot_to_accepted(x) for x in cballots]
 
     return FastTallyEverythingResults(
         metadata=cvrs.metadata,

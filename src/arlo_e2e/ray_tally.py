@@ -37,7 +37,7 @@ from arlo_e2e.tally import (
     DECRYPT_OUTPUT_TYPE,
     DECRYPT_TALLY_OUTPUT_TYPE,
     SelectionInfo,
-    _ciphertext_ballot_to_accepted,
+    ciphertext_ballot_to_accepted,
     SelectionTally,
     sequential_tally,
     tallies_match,
@@ -89,6 +89,10 @@ from arlo_e2e.utils import shard_list, flatmap
 # turn, cause a cascade of dispatches, which will ultimately bottom out at the sharded list
 # of encrypted ballots being tallied.
 
+# Nomenclature in this file: methods starting with "ray_" are meant to be called from the
+# outside and should "just work". Methods starting with "r_" are "Ray remote methods" that
+# are really only for use here.
+
 
 def ballots_per_shard(num_ballots: int) -> int:
     """
@@ -105,14 +109,14 @@ def r_encrypt(
     cec: CiphertextElectionContext,
     seed_hash: ElementModQ,
     input_tuples: Sequence[Tuple[PlaintextBallot, ElementModQ]],
-) -> List[ray.ObjectRef]:
+) -> List[ray.ObjectRef]:  # pragma: no cover
     """
     Remotely encrypts a list of ballots and their associated nonces. Returns a list of
     Ray ObjectRefs to `CiphertextBallot` objects.
     """
     return [
         ray.put(
-            _ciphertext_ballot_to_accepted(
+            ciphertext_ballot_to_accepted(
                 get_optional(
                     encrypt_ballot(
                         b, ied, cec, seed_hash, n, should_verify_proofs=False
@@ -125,7 +129,7 @@ def r_encrypt(
 
 
 @ray.remote
-def r_tally(ptallies: Sequence[ray.ObjectRef]) -> TALLY_TYPE:
+def r_tally(ptallies: Sequence[ray.ObjectRef]) -> TALLY_TYPE:  # pragma: no cover
     """
     Remotely tallies a sequence of either encrypted ballots or partial tallies.
     On the remote node, the computation will be sequential.
@@ -179,7 +183,7 @@ def r_decrypt(
     cec: CiphertextElectionContext,
     keypair: ElGamalKeyPair,
     decrypt_input: DECRYPT_INPUT_TYPE,
-) -> DECRYPT_OUTPUT_TYPE:
+) -> DECRYPT_OUTPUT_TYPE:  # pragma: no cover
     """
     Remotely decrypts an ElGamalCiphertext (and its related data -- see DECRYPT_INPUT_TYPE)
     and returns the plaintext along with a Chaum-Pedersen proof (see DECRYPT_OUTPUT_TYPE).
@@ -356,7 +360,7 @@ def r_verify_tally_selection_proofs(
     public_key: ElementModP,
     hash_header: ElementModQ,
     selections: List[SelectionInfo],
-) -> bool:
+) -> bool:  # pragma: no cover
     """
     Given a list of tally selections, verifies that every one's internal proof is correct.
     """
@@ -369,7 +373,7 @@ def r_verify_ballot_proofs(
     public_key: ElementModP,
     hash_header: ElementModQ,
     cballot_refs: List[ray.ObjectRef],
-) -> bool:
+) -> bool:  # pragma: no cover
     """
     Given a list of ballots, verify their Chaum-Pedersen proofs.
     """

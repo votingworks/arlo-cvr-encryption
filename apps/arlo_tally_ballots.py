@@ -1,6 +1,6 @@
 import argparse
 from multiprocessing import Pool
-from os import cpu_count
+from os import cpu_count, path
 from sys import exit
 from timeit import default_timer as timer
 from typing import Optional
@@ -56,6 +56,10 @@ if __name__ == "__main__":
     cvrfile = args.cvr_file[0]
     tallydir = args.tallies[0]
     use_cluster = args.cluster
+
+    if path.exists(tallydir):
+        print(f"Tally directory ({tallydir}) already exists. Exiting.")
+        exit(1)
 
     admin_state: Optional[ElectionAdmin] = load_json_helper(".", keyfile, ElectionAdmin)
     if admin_state is None or not admin_state.is_valid():

@@ -50,6 +50,7 @@ class TestTallyPublishing(unittest.TestCase):
         self.removeTree()
         self.pool = Pool(cpu_count())
         ray_init_localhost()
+        coverage.process_startup()  # necessary for coverage testing to work in parallel
 
     def tearDown(self) -> None:
         self.removeTree()

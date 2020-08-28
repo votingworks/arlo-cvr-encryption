@@ -35,6 +35,7 @@ class TestRayTallies(unittest.TestCase):
         ray_init_localhost(num_cpus=cpus)
         self.pool = Pool(cpus)
         self.removeTree()
+        coverage.process_startup()  # necessary for coverage testing to work in parallel
 
     def tearDown(self) -> None:
         ray.shutdown()
@@ -52,8 +53,6 @@ class TestRayTallies(unittest.TestCase):
     def test_ray_end_to_end(
         self, input: str, keypair: ElGamalKeyPair, use_keypair: bool
     ) -> None:
-        coverage.process_startup()  # necessary for coverage testing to work in parallel
-
         cvrs = read_dominion_csv(StringIO(input))
         self.assertIsNotNone(cvrs)
 
