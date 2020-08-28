@@ -1,14 +1,17 @@
 import argparse
 import os
 from multiprocessing import Pool
-from typing import Optional, Set, Dict, Tuple
+from typing import Optional, Set, Dict, Tuple, Union
 from sys import exit
 
+import ray
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.eg_helpers import log_nothing_to_stdout
 from arlo_e2e.metadata import SelectionMetadata
-from arlo_e2e.publish import load_fast_tally
+from arlo_e2e.publish import load_fast_tally, load_ray_tally
+from arlo_e2e.ray_helpers import ray_init_localhost
+from arlo_e2e.ray_tally import RayTallyEverythingResults
 from arlo_e2e.tally import FastTallyEverythingResults, SelectionInfo
 
 if __name__ == "__main__":
@@ -33,17 +36,39 @@ if __name__ == "__main__":
         action="store_true",
         help="prints the verified totals for every race",
     )
+    parser.add_argument(
+        "--cluster",
+        action="store_true",
+        help="uses a Ray cluster for distributed computation",
+    )
     args = parser.parse_args()
 
     tallydir = args.tallies[0]
     totals = args.totals
+    use_cluster = args.cluster
 
-    pool = Pool(os.cpu_count())
+    results: Optional[Union[RayTallyEverythingResults, FastTallyEverythingResults]]
 
-    print(f"Loading tallies and ballots from {tallydir}.")
-    results: Optional[FastTallyEverythingResults] = load_fast_tally(
-        tallydir, check_proofs=True, pool=pool, recheck_ballots_and_tallies=True
-    )
+    print(f"Loading and verifying tallies and ballots from {tallydir}.")
+    if use_cluster:
+        ray_init_localhost()
+
+        ray_results = load_ray_tally(
+            tallydir, check_proofs=True, recheck_ballots_and_tallies=True
+        )
+
+        ray.shutdown()
+        results = ray_results
+
+    else:
+        pool = Pool(os.cpu_count())
+
+        fast_results = load_fast_tally(
+            tallydir, check_proofs=True, pool=pool, recheck_ballots_and_tallies=True
+        )
+
+        pool.close()
+        results = fast_results
 
     if results is None:
         print(f"Failed to load results from {tallydir}")
@@ -53,8 +78,6 @@ if __name__ == "__main__":
         f"Verified {results.num_ballots} encrypted ballots for {results.metadata.election_name}."
     )
     print("Tally proofs valid, and consistent with the encrypted ballots.")
-
-    pool.close()
 
     if not totals:
         exit(0)

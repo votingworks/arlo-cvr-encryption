@@ -17,11 +17,6 @@ from typing import (
     Iterable,
 )
 
-from arlo_e2e.dominion import DominionCSV
-from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.memo import Memo, make_memo_value
-from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.utils import shard_list
 from electionguard.ballot import (
     PlaintextBallot,
     CiphertextAcceptedBallot,
@@ -62,6 +57,12 @@ from electionguard.nonces import Nonces
 from electionguard.serializable import Serializable
 from electionguard.utils import get_optional
 from tqdm import tqdm
+
+from arlo_e2e.dominion import DominionCSV
+from arlo_e2e.eg_helpers import log_and_print
+from arlo_e2e.memo import Memo, make_memo_value
+from arlo_e2e.metadata import ElectionMetadata
+from arlo_e2e.utils import shard_list
 
 
 def _encrypt(
@@ -301,11 +302,47 @@ class SelectionTally(Serializable):
 
     map: Dict[str, SelectionInfo]
 
+    def to_tally_map(self) -> TALLY_TYPE:
+        """
+        Converts the SelectionTally to TALLY_TYPE, which is just a dictionary from
+        object_ids to ElGamalCiphertexts.
+        """
 
-def _proof_verify(
+        # This is what we want to write, but mypy confuses the colon for a type declaration
+        # rather than key:value syntax for making a dict.
+        # result: TALLY_TYPE = {k: map[k].encrypted_tally for k in self.map.keys()}
+
+        result: TALLY_TYPE = {}
+        for k in self.map.keys():
+            result[k] = self.map[k].encrypted_tally
+        return result
+
+
+def verify_tally_selection_proof(
     public_key: ElementModP, hash_header: Optional[ElementModQ], s: SelectionInfo
 ) -> bool:  # pragma: no cover
+    """
+    Given a tally selection, verifies its internal proof is correct.
+    """
     return s.is_valid_proof(public_key, hash_header)
+
+
+def tallies_match(provided_tally: TALLY_TYPE, recomputed_tally: TALLY_TYPE) -> bool:
+    """
+    Helper function for comparing tallies. Logs useful errors if something doesn't match.
+    """
+    tally_success = True
+
+    for selection in recomputed_tally.keys():
+        recomputed_ciphertext: ElGamalCiphertext = recomputed_tally[selection]
+        provided_ciphertext: ElGamalCiphertext = provided_tally[selection]
+        if recomputed_ciphertext != provided_ciphertext:
+            log_error(
+                f"Mismatching ciphertext tallies found for selection ({selection}). Recomputed sum: ({recomputed_ciphertext}), provided sum: ({provided_ciphertext})"
+            )
+            tally_success = False
+
+    return tally_success
 
 
 class FastTallyEverythingResults(NamedTuple):
@@ -420,7 +457,7 @@ class FastTallyEverythingResults(NamedTuple):
         log_and_print("Verifying proofs:", verbose)
 
         wrapped_func = functools.partial(
-            _proof_verify,
+            verify_tally_selection_proof,
             self.context.elgamal_public_key,
             self.context.crypto_extended_base_hash,
         )
@@ -453,7 +490,7 @@ class FastTallyEverythingResults(NamedTuple):
             # next, check each individual ballot's proofs; in this case, we're going to always
             # show the progress bar, even if verbose is false
             ballot_iter = tqdm(self.encrypted_ballots, desc="Ballot proofs")
-            ballot_func = functools.partial(_ballot_proof_verify, self.context)
+            ballot_func = functools.partial(verify_ballot_proof, self.context)
 
             ballot_start = timer()
             ballot_result: List[bool] = (
@@ -473,19 +510,7 @@ class FastTallyEverythingResults(NamedTuple):
 
             log_and_print("Recomputing tallies:", verbose)
             recomputed_tally = fast_tally_ballots(self.encrypted_ballots, pool)
-
-            tally_success = True
-
-            for selection in recomputed_tally.keys():
-                recomputed_ciphertext: ElGamalCiphertext = recomputed_tally[selection]
-                provided_ciphertext: ElGamalCiphertext = self.tally.map[
-                    selection
-                ].encrypted_tally
-                if recomputed_ciphertext != provided_ciphertext:
-                    log_error(
-                        f"Mismatching ciphertext tallies found for selection ({selection}). Recomputed sum: ({recomputed_ciphertext}), provided sum: ({provided_ciphertext})"
-                    )
-                    tally_success = False
+            tally_success = tallies_match(self.tally.to_tally_map(), recomputed_tally)
 
             if not tally_success:
                 return False
@@ -625,9 +650,12 @@ class FastTallyEverythingResults(NamedTuple):
         return success
 
 
-def _ballot_proof_verify(
+def verify_ballot_proof(
     cec: CiphertextElectionContext, ballot: CiphertextAcceptedBallot
 ) -> bool:  # pragma: no cover
+    """
+    Given a ballot, verify its Chaum-Pedersen proofs.
+    """
     return ballot.is_valid_encryption(
         ballot.description_hash, cec.elgamal_public_key, cec.crypto_extended_base_hash
     )

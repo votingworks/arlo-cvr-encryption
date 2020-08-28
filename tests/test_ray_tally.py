@@ -6,18 +6,19 @@ from multiprocessing import Pool
 from os import cpu_count
 
 import coverage
-from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.manifest import make_existing_manifest
-from arlo_e2e.publish import write_fast_tally, write_ray_tally
-from arlo_e2e.ray_helpers import ray_init_localhost, ray_shutdown_localhost
-from arlo_e2e.ray_tally import ray_tally_everything
-from arlo_e2e.tally import fast_tally_everything
-from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
+import ray
 from electionguard.elgamal import ElGamalKeyPair
 from electionguard.group import rand_q
 from electionguardtest.elgamal import elgamal_keypairs
 from hypothesis import settings, given, HealthCheck, Phase
 from hypothesis.strategies import booleans
+
+from arlo_e2e.dominion import read_dominion_csv
+from arlo_e2e.publish import write_fast_tally, write_ray_tally
+from arlo_e2e.ray_helpers import ray_init_localhost
+from arlo_e2e.ray_tally import ray_tally_everything
+from arlo_e2e.tally import fast_tally_everything
+from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 
 
 class TestRayTallies(unittest.TestCase):
@@ -36,7 +37,7 @@ class TestRayTallies(unittest.TestCase):
         self.removeTree()
 
     def tearDown(self) -> None:
-        ray_shutdown_localhost()
+        ray.shutdown()
         self.pool.close()
         self.removeTree()
 

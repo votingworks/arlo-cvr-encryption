@@ -1,6 +1,6 @@
 import unittest
-from typing import List
 from timeit import default_timer as timer
+from typing import List
 
 import ray
 from electionguard.elgamal import (
@@ -11,7 +11,7 @@ from electionguard.elgamal import (
 from electionguard.group import ElementModP, ElementModQ, int_to_q
 from electionguard.nonces import Nonces
 
-from arlo_e2e.ray_helpers import ray_init_localhost, ray_shutdown_localhost
+from arlo_e2e.ray_helpers import ray_init_localhost
 
 
 @ray.remote
@@ -35,7 +35,7 @@ class TestRayBasics(unittest.TestCase):
         ray_init_localhost()
 
     def tearDown(self) -> None:
-        ray_shutdown_localhost()
+        ray.shutdown()
 
     def test_hello_world(self) -> None:
         inputs = range(0, 1000)

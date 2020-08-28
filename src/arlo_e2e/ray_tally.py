@@ -1,11 +1,29 @@
 # Uses Ray to achieve cluster parallelism for tallying. Note that this code is patterned closely after the
 # code in tally.py, and should yield identical results, just much faster on big cluster computers.
 
-import ray
 from datetime import datetime
 from math import sqrt, ceil
 from timeit import default_timer as timer
 from typing import Optional, List, Tuple, Sequence, Dict, NamedTuple
+
+import ray
+from electionguard.ballot import PlaintextBallot, CiphertextAcceptedBallot
+from electionguard.decrypt_with_secrets import decrypt_ciphertext_with_proof
+from electionguard.election import (
+    CiphertextElectionContext,
+    InternalElectionDescription,
+    make_ciphertext_election_context,
+    ElectionDescription,
+)
+from electionguard.elgamal import (
+    elgamal_keypair_random,
+    elgamal_keypair_from_secret,
+    ElGamalKeyPair,
+)
+from electionguard.encrypt import encrypt_ballot
+from electionguard.group import ElementModQ, rand_q, ElementModP
+from electionguard.nonces import Nonces
+from electionguard.utils import get_optional
 
 from arlo_e2e.dominion import DominionCSV
 from arlo_e2e.eg_helpers import log_and_print
@@ -21,25 +39,9 @@ from arlo_e2e.tally import (
     _ciphertext_ballot_to_accepted,
     SelectionTally,
     sequential_tally,
+    tallies_match,
 )
 from arlo_e2e.utils import shard_list, flatmap
-from electionguard.ballot import PlaintextBallot
-from electionguard.decrypt_with_secrets import decrypt_ciphertext_with_proof
-from electionguard.election import (
-    CiphertextElectionContext,
-    InternalElectionDescription,
-    make_ciphertext_election_context,
-    ElectionDescription,
-)
-from electionguard.elgamal import (
-    elgamal_keypair_random,
-    elgamal_keypair_from_secret,
-    ElGamalKeyPair,
-)
-from electionguard.encrypt import encrypt_ballot
-from electionguard.group import ElementModQ, rand_q
-from electionguard.nonces import Nonces
-from electionguard.utils import get_optional
 
 
 # High-level design: What Ray gives us is the ability to call a remote method -- decorated with
@@ -347,6 +349,37 @@ def ray_tally_everything(
     )
 
 
+@ray.remote
+def r_verify_tally_selection_proofs(
+    public_key: ElementModP,
+    hash_header: ElementModQ,
+    selections: List[SelectionInfo],
+) -> bool:
+    """
+    Given a list of tally selections, verifies that every one's internal proof is correct.
+    """
+    results = [s.is_valid_proof(public_key, hash_header) for s in selections]
+    return all(results)
+
+
+@ray.remote
+def r_verify_ballot_proofs(
+    public_key: ElementModP,
+    hash_header: ElementModQ,
+    cballot_refs: List[ray.ObjectRef],
+) -> bool:
+    """
+    Given a list of ballots, verify their Chaum-Pedersen proofs.
+    """
+    cballots: List[CiphertextAcceptedBallot] = ray.get(cballot_refs)
+    results = [
+        b.is_valid_encryption(b.description_hash, public_key, hash_header)
+        for b in cballots
+    ]
+
+    return all(results)
+
+
 class RayTallyEverythingResults(NamedTuple):
     metadata: ElectionMetadata
     """
@@ -375,6 +408,115 @@ class RayTallyEverythingResults(NamedTuple):
     """
     List of remote references to CiphertextAcceptedBallots.
     """
+
+    @property
+    def num_ballots(self) -> int:
+        """
+        Returns the number of ballots stored here.
+        """
+        return len(self.remote_encrypted_ballot_refs)
+
+    @property
+    def encrypted_ballots(self) -> List[CiphertextAcceptedBallot]:
+        """
+        Returns a list of all encrypted ballots, pulling them from their remote
+        Ray locations to the local node. This might be very slow for large numbers
+        of ballots.
+        """
+        result: List[CiphertextAcceptedBallot] = ray.get(
+            self.remote_encrypted_ballot_refs
+        )
+        return result
+
+    def equivalent(
+        self, other: "RayTallyEverythingResults", keys: ElGamalKeyPair
+    ) -> bool:
+        """
+        Returns whether the two tallies are "equivalent". This might be very
+        slow for large numbers of ballots. Currently does not take any advantage
+        of Ray for speed.
+        """
+        return self.to_fast_tally().equivalent(other.to_fast_tally(), keys)
+
+    def all_proofs_valid(
+        self,
+        verbose: bool = False,
+        recheck_ballots_and_tallies: bool = False,
+    ) -> bool:
+        """
+        Checks all the proofs used in this tally, returns True if everything is good.
+        Any errors found will be logged. Normally, this only checks the proofs associated
+        with the totals. If you want to also recompute the tally (i.e., tabulate the
+        encrypted ballots) and verify every individual ballot proof, then set
+        `recheck_ballots_and_tallies` to True.
+        """
+
+        log_and_print("Verifying proofs:", verbose)
+
+        r_public_key = ray.put(self.context.elgamal_public_key)
+        r_hash_header = ray.put(self.context.crypto_extended_base_hash)
+
+        start = timer()
+        selections = self.tally.map.values()
+        sharded_selections: Sequence[Sequence[SelectionInfo]] = shard_list(
+            selections, ballots_per_shard(len(selections))
+        )
+        results: List[bool] = ray.get(
+            [
+                r_verify_tally_selection_proofs.remote(
+                    r_public_key, r_hash_header, ray.put(s)
+                )
+                for s in sharded_selections
+            ]
+        )
+        end = timer()
+
+        log_and_print(f"Verification time: {end - start: .3f} sec", verbose)
+        log_and_print(
+            f"Verification rate: {len(self.tally.map.keys()) / (end - start): .3f} selection/sec",
+            verbose,
+        )
+
+        if False in results:
+            return False
+
+        if recheck_ballots_and_tallies:
+            # next, check each individual ballot's proofs; in this case, we're going to always
+            # show the progress bar, even if verbose is false
+            num_ballots = len(self.remote_encrypted_ballot_refs)
+            bps = ballots_per_shard(num_ballots)
+            cballot_shards = [
+                ray.put(s) for s in shard_list(self.remote_encrypted_ballot_refs, bps)
+            ]
+
+            ballot_start = timer()
+            ballot_results = ray.get(
+                [
+                    r_verify_ballot_proofs.remote(r_public_key, r_hash_header, shard)
+                    for shard in cballot_shards
+                ]
+            )
+            ballot_end = timer()
+
+            log_and_print(
+                f"Ballot verification rate: {num_ballots / (ballot_end - ballot_start): .3f} ballot/sec",
+                verbose,
+            )
+
+            if False in ballot_results:
+                return False
+
+            log_and_print("Recomputing tallies:", verbose)
+            recomputed_tally: TALLY_TYPE = ray.get(
+                ray_tally_ballot_shards(cballot_shards, bps)
+            )
+
+            tally_success = tallies_match(self.tally.to_tally_map(), recomputed_tally)
+
+            if not tally_success:
+                return False
+
+        return True
 
     def to_fast_tally(self) -> FastTallyEverythingResults:
         """

@@ -1,15 +1,18 @@
 import argparse
 from multiprocessing import Pool
 from os import cpu_count
+from sys import exit
 from timeit import default_timer as timer
 from typing import Optional
-from sys import exit
 
+import ray
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.admin import ElectionAdmin
 from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.publish import write_fast_tally
+from arlo_e2e.publish import write_fast_tally, write_ray_tally
+from arlo_e2e.ray_helpers import ray_init_localhost
+from arlo_e2e.ray_tally import ray_tally_everything
 from arlo_e2e.tally import fast_tally_everything
 from arlo_e2e.utils import load_json_helper
 
@@ -37,6 +40,11 @@ if __name__ == "__main__":
         help="directory name for where the tally is written (default: tally_output)",
     )
     parser.add_argument(
+        "--cluster",
+        action="store_true",
+        help="uses a Ray cluster for distributed computation",
+    )
+    parser.add_argument(
         "cvr_file",
         type=str,
         nargs=1,
@@ -47,6 +55,7 @@ if __name__ == "__main__":
     keyfile = args.keys[0]
     cvrfile = args.cvr_file[0]
     tallydir = args.tallies[0]
+    use_cluster = args.cluster
 
     admin_state: Optional[ElectionAdmin] = load_json_helper(".", keyfile, ElectionAdmin)
     if admin_state is None or not admin_state.is_valid():
@@ -60,17 +69,31 @@ if __name__ == "__main__":
     rows, cols = cvrs.data.shape
     print(f"Found {rows} CVRs in {cvrs.metadata.election_name}.")
 
-    pool = Pool(cpu_count())
+    if use_cluster:
+        ray_init_localhost()  # vs. ray_init_cluster()
+        tally_start = timer()
+        rtally = ray_tally_everything(
+            cvrs, verbose=False, secret_key=admin_state.keypair.secret_key
+        )
+        tally_end = timer()
+        print(f"Tally rate:    {rows / (tally_end - tally_start): .3f} ballots/sec")
+        write_ray_tally(rtally, tallydir)
+        print(f"Tally written to {tallydir}")
 
-    tally_start = timer()
-    tally = fast_tally_everything(
-        cvrs, verbose=False, secret_key=admin_state.keypair.secret_key, pool=pool
-    )
-    tally_end = timer()
-    print(f"Tally rate:    {rows / (tally_end - tally_start): .3f} ballots/sec")
-    write_fast_tally(tally, tallydir)
-    print(f"Tally written to {tallydir}")
+        ray.shutdown()
 
-    pool.close()
+    else:
+        pool = Pool(cpu_count())
+
+        tally_start = timer()
+        ftally = fast_tally_everything(
+            cvrs, verbose=False, secret_key=admin_state.keypair.secret_key, pool=pool
+        )
+        tally_end = timer()
+        print(f"Tally rate:    {rows / (tally_end - tally_start): .3f} ballots/sec")
+        write_fast_tally(ftally, tallydir)
+        print(f"Tally written to {tallydir}")
+
+        pool.close()
 
     exit(0)

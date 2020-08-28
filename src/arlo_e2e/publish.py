@@ -1,20 +1,9 @@
 from multiprocessing.pool import Pool
 from os import path
 from pathlib import PurePath
-from typing import Final, Optional, TypeVar, List, Dict
+from typing import Final, Optional, TypeVar, List, Dict, Tuple, Sequence
 
 import ray
-from arlo_e2e.manifest import (
-    make_fresh_manifest,
-    make_existing_manifest,
-    ManifestFileWriteSpec,
-    Manifest,
-)
-from arlo_e2e.memo import Memo, make_memo_lambda
-from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.ray_tally import RayTallyEverythingResults
-from arlo_e2e.tally import FastTallyEverythingResults, SelectionTally
-from arlo_e2e.utils import all_files_in_directory, mkdir_helper
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.election import (
     ElectionConstants,
@@ -23,6 +12,18 @@ from electionguard.election import (
 )
 from electionguard.logs import log_error, log_info
 from electionguard.serializable import set_deserializers, Serializable, set_serializers
+
+from arlo_e2e.manifest import (
+    make_fresh_manifest,
+    make_existing_manifest,
+    ManifestFileWriteSpec,
+    Manifest,
+)
+from arlo_e2e.memo import Memo, make_memo_lambda
+from arlo_e2e.metadata import ElectionMetadata
+from arlo_e2e.ray_tally import RayTallyEverythingResults, ballots_per_shard
+from arlo_e2e.tally import FastTallyEverythingResults, SelectionTally
+from arlo_e2e.utils import all_files_in_directory, mkdir_helper, shard_list, flatmap
 
 T = TypeVar("T")
 U = TypeVar("U", bound=Serializable)
@@ -159,27 +160,25 @@ def write_ray_tally(results: RayTallyEverythingResults, results_dir: str) -> Man
     return manifest
 
 
-def load_fast_tally(
+def _load_tally_shared(
     results_dir: str,
-    check_proofs: bool = True,
-    pool: Optional[Pool] = None,
-    verbose: bool = False,
-    recheck_ballots_and_tallies: bool = False,
-) -> Optional[FastTallyEverythingResults]:
-    """
-    Given the directory name / path-name to a disk representation of a fast-tally structure, this reads
-    it back in, makes sure it's well-formed, and optionally checks the cryptographic proofs. If any
-    checks fail, `None` is returned. Errors are logged. Optional `pool` allows for some parallelism
-    in the verification process.
-    """
-    set_serializers()
-    set_deserializers()
-
+) -> Optional[
+    Tuple[
+        Manifest,
+        ElectionDescription,
+        CiphertextElectionContext,
+        SelectionTally,
+        ElectionMetadata,
+    ]
+]:
     # Engineering grumble: if ever there was an argument in favor of monadic error handling
     # code, it's the absence of it in the code below. We could wrap this in a try/except
     # block, except none of these things raise exceptions, they just return None. We could
     # use a deeply nested set of calls to flatmap_optional, each defining a new lambda,
     # but that's pretty ugly as well. So what do we do? All of these checks for None.
+
+    set_serializers()
+    set_deserializers()
 
     if not path.exists(results_dir):
         log_error(f"Path ({results_dir}) not found, cannot load the fast-tally")
@@ -223,6 +222,99 @@ def load_fast_tally(
     )
     if metadata is None:
         return None
+
+    return manifest, election_description, cec, encrypted_tally, metadata
+
+
+@ray.remote
+def r_load_ballots(
+    m: Manifest, filenames: Sequence[PurePath]
+) -> Sequence[ray.ObjectRef]:
+    """
+    Given a list of filenames, loads them, returning a sequence of ray ObjectRef's
+    to CiphertextBallots.
+    """
+    return [ray.put(m.read_json_file(f, CiphertextAcceptedBallot)) for f in filenames]
+
+
+def load_ray_tally(
+    results_dir: str,
+    check_proofs: bool = True,
+    verbose: bool = False,
+    recheck_ballots_and_tallies: bool = False,
+) -> Optional[RayTallyEverythingResults]:
+    """
+    Given the directory name / path-name to a disk representation of a fast-tally structure, this reads
+    it back in, makes sure it's well-formed, and optionally checks the cryptographic proofs. If any
+    checks fail, `None` is returned. Errors are logged. This is executed across a Ray cluster, resulting
+    in significant speedups, as well as having the ballot ciphertexts, themselves, spread across the
+    cluster, for improved concurrency later on.
+    """
+
+    result = _load_tally_shared(results_dir)
+    if result is None:
+        return None
+
+    manifest, election_description, cec, encrypted_tally, metadata = result
+
+    ballots_dir = path.join(results_dir, "ballots")
+    ballot_files: List[PurePath] = all_files_in_directory(ballots_dir)
+
+    # We're going to load the ballots across the whole cluster, using a sharding
+    # strategy that will make the first round of redoing the tally cheap.
+    bps = ballots_per_shard(len(ballot_files))
+    sharded_ballot_files: Sequence[Sequence[PurePath]] = shard_list(ballot_files, bps)
+
+    # TODO: shard the manifest itself, so we don't have to copy the whole thing to
+    #   every node when we're only using a fraction of it. For a million ballots,
+    #   the manifest will have maybe 100 bytes per ballot, so we're asking the
+    #   poor database to shove 100MB to every node in the cluster. Fun argument:
+    #   we gain a significant savings here by using VMs with more CPU cores per VM,
+    #   because we'll only need to do the replication once per VM.
+    r_manifest = ray.put(manifest)
+
+    # While we're "unsharding" the references before storing in the results,
+    # we'll re-shard them again as part of the verification, and they'll end
+    # up exactly the same.
+    sharded_cballots_refs: Sequence[Sequence[ray.ObjectRef]] = ray.get(
+        [r_load_ballots.remote(r_manifest, files) for files in sharded_ballot_files]
+    )
+    flatter_cballot_refs: List[ray.ObjectRef] = list(
+        flatmap(lambda x: x, sharded_cballots_refs)
+    )
+
+    everything = RayTallyEverythingResults(
+        metadata, election_description, encrypted_tally, cec, flatter_cballot_refs
+    )
+
+    if check_proofs:
+        proofs_good = everything.all_proofs_valid(verbose, recheck_ballots_and_tallies)
+        if not proofs_good:
+            # we don't need to log errors here; that will have happened internally
+            return None
+
+    return everything
+
+
+def load_fast_tally(
+    results_dir: str,
+    check_proofs: bool = True,
+    pool: Optional[Pool] = None,
+    verbose: bool = False,
+    recheck_ballots_and_tallies: bool = False,
+) -> Optional[FastTallyEverythingResults]:
+    """
+    Given the directory name / path-name to a disk representation of a fast-tally structure, this reads
+    it back in, makes sure it's well-formed, and optionally checks the cryptographic proofs. If any
+    checks fail, `None` is returned. Errors are logged. Optional `pool` allows for some parallelism
+    in the verification process.
+    """
+
+    result = _load_tally_shared(results_dir)
+    if result is None:
+        return None
+
+    manifest, election_description, cec, encrypted_tally, metadata = result
 
     ballots_dir = path.join(results_dir, "ballots")
     ballot_files: List[PurePath] = all_files_in_directory(ballots_dir)
