@@ -16,6 +16,7 @@ from electionguard.election import (
 from electionguard.logs import log_error, log_info
 from electionguard.serializable import set_deserializers, Serializable, set_serializers
 
+from arlo_e2e.html_index import generate_index_html_files
 from arlo_e2e.manifest import (
     make_fresh_manifest,
     make_existing_manifest,
@@ -128,6 +129,7 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> M
 
     log_info("write_fast_tally: writing MANIFEST.json")
     manifest.write_manifest()
+    generate_index_html_files(results.metadata.election_name, results_dir)
 
     return manifest
 
@@ -168,6 +170,7 @@ def write_ray_tally(results: RayTallyEverythingResults, results_dir: str) -> Man
 
     log_info("write_ray_tally: writing MANIFEST.json")
     manifest.write_manifest()
+    generate_index_html_files(results.metadata.election_name, results_dir)
 
     return manifest
 
