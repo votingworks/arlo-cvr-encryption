@@ -2,6 +2,10 @@ import argparse
 import json
 from json import JSONDecodeError
 
+# This tool is useful to take a JSON file and print it, properly indented.
+# Even better is using `jq` (https://stedolan.github.io/jq/), which knows
+# how to colorize and do searches.
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pretty-prints any JSON file")
 
