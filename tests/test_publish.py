@@ -3,6 +3,7 @@ import unittest
 from datetime import timedelta
 from io import StringIO
 from multiprocessing import Pool, cpu_count
+from os import stat, path
 
 import coverage
 import ray
@@ -101,6 +102,9 @@ class TestTallyPublishing(unittest.TestCase):
 
         self.assertTrue(_list_eq(results.encrypted_ballots, results2.encrypted_ballots))
         self.assertTrue(results.equivalent(results2, keypair))
+
+        # Make sure there's an index.html file; throws an exception if it's missing
+        self.assertIsNotNone(stat(path.join(TALLY_TESTING_DIR, "index.html")))
 
         # And lastly, while we're here, we'll use all this machinery to exercise the ballot decryption
         # read/write facilities.

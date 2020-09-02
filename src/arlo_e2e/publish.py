@@ -263,7 +263,11 @@ def r_load_ballots(
     Given a list of filenames, loads them, returning a sequence of ray ObjectRef's
     to CiphertextBallots.
     """
-    return [ray.put(m.read_json_file(f, CiphertextAcceptedBallot)) for f in filenames]
+    return [
+        ray.put(m.read_json_file(f, CiphertextAcceptedBallot))
+        for f in filenames
+        if f.name != "index.html"
+    ]
 
 
 def load_ray_tally(
@@ -365,7 +369,9 @@ def load_fast_tally(
     ) = result
 
     ballots_dir = path.join(results_dir, "ballots")
-    ballot_files: List[PurePath] = all_files_in_directory(ballots_dir)
+    ballot_files: List[PurePath] = [
+        f for f in all_files_in_directory(ballots_dir) if f.name != "index.html"
+    ]
 
     # What's with the nested lambdas? Python lambdas aren't real closures. This is a workaround.
     # https://louisabraham.github.io/articles/python-lambda-closures.html
