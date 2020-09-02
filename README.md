@@ -61,17 +61,15 @@ of contests, candidates per contest, and so forth), encrypt them and generate
 all the proofs, serialize them to disk, read them all back in again,
 and verify all the proofs.
 
-On top of this, we'll build the command-line tools, as above.
-
-At some point really soon, we'll need to support cluster parallelism
+On top of this, we have all the command-line tools, listed above, and we have code
+that can use all of the cores of a multicore computer to accelerate the process
+on a single computer. In progress as well is code to support cluster parallelism
 for the encryption/tallying process, so we can scale to large elections.
-We already have prototyped tallying code using [Ray](https://ray.io/),
-which runs great locally and needs to be validated / enhanced to run properly
-on a real cluster.
+We already have prototyped tallying code using [Ray](https://ray.io/).
 
 Not in version 1 but on the future wishlist:
-- Some sort of binary file format or use of a real database to store all the encrypted CVRs. JSON is inefficient,
-  although it's at least amenable to compression.
+- Some sort of binary file format or use of a real database to store all the encrypted CVRs. Gzip on our
+  encrypted ballots reduces them to 2/3 or their original human-readable size.
 - Some sort of integration with Arlo, rather than running as a standalone tool.
 - Some sort of web frontend, rather than the command-line tools.
 
