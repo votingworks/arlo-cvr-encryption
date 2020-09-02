@@ -27,17 +27,24 @@ And, of course, if you *do* happen to have voting machines that generate e2e cip
 
 ## Command-line tools
 
-`arlo_initialize_keys`: Creates a public/private key pair for the election administrator. The private key could eventually be built with secret sharing across trustees, but for version 1 that's irrelevant, since the election administrator already has the plaintext CVRs.
+`arlo_initialize_keys`: Creates a public/private key pair for the election administrator. 
+For future versions of arlo-e2e, threshold cryptography would be interesting because it
+reduces the downside risk of the election administrator's key material being stolen.
+Of course, that same election administrator already has the plaintext ballots.
 
-`arlo_tally_ballots`: Input is a file full of CVRs, in Dominion format, and the key file from `arlo_initialize_keys`. Output is a directory full of JSON files, including the encrypted ballots,
-their associated proofs, the tallies, and other useful metadata.
+`arlo_tally_ballots`: Input is a file full of CVRs, in Dominion format, and the key file
+from `arlo_initialize_keys`. Output is a directory full of JSON files, including the 
+encrypted ballots, their associated proofs, the tallies, and other useful metadata.
 This directory could be posted on a web site, making it a realization of the _public bulletin board_ concept
 that appears widely in the cryptographic voting literature. The election official might then
 distribute the SHA256 hash of `MANIFEST.json`, which contains SHA256 hashes of
-every other JSON file in the directory.
+every other JSON file in the directory, allowing for incremental integrity checking
+of files as they're read.
 
-`arlo_verify_tally`: Input is a tally directory (the output of `arlo_tally_ballots`). The election private key is not needed. Verifies that
-the tally is consistent with all the encrypted ballots, and that all the proofs verify correctly.
+`arlo_verify_tally`: Input is a tally directory (the output of `arlo_tally_ballots`). The 
+election private key is not needed. This tool verifies that the tally is consistent with all the
+encrypted ballots, and that all the proofs verify correctly. This process is something that
+a third-party observer would conduct against the public bulletin board.
 
 `arlo_ballot_style_summary`: Input is a tally directory, output is a summary of all the
 contests and ballot styles. Demonstrates how to work with the metadata included
@@ -47,11 +54,15 @@ in a tally directory.
 for ballots having the desired contest.  Demonstrates how to work with the metadata included
 in a tally directory.
 
-`arlo_decrypt_ballots`: Input is one or more JSON files (the `arlo_encrypt_cvrs` format), the *private* key of the election, and the identifier(s) for the ballot(s) to be decrypted. Output is some sort of JSON format containing the plaintext plus the decryption proof.
+`arlo_decrypt_ballots`: Input is one or more ballot identifiers (same as the ballot file names, but without the `.json` suffix), 
+the *private* key of the election, and the identifier(s) for the ballot(s) to be decrypted. Output ballots are written
+to a separate directory, including both the plaintext and proofs of the plaintext's correctness. These are the ballots
+that a "ballot-level comparison audit" would be considering.
 
-`arlo_decode_ballots`: Given some ballot IDs, prints everything we know about those ballots. If they
-were previously decrypted, this will print their decryptions. Otherwise, just
-their ballot style.
+`arlo_decode_ballots`: Given some ballot identifiers (as above), prints everything we know about those ballots. If they
+were previously decrypted, this will print their decryptions and verify their equivalence proofs. If the proofs don't
+check out, this tool flags the issue. (Like `arlo_verify_tally`, this tool would be used by a third-party observer
+of an election audit.) For ballots that were never decrypted, we at least print the available metadata for the ballot.
 
 ## Implementation status
 
