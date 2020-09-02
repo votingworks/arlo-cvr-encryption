@@ -96,7 +96,7 @@ worker_default_node_type: cpu_c5_metal_spot
 # For more documentation on available fields, see:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 head_node:
-    ImageId: ami-0bbe28eb2173f6167 # Ubuntu 18.04
+    ImageId: ami-0bbe28eb2173f6167 # Ubuntu 18.04 for EBS
     # TODO: Amazon is EOL'ing Linux AMIs and moving to "Linux 2". Does this mean we need a different thing here?
     #   Also, we're specifying a relatively small machine type for the head node, and we'll allocate monsters
     #   for the worker nodes. That seems like a fine way to start, but there might be performance tuning to
