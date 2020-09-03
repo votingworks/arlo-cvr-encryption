@@ -39,7 +39,11 @@ def run_bench(filename: str) -> None:
     rtally = ray_tally_everything(cvrs, secret_key=keypair.secret_key)
     rtally_end = timer()
 
-    print(f"\nchecking proofs")
+    print(f"\nOVERALL PERFORMANCE")
+    print(f"    Ray time:    {rtally_end - rtally_start : .3f} sec")
+    print(f"    Ray rate:    {rows / (rtally_end - rtally_start): .3f} ballots/sec")
+
+    print(f"\nSANITY CHECK")
     assert rtally.all_proofs_valid(
         verbose=True, recheck_ballots_and_tallies=True
     ), "proof failure!"
@@ -48,10 +52,6 @@ def run_bench(filename: str) -> None:
     # everything is identical, but it's a pretty good sanity check for our purposes.
     # In tests/test_ray_tally.py, test_ray_and_multiprocessing_agree goes the extra
     # distance to create identical tallies from each system and assert their equality.
-
-    print(f"\nOVERALL PERFORMANCE")
-    print(f"    Ray time:    {rtally_end - rtally_start : .3f} sec")
-    print(f"    Ray rate:    {rows / (rtally_end - rtally_start): .3f} ballots/sec")
 
 
 if __name__ == "__main__":
