@@ -3,11 +3,8 @@
 from __future__ import absolute_import
 from __future__ import print_function
 
-import io
 from glob import glob
 from os.path import basename
-from os.path import dirname
-from os.path import join
 from os.path import splitext
 
 from setuptools import find_packages
@@ -56,5 +53,16 @@ setup(
     classifiers=CLASSIFIERS,
     project_urls=PROJECT_URLS,
     python_requires=">=3.8",
-    install_requires=["gmpy2>=2.0.8"],
+    install_requires=[
+        "gmpy2==2.1.0b5",
+        "numpy==1.18.2",
+        "pandas==1.0.4",
+        "hypothesis==5.29.4",
+        "typish==*",
+        "jsons==1.1.2",
+        "tqdm==4.47.0",
+        "cryptography=2.9.2",
+        "ray=0.8.7",
+        "electionguard=git+https://github.com/microsoft/electionguard-python.git@05dd056f9c104a1fca964873a7b363e891faeecf#egg=electionguard",
+    ],
 )

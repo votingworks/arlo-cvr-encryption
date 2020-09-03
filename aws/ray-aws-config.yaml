@@ -70,33 +70,13 @@ auth:
 # configurations below.
 #    ssh_private_key: /path/to/your/key.pem
 
-# Tell the autoscaler the allowed node types and the resources they provide.
-# The key is the name of the node type, which is just for debugging purposes.
-# The node config specifies the launch config and physical instance type.
-available_node_types:
-    cpu_m5_large_on_demand:
-        node_config:
-            InstanceType: m5.large
-        resources: {"CPU": 2}
-        max_workers: 2
-    cpu_c5_huge_spot:
-        node_config:
-            InstanceType: c5.24xlarge
-            InstanceMarketOptions:
-                MarketType: spot
-        # TODO: the machine is 48 real cores with 2x hyperthreading, so should we allow more workers?
-        resources: {"CPU": 48}
-        max_workers: 48
-
-head_node_type: cpu_m5_large_on_demand
-worker_default_node_type: cpu_c5_metal_spot
-
 # Provider-specific config for the head node, e.g. instance type. By default
 # Ray will auto-configure unspecified fields such as SubnetId and KeyName.
 # For more documentation on available fields, see:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 head_node:
     ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
+    InstanceType: m5.large
 
     # You can provision additional disk space with a conf as follows
     BlockDeviceMappings:
@@ -112,6 +92,7 @@ head_node:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 worker_nodes:
     ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
+    InstanceType: c5.24xlarge
 
     # Run workers on spot by default. Comment this out to use on-demand.
     InstanceMarketOptions:
@@ -150,19 +131,21 @@ setup_commands:
     # has your Ray repo pre-cloned. Then, you can replace the pip installs
     # below with a git checkout <your_sha> (and possibly a recompile).
     - echo 'export PATH="$HOME/anaconda3/envs/tensorflow_p36/bin:$PATH"' >> ~/.bashrc
-    - pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-0.9.0.dev0-cp36-cp36m-manylinux1_x86_64.whl
     # Consider uncommenting these if you also want to run apt-get commands during setup
     - sudo pkill -9 apt-get || true
     - sudo pkill -9 dpkg || true
     - sudo dpkg --configure -a
     # And now, all of the commands to get arlo-e2e and ElectionGuard installed
-    - sudo add-apt-repository ppa:deadsnakes/ppa
+    - sudo add-apt-repository ppa:deadsnakes/ppa -y
     - sudo apt update
-    - sudo apt install make python3-pip python3.8 libgmp-dev libmpfr-dev libmpc-dev
+    - sudo apt install --assume-yes make python3-pip python3.8 libgmp-dev libmpfr-dev libmpc-dev
     - sudo ln -s /usr/bin/python3.8 /bin/python
     - sudo -H python -m pip install --upgrade pip
+    # sudo -H pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-0.9.0.dev0-cp36-cp36m-manylinux1_x86_64.whl
     - sudo -H pip install virtualenv==20.0.23 pipenv
-    - sudo -H pip install -e ‘git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e’
+    - sudo -H pip install ray
+    - sudo -H pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
+    - sudo -H pip install -r src/arlo-e2e/requirements.txt
     - sudo -H pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
 
 # Custom commands that will be run on the head node after common setup.
