@@ -8,6 +8,9 @@ IS_64_BIT ?= $(shell python -c 'from sys import maxsize; print(maxsize > 2**32)'
 
 all: environment install validate lint coverage
 
+requirements.txt: Pipfile
+	pip freeze > requirements.txt
+
 environment:
 	@echo 🔧 PIPENV SETUP
 	pip install --user pipenv
