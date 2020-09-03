@@ -39,6 +39,7 @@ def run_bench(filename: str) -> None:
     rtally = ray_tally_everything(cvrs, secret_key=keypair.secret_key)
     rtally_end = timer()
 
+    print(f"\nchecking proofs")
     assert rtally.all_proofs_valid(
         verbose=True, recheck_ballots_and_tallies=True
     ), "proof failure!"
