@@ -63,6 +63,7 @@ setup(
         "tqdm==4.47.0",
         "cryptography==2.9.2",
         "ray==0.8.7",
-        "electionguard==git+https://github.com/microsoft/electionguard-python.git@05dd056f9c104a1fca964873a7b363e891faeecf#egg=electionguard",
     ],
+    # electionguard is also a requirement, but we're assuming that's being installed elsewhere, since
+    # we're hanging on a dev branch, etc.
 )

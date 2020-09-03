@@ -146,8 +146,7 @@ setup_commands:
     - sudo -H pip install virtualenv==20.0.23 pipenv
     - sudo -H pip install ray
     - sudo -H pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
-    # sudo -H pip install -r src/arlo-e2e/requirements.txt
-    # sudo -H pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
+    - sudo -H pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
 
 # Custom commands that will be run on the head node after common setup.
 head_setup_commands:
