@@ -13,7 +13,7 @@ requirements.txt: Pipfile
 
 environment:
 	@echo 🔧 PIPENV SETUP
-	pip install --user pipenv
+	pip install pipenv
 	python -m pipenv install --dev
 
 install:
