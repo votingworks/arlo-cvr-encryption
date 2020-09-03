@@ -238,8 +238,8 @@ def _equivalent_decrypt_helper(
 
 
 def fast_decrypt_tally(
-        tally: TALLY_TYPE,
-        cec: CiphertextElectionContext,
+    tally: TALLY_TYPE,
+    cec: CiphertextElectionContext,
     keypair: ElGamalKeyPair,
     proof_seed: ElementModQ,
     pool: Optional[Pool] = None,
