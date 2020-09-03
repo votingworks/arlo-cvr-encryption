@@ -19,9 +19,9 @@ pandas = '==1.0.4'
 hypothesis = "==5.29.4"
 typish = '==1.7.0'
 jsons = '==1.1.2'
-tqdm = "4.47.0"
-cryptography = "2.9.2"
-ray = "0.8.7"
+tqdm = "==4.47.0"
+cryptography = "==2.9.2"
+ray = "==0.8.7"
 electionguard = {editable = true, git = "https://github.com/microsoft/electionguard-python.git", ref = "feature/generic_chaum_petersen"}
 
 [requires]
