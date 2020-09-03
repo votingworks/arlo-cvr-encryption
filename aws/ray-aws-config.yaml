@@ -53,11 +53,11 @@ idle_timeout_minutes: 5
 # TODO: Is this the region we actually want? What's the cheapest?
 provider:
     type: aws
-    region: us-west-2
+    region: us-east-2
     # Availability zone(s), comma-separated, that nodes may be launched in.
     # Nodes are currently spread between zones by a round-robin approach,
     # however this implementation detail should not be relied upon.
-    availability_zone: us-west-2a,us-west-2b
+    availability_zone: us-east-2a,us-east-2b,us-east-2c
     # Whether to allow node reuse. If set to False, nodes will be terminated
     # instead of stopped.
     cache_stopped_nodes: True # If not present, the default is True.
@@ -96,18 +96,13 @@ worker_default_node_type: cpu_c5_metal_spot
 # For more documentation on available fields, see:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 head_node:
-    ImageId: ami-0bbe28eb2173f6167 # Ubuntu 18.04 for EBS
-    # TODO: Amazon is EOL'ing Linux AMIs and moving to "Linux 2". Does this mean we need a different thing here?
-    #   Also, we're specifying a relatively small machine type for the head node, and we'll allocate monsters
-    #   for the worker nodes. That seems like a fine way to start, but there might be performance tuning to
-    #   do here.
+    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
 
     # You can provision additional disk space with a conf as follows
     BlockDeviceMappings:
         - DeviceName: /dev/sda1
           Ebs:
               VolumeSize: 100
-    # TODO: do we need a block device here at all?
 
     # Additional options in the boto docs.
 
@@ -116,7 +111,7 @@ head_node:
 # For more documentation on available fields, see:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 worker_nodes:
-    ImageId: ami-0bbe28eb2173f6167 # Ubuntu 18.04
+    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
 
     # Run workers on spot by default. Comment this out to use on-demand.
     InstanceMarketOptions:
@@ -157,10 +152,18 @@ setup_commands:
     - echo 'export PATH="$HOME/anaconda3/envs/tensorflow_p36/bin:$PATH"' >> ~/.bashrc
     - pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-0.9.0.dev0-cp36-cp36m-manylinux1_x86_64.whl
     # Consider uncommenting these if you also want to run apt-get commands during setup
-    # - sudo pkill -9 apt-get || true
-    # - sudo pkill -9 dpkg || true
-    # - sudo dpkg --configure -a
-    # TODO: do we need to explicitly install our own code here? Anything beyond `git checkout <arlo-e2e> ; make`?
+    - sudo pkill -9 apt-get || true
+    - sudo pkill -9 dpkg || true
+    - sudo dpkg --configure -a
+    # And now, all of the commands to get arlo-e2e and ElectionGuard installed
+    - sudo add-apt-repository ppa:deadsnakes/ppa
+    - sudo apt update
+    - sudo apt install make python3-pip python3.8 libgmp-dev libmpfr-dev libmpc-dev
+    - sudo ln -s /usr/bin/python3.8 /bin/python
+    - sudo -H python -m pip install --upgrade pip
+    - sudo -H pip install virtualenv==20.0.23 pipenv
+    - sudo -H pip install -e ‘git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e’
+    - sudo -H pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
 
 # Custom commands that will be run on the head node after common setup.
 head_setup_commands:
