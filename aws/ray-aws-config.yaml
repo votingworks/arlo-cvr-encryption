@@ -139,6 +139,7 @@ setup_commands:
     - sudo add-apt-repository ppa:deadsnakes/ppa -y
     - sudo apt update
     - sudo apt install --assume-yes make python3-pip python3.8 libgmp-dev libmpfr-dev libmpc-dev
+    - sudo rm -f /bin/python
     - sudo ln -s /usr/bin/python3.8 /bin/python
     - sudo -H python -m pip install --upgrade pip
     # sudo -H pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-0.9.0.dev0-cp36-cp36m-manylinux1_x86_64.whl

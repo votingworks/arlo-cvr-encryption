@@ -61,8 +61,8 @@ setup(
         "typish==*",
         "jsons==1.1.2",
         "tqdm==4.47.0",
-        "cryptography=2.9.2",
-        "ray=0.8.7",
-        "electionguard=git+https://github.com/microsoft/electionguard-python.git@05dd056f9c104a1fca964873a7b363e891faeecf#egg=electionguard",
+        "cryptography==2.9.2",
+        "ray==0.8.7",
+        "electionguard==git+https://github.com/microsoft/electionguard-python.git@05dd056f9c104a1fca964873a7b363e891faeecf#egg=electionguard",
     ],
 )
