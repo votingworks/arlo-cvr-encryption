@@ -39,7 +39,9 @@ def run_bench(filename: str) -> None:
     rtally = ray_tally_everything(cvrs, secret_key=keypair.secret_key)
     rtally_end = timer()
 
-    assert rtally.all_proofs_valid(verbose=True, recheck_ballots_and_tallies=True), "proof failure!"
+    assert rtally.all_proofs_valid(
+        verbose=True, recheck_ballots_and_tallies=True
+    ), "proof failure!"
 
     # Note: tally.equivalent() isn't quite as stringent as asserting that absolutely
     # everything is identical, but it's a pretty good sanity check for our purposes.
