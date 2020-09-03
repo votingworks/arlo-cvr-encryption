@@ -52,7 +52,7 @@ def run_bench(filename: str, pool: Pool) -> None:
 
     rtally_as_fast = rtally.to_fast_tally()
     assert rtally_as_fast.all_proofs_valid(verbose=True), "proof failure!"
-    assert tally.equivalent(rtally_as_fast, keypair), "tallies aren't equivalent!"
+    assert tally.equivalent(rtally_as_fast, keypair, pool), "tallies aren't equivalent!"
 
     # Note: tally.equivalent() isn't quite as stringent as asserting that absolutely
     # everything is identical, but it's a pretty good sanity check for our purposes.

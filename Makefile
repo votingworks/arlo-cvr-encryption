@@ -10,8 +10,8 @@ all: environment install validate lint coverage
 
 environment:
 	@echo 🔧 PIPENV SETUP
-	pip install pipenv
-	pipenv install --dev
+	pip install --user pipenv
+	python -m pipenv install --dev
 
 install:
 	@echo 📦 Install Module

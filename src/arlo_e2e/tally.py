@@ -223,9 +223,23 @@ def _decrypt(
 DECRYPT_TALLY_OUTPUT_TYPE = Dict[str, Tuple[int, ChaumPedersenDecryptionProof]]
 
 
+def _equivalent_decrypt_helper(
+    ied: InternalElectionDescription,
+    base_hash: ElementModQ,
+    public_key: ElementModP,
+    secret_key: ElementModQ,
+    cballot: CiphertextAcceptedBallot,
+) -> PlaintextBallot:  # pragma: no cover
+    return get_optional(
+        decrypt_ballot_with_secret(
+            cballot, ied, base_hash, public_key, secret_key, True, True
+        )
+    )
+
+
 def fast_decrypt_tally(
-    tally: TALLY_TYPE,
-    cec: CiphertextElectionContext,
+        tally: TALLY_TYPE,
+        cec: CiphertextElectionContext,
     keypair: ElGamalKeyPair,
     proof_seed: ElementModQ,
     pool: Optional[Pool] = None,
@@ -470,8 +484,6 @@ class FastTallyEverythingResults(NamedTuple):
         `recheck_ballots_and_tallies` to True.
         """
 
-        log_and_print("Verifying proofs:", verbose)
-
         wrapped_func = functools.partial(
             verify_tally_selection_proof,
             self.context.elgamal_public_key,
@@ -600,7 +612,10 @@ class FastTallyEverythingResults(NamedTuple):
         return matching_ballots_not_none
 
     def equivalent(
-        self, other: "FastTallyEverythingResults", keys: ElGamalKeyPair
+        self,
+        other: "FastTallyEverythingResults",
+        keys: ElGamalKeyPair,
+        pool: Optional[Pool] = None,
     ) -> bool:
         """
         The built-in equality checking (__eq__) will determine if two tally results are absolutely
@@ -618,38 +633,27 @@ class FastTallyEverythingResults(NamedTuple):
         my_cballots = self.encrypted_ballots
         other_cballots = other.encrypted_ballots
 
+        wrapped_func = functools.partial(
+            _equivalent_decrypt_helper,
+            my_ied,
+            self.context.crypto_extended_base_hash,
+            keys.public_key,
+            keys.secret_key,
+        )
+
+        my_cballots_tqdm = tqdm(my_cballots, desc="Equivalent (1/2)")
+        other_cballots_tqdm = tqdm(other_cballots, desc="Equivalent (2/2)")
+
         my_pballots: List[PlaintextBallot] = sorted(
-            [
-                get_optional(
-                    decrypt_ballot_with_secret(
-                        cballot,
-                        my_ied,
-                        self.context.crypto_extended_base_hash,
-                        keys.public_key,
-                        keys.secret_key,
-                        True,
-                        True,
-                    )
-                )
-                for cballot in tqdm(my_cballots, desc="Equivalent (1/2)")
-            ],
+            [wrapped_func(cballot) for cballot in my_cballots_tqdm]
+            if not pool
+            else pool.map(func=wrapped_func, iterable=my_cballots_tqdm),
             key=lambda x: x.object_id,
         )
         other_pballots: List[PlaintextBallot] = sorted(
-            [
-                get_optional(
-                    decrypt_ballot_with_secret(
-                        cballot,
-                        other_ied,
-                        self.context.crypto_extended_base_hash,
-                        keys.public_key,
-                        keys.secret_key,
-                        True,
-                        True,
-                    )
-                )
-                for cballot in tqdm(other_cballots, desc="Equivalent (2/2)")
-            ],
+            [wrapped_func(cballot) for cballot in other_cballots_tqdm]
+            if not pool
+            else pool.map(func=wrapped_func, iterable=other_cballots_tqdm),
             key=lambda x: x.object_id,
         )
 
@@ -759,8 +763,6 @@ def fast_tally_everything(
         verbose,
     )
 
-    if verbose:  # pragma: no cover
-        print("Tallying:")
     tally: TALLY_TYPE = fast_tally_ballots(cballots, pool)
     eg_tabulate_time = timer()
 

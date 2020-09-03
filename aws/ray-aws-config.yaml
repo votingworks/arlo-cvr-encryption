@@ -79,9 +79,9 @@ available_node_types:
             InstanceType: m5.large
         resources: {"CPU": 2}
         max_workers: 2
-    cpu_c5_metal_spot:
+    cpu_c5_huge_spot:
         node_config:
-            InstanceType: c5.metal
+            InstanceType: c5.24xlarge
             InstanceMarketOptions:
                 MarketType: spot
         # TODO: the machine is 48 real cores with 2x hyperthreading, so should we allow more workers?

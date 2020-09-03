@@ -101,7 +101,7 @@ class TestTallyPublishing(unittest.TestCase):
         log_and_print("tally_testing got non-null result!")
 
         self.assertTrue(_list_eq(results.encrypted_ballots, results2.encrypted_ballots))
-        self.assertTrue(results.equivalent(results2, keypair))
+        self.assertTrue(results.equivalent(results2, keypair, self.pool))
 
         # Make sure there's an index.html file; throws an exception if it's missing
         self.assertIsNotNone(stat(path.join(TALLY_TESTING_DIR, "index.html")))
