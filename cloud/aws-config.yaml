@@ -3,7 +3,7 @@ cluster_name: default
 
 # The minimum number of workers nodes to launch in addition to the head
 # node. This number should be >= 0.
-min_workers: 2
+min_workers: 0
 
 # The maximum number of workers nodes to launch in addition to the head
 # node. This takes precedence over min_workers.
@@ -17,7 +17,7 @@ initial_workers: 10
 # Whether or not to autoscale aggressively. If this is enabled, if at any point
 #   we would start more workers, we start at least enough to bring us to
 #   initial_workers.
-# TODO: "aggressive" seems to pre-start the initial_workers, otherwise the same. What's the right policy?
+# TODO: the code for "aggressive" doesn't really change very much; do we just want a whole lot of initial workers?
 autoscaling_mode: aggressive
 
 # The autoscaler will scale up the cluster to this target fraction of resource
@@ -31,6 +31,7 @@ target_utilization_fraction: 0.8
 idle_timeout_minutes: 5
 
 # Cloud-provider specific configuration.
+# TODO: Is this the region we actually want? What's the cheapest?
 provider:
     type: aws
     region: us-east-2
@@ -50,11 +51,12 @@ auth:
 # configurations below.
 #    ssh_private_key: /path/to/your/key.pem
 
-# Provider-specific config for the head node, e.g. instance type.
+# Provider-specific config for the head node, e.g. instance type. By default
+# Ray will auto-configure unspecified fields such as SubnetId and KeyName.
+# For more documentation on available fields, see:
+# http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 head_node:
-#    ImageId: ami-0010d386b82bc06f0 # Ubuntu 18.04
     ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-
     InstanceType: m5.large
 
     # You can provision additional disk space with a conf as follows
@@ -65,9 +67,11 @@ head_node:
 
     # Additional options in the boto docs.
 
-# Provider-specific config for worker nodes, e.g. instance type.
+# Provider-specific config for worker nodes, e.g. instance type. By default
+# Ray will auto-configure unspecified fields such as SubnetId and KeyName.
+# For more documentation on available fields, see:
+# http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 worker_nodes:
-#    ImageId: ami-0010d386b82bc06f0 # Ubuntu 18.04
     ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
     InstanceType: c5.24xlarge
 
@@ -86,6 +90,28 @@ worker_nodes:
 
     # Additional options in the boto docs.
 
+# Files or directories to copy to the head and worker nodes. The format is a
+# dictionary from REMOTE_PATH: LOCAL_PATH, e.g.
+file_mounts: {
+#    "/path1/on/remote/machine": "/path1/on/local/machine",
+#    "/path2/on/remote/machine": "/path2/on/local/machine",
+}
+
+# Files or directories to copy from the head node to the worker nodes. The format is a
+# list of paths. The same path on the head node will be copied to the worker node.
+# This behavior is a subset of the file_mounts behavior. In the vast majority of cases
+# you should just use file_mounts. Only use this if you know what you're doing!
+cluster_synced_files: []
+
+# Whether changes to directories in file_mounts or cluster_synced_files in the head node
+# should sync to the worker node continuously
+file_mounts_sync_continuously: False
+
+# List of commands that will be run before `setup_commands`. If docker is
+# enabled, these commands will run outside the container and before docker
+# is setup.
+initialization_commands: []
+
 # List of shell commands to run to set up nodes.
 setup_commands:
     - echo 'export PATH="$HOME/anaconda3/envs/tensorflow_p36/bin:$PATH"' >> ~/.bashrc
@@ -98,8 +124,8 @@ setup_commands:
     - sudo rm -f /bin/python
     - sudo ln -s /usr/bin/python3.8 /bin/python
     - sudo -H python -m pip install --upgrade pip
-    # sudo -H pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-0.9.0.dev0-cp36-cp36m-manylinux1_x86_64.whl
-    - sudo -H pip install virtualenv==20.0.23 pipenv ray==0.8.7
+    - sudo -H pip install virtualenv==20.0.23 pipenv
+    - sudo -H pip install ray
     - sudo -H pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
     - sudo -H pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
 
@@ -109,6 +135,7 @@ head_setup_commands:
 
 # Custom commands that will be run on worker nodes after common setup.
 worker_setup_commands: []
+# TODO: do we need to explicitly install our own code here?
 
 # Command to start ray on the head node. You don't need to change this.
 head_start_ray_commands:
@@ -122,5 +149,6 @@ worker_start_ray_commands:
 
 # TODO: create S3 bucket for the results
 # TODO: mount the S3 buckets with s3fs
-# TODO: set up the IAM rules for S3 and EC2 (https://github.com/ray-project/ray/issues/9327)
+# TODO: make the S3 writable for us, read-only for everybody else
+# TODO: make the Ray web console visible to the outside world (on by default?)
 # TODO: firewall-ish rules around the whole cluster?

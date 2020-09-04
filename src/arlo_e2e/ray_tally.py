@@ -101,7 +101,7 @@ def ballots_per_shard(num_ballots: int) -> int:
     to the square root of the number of ballots. The result will never be less
     than 4 or greater than 100.
     """
-    return min(100, max(4, int(ceil(sqrt(num_ballots) / 8))))
+    return min(100, max(4, int(ceil(sqrt(num_ballots) / 16))))
 
 
 @ray.remote

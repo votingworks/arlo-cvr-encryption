@@ -62,8 +62,7 @@ setup(
         "jsons==1.1.2",
         "tqdm==4.47.0",
         "cryptography==2.9.2",
-        "ray==0.8.7",
     ],
     # electionguard is also a requirement, but we're assuming that's being installed elsewhere, since
-    # we're hanging on a dev branch, etc.
+    # we're hanging on a dev branch, etc. Ray is also a bit weird, so we're leaving that out here.
 )
