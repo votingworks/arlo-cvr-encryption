@@ -3,7 +3,7 @@
 
 import pandas as pd
 from datetime import datetime
-from math import sqrt, ceil
+from math import sqrt, ceil, floor
 from timeit import default_timer as timer
 from typing import Optional, List, Tuple, Sequence, Dict, NamedTuple
 
@@ -283,13 +283,14 @@ def ray_tally_everything(
 
     inputs = list(zip(ballots, nonces))
     bps = ballots_per_shard(len(ballots))
+    log_and_print(
+        f"Total available shards for parallelism: {int(floor(len(inputs) / bps))}",
+        verbose,
+    )
+
     sharded_inputs: Sequence[
         Sequence[Tuple[PlaintextBallot, ElementModQ]]
     ] = shard_list(inputs, bps)
-
-    log_and_print(
-        f"Total available shards for parallelism: {len(sharded_inputs)}", verbose
-    )
 
     start_time = timer()
 
