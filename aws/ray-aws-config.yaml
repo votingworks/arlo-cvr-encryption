@@ -135,7 +135,7 @@ setup_commands:
     - sudo -H pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
     - sudo -H pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
     # there's some kind of HTTP cache that's feeding old versions when we make updates; not cool!
-    - chdir src/arlo-e2e; sudo -H git pull; chdir ../..
+    - cd src/arlo-e2e; sudo -H git pull; cd ../..
 
 # Custom commands that will be run on the head node after common setup.
 head_setup_commands:
