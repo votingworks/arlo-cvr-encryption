@@ -1,5 +1,5 @@
 # This is a version of encryption_bench, but only for running Ray remotely.
-
+import argparse
 import sys
 from sys import exit
 from timeit import default_timer as timer
@@ -10,7 +10,7 @@ from electionguard.group import int_to_q_unchecked
 from electionguard.utils import get_optional
 
 from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.ray_helpers import ray_init_cluster
+from arlo_e2e.ray_helpers import ray_init_cluster, ray_init_localhost
 from arlo_e2e.ray_tally import ray_tally_everything
 
 
@@ -44,14 +44,36 @@ def run_bench(filename: str) -> None:
 
     print(f"\nSANITY CHECK")
     assert rtally.all_proofs_valid(
-        verbose=True, recheck_ballots_and_tallies=True
+        verbose=True, recheck_ballots_and_tallies=False
     ), "proof failure!"
 
 
 if __name__ == "__main__":
-    ray_init_cluster()
+    parser = argparse.ArgumentParser(
+        description="Runs a tallying benchmark, using Ray (either locally or on a remote cluster)"
+    )
+    parser.add_argument(
+        "--cluster",
+        action="store_true",
+        help="uses a Ray cluster for distributed computation (local by default)",
+    )
+    parser.add_argument(
+        "cvr_file",
+        type=str,
+        nargs="+",
+        help="filename(s) for the Dominion-style ballot CVR file",
+    )
 
-    for arg in sys.argv[1:]:
+    args = parser.parse_args()
+    use_cluster = args.cluster
+    files = args.cvr_file
+
+    if use_cluster:
+        ray_init_cluster()
+    else:
+        ray_init_localhost()
+
+    for arg in files:
         run_bench(arg)
 
     print("Writing Ray timelines to disk.")

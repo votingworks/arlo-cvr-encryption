@@ -8,6 +8,7 @@ from timeit import default_timer as timer
 from typing import Optional, List, Tuple, Sequence, Dict, NamedTuple
 
 import ray
+from ray import ObjectRef
 from electionguard.ballot import PlaintextBallot, CiphertextAcceptedBallot
 from electionguard.decrypt_with_secrets import decrypt_ciphertext_with_proof
 from electionguard.election import (
@@ -109,7 +110,7 @@ def r_encrypt(
     cec: CiphertextElectionContext,
     seed_hash: ElementModQ,
     input_tuples: Sequence[Tuple[PlaintextBallot, ElementModQ]],
-) -> List[ray.ObjectRef]:  # pragma: no cover
+) -> List[ObjectRef]:  # pragma: no cover
     """
     Remotely encrypts a list of ballots and their associated nonces. Returns a list of
     Ray ObjectRefs to `CiphertextBallot` objects.
@@ -129,7 +130,7 @@ def r_encrypt(
 
 
 @ray.remote
-def r_tally(ptallies: Sequence[ray.ObjectRef]) -> TALLY_TYPE:  # pragma: no cover
+def r_tally(ptallies: Sequence[ObjectRef]) -> TALLY_TYPE:  # pragma: no cover
     """
     Remotely tallies a sequence of either encrypted ballots or partial tallies.
     On the remote node, the computation will be sequential.
@@ -140,7 +141,7 @@ def r_tally(ptallies: Sequence[ray.ObjectRef]) -> TALLY_TYPE:  # pragma: no cove
     return sequential_tally(ray.get(ptallies))
 
 
-def ray_tally_ballots(ptallies: Sequence[ray.ObjectRef], bps: int) -> ray.ObjectRef:
+def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> ObjectRef:
     """
     Launches a parallel tally reduction tree, with a fanout based on `bps` ballots per shard. Returns
     a Ray ObjectRef reference to the future result, which the caller will then need to call
@@ -153,15 +154,13 @@ def ray_tally_ballots(ptallies: Sequence[ray.ObjectRef], bps: int) -> ray.Object
     if len(ptallies) <= bps:
         return r_tally.remote(ptallies)
     else:
-        shards: Sequence[ray.ObjectRef] = [
-            ray.put(x) for x in shard_list(ptallies, bps)
-        ]
+        shards: Sequence[ObjectRef] = [ray.put(x) for x in shard_list(ptallies, bps)]
         return ray_tally_ballot_shards(shards, bps)
 
 
 def ray_tally_ballot_shards(
-    partial_tally_shards: Sequence[ray.ObjectRef], bps: int
-) -> ray.ObjectRef:
+    partial_tally_shards: Sequence[ObjectRef], bps: int
+) -> ObjectRef:
     """
     Launches a parallel tally reduction tree, with a fanout based on `bps` ballots per shard. Returns
     a Ray ObjectRef reference to the future result, which the caller will then need to call
@@ -172,10 +171,16 @@ def ray_tally_ballot_shards(
     `Sequence[ObjectRef[Sequence[ObjectRef[CiphertextBallot]]]]`.
     """
 
-    partial_tallies: List[ray.ObjectRef] = [
+    partial_tallies: List[ObjectRef] = [
         ray_tally_ballots(ray.get(shard), bps) for shard in partial_tally_shards
     ]
-    return r_tally.remote(partial_tallies)
+
+    # To avoid deeply nested tasks, we're going to wait for this to finish.
+    # If you comment out the call to ray.wait(), everything still works, but
+    # you can get warnings about too many tasks.
+    ray.wait(partial_tallies, num_returns=len(partial_tallies), timeout=None)
+
+    return ray_tally_ballots(partial_tallies, bps)
 
 
 @ray.remote
@@ -197,8 +202,8 @@ def r_decrypt(
 
 def ray_decrypt_tally(
     tally: TALLY_TYPE,
-    cec: ray.ObjectRef,
-    keypair: ray.ObjectRef,
+    cec: ObjectRef,
+    keypair: ObjectRef,
     proof_seed: ElementModQ,
 ) -> DECRYPT_TALLY_OUTPUT_TYPE:
     """
@@ -256,7 +261,7 @@ def ray_tally_everything(
     num_ballots = len(ballots)
     assert num_ballots > 0, "can't have zero ballots!"
     log_and_print(
-        f"ElectionGuard setup time: {start_time - setup_time: .3f} sec, {num_ballots / (start_time - setup_time):.3f} ballots/sec"
+        f"ElectionGuard setup time: {setup_time - start_time: .3f} sec, {num_ballots / (setup_time - start_time):.3f} ballots/sec"
     )
 
     keypair = (
@@ -303,9 +308,15 @@ def ray_tally_everything(
 
     # If Ray had type parameters, the actual type of cballot_refs would
     # be List[ObjectRef[List[ObjectRef[CiphertextBallot]]]].
-    cballot_refs: List[ray.ObjectRef] = [
+    cballot_refs: List[ObjectRef] = [
         r_encrypt.remote(r_ied, r_cec, r_seed_hash, t) for t in sharded_inputs
     ]
+
+    # To avoid deeply nested tasks, we're going to wait for this to finish,
+    # rather than launching the tally immediately. If you comment out the
+    # call to ray.wait(), everything still works, but you get warnings about
+    # too many tasks.
+    ray.wait(cballot_refs, num_returns=len(cballot_refs), timeout=None)
 
     log_and_print("Launching remote tallying.")
 
@@ -347,7 +358,7 @@ def ray_tally_everything(
     tabulate_time = timer()
 
     log_and_print(
-        f"Encryption and tabulation: {rows} ballots / {tabulate_time - start_time: .3f} sec = {rows / (tabulate_time - start_time): .3f} ballot/sec",
+        f"Encryption and tabulation: {rows} ballots, {rows / (tabulate_time - start_time): .3f} ballot/sec",
         verbose,
     )
 
@@ -358,10 +369,8 @@ def ray_tally_everything(
 
     # If Ray had type parameters, the actual type of flat_ballot_refs would be List[List[ObjectRef[CiphertextBallot]]].
     # and the actual type of flatter_ballot_refs would be List[ObjectRef[CiphertextBallot]].
-    flat_ballot_refs: List[List[ray.ObjectRef]] = ray.get(cballot_refs)
-    flatter_ballot_refs: List[ray.ObjectRef] = list(
-        flatmap(lambda x: x, flat_ballot_refs)
-    )
+    flat_ballot_refs: List[List[ObjectRef]] = ray.get(cballot_refs)
+    flatter_ballot_refs: List[ObjectRef] = list(flatmap(lambda x: x, flat_ballot_refs))
 
     return RayTallyEverythingResults(
         metadata=cvrs.metadata,
@@ -390,7 +399,7 @@ def r_verify_tally_selection_proofs(
 def r_verify_ballot_proofs(
     public_key: ElementModP,
     hash_header: ElementModQ,
-    cballot_refs: List[ray.ObjectRef],
+    cballot_refs: List[ObjectRef],
 ) -> bool:  # pragma: no cover
     """
     Given a list of ballots, verify their Chaum-Pedersen proofs.
@@ -434,7 +443,7 @@ class RayTallyEverythingResults(NamedTuple):
     Cryptographic context used in creating the tally.
     """
 
-    remote_encrypted_ballot_refs: List[ray.ObjectRef]
+    remote_encrypted_ballot_refs: List[ObjectRef]
     """
     List of remote references to CiphertextAcceptedBallots.
     """
@@ -481,7 +490,7 @@ class RayTallyEverythingResults(NamedTuple):
         `recheck_ballots_and_tallies` to True.
         """
 
-        log_and_print("Verifying proofs:", verbose)
+        log_and_print("Verifying proofs.", verbose)
 
         r_public_key = ray.put(self.context.elgamal_public_key)
         r_hash_header = ray.put(self.context.crypto_extended_base_hash)
@@ -536,7 +545,7 @@ class RayTallyEverythingResults(NamedTuple):
             if False in ballot_results:
                 return False
 
-            log_and_print("Recomputing tallies:", verbose)
+            log_and_print("Recomputing tallies.", verbose)
             recomputed_tally: TALLY_TYPE = ray.get(
                 ray_tally_ballot_shards(cballot_shards, bps)
             )
