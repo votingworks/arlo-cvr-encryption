@@ -52,11 +52,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Runs a tallying benchmark, using Ray (either locally or on a remote cluster)"
     )
-    parser.add_argument(
-        "--cluster",
-        action="store_true",
-        help="uses a Ray cluster for distributed computation (local by default)",
-    )
+    # parser.add_argument(
+    #     "--cluster",
+    #     action="store_true",
+    #     help="uses a Ray cluster for distributed computation (local by default)",
+    # )
     parser.add_argument(
         "cvr_file",
         type=str,
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    use_cluster = args.cluster
+    use_cluster = True
     files = args.cvr_file
 
     if use_cluster:
