@@ -34,7 +34,7 @@ def run_bench(filename: str) -> None:
     # doesn't matter what the key is, so long as it's consistent for both runs
     keypair = get_optional(elgamal_keypair_from_secret(int_to_q_unchecked(31337)))
 
-    print(f"\nstarting ray.io parallelism")
+    print(f"\nstarting ray.io parallelism!")
     rtally_start = timer()
     rtally = ray_tally_everything(cvrs, secret_key=keypair.secret_key, verbose=True)
     rtally_end = timer()
