@@ -52,7 +52,9 @@ auth:
 
 # Provider-specific config for the head node, e.g. instance type.
 head_node:
-    ImageId: ami-0010d386b82bc06f0 # Ubuntu 18.04
+#    ImageId: ami-0010d386b82bc06f0 # Ubuntu 18.04
+    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
+
     InstanceType: m5.large
 
     # You can provision additional disk space with a conf as follows
@@ -65,7 +67,8 @@ head_node:
 
 # Provider-specific config for worker nodes, e.g. instance type.
 worker_nodes:
-    ImageId: ami-0010d386b82bc06f0 # Ubuntu 18.04
+#    ImageId: ami-0010d386b82bc06f0 # Ubuntu 18.04
+    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
     InstanceType: c5.24xlarge
 
     # You can provision additional disk space with a conf as follows
