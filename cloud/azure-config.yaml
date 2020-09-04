@@ -108,6 +108,8 @@ setup_commands:
     - sudo -H pip install virtualenv==20.0.23 pipenv ray==0.8.7
     - sudo -H pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
     - sudo -H pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
+    # we need *lots* of open files to make this work, for some reason
+    - sudo sysctl -w fs.file-max=5000000
 
 # Custom commands that will be run on the head node after common setup.
 head_setup_commands:
