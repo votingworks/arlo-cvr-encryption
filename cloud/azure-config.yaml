@@ -76,6 +76,7 @@ worker_nodes:
 
 # List of shell commands to run to set up nodes.
 setup_commands:
+    - echo 'export PATH="$HOME/anaconda3/envs/tensorflow_p36/bin:$PATH"' >> ~/.bashrc
     - sudo pkill -9 apt-get || true
     - sudo pkill -9 dpkg || true
     - sudo dpkg --configure -a
