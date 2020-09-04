@@ -32,8 +32,7 @@ def run_bench(filename: str, pool: Pool) -> None:
     parse_time = timer()
     print(f"    Parse time: {parse_time - start_time: .3f} sec")
 
-    _, ballots, _ = cvrs.to_election_description()
-    assert len(ballots) > 0, "can't have zero ballots!"
+    assert rows > 0, "can't have zero ballots!"
 
     # doesn't matter what the key is, so long as it's consistent for both runs
     keypair = get_optional(elgamal_keypair_from_secret(int_to_q_unchecked(31337)))

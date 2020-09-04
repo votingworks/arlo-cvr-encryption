@@ -250,8 +250,14 @@ def ray_tally_everything(
     if date is None:
         date = datetime.now()
 
+    start_time = timer()
     ed, ballots, id_map = cvrs.to_election_description(date=date)
-    assert len(ballots) > 0, "can't have zero ballots!"
+    setup_time = timer()
+    num_ballots = len(ballots)
+    assert num_ballots > 0, "can't have zero ballots!"
+    log_and_print(
+        f"ElectionGuard setup time: {start_time - setup_time: .3f} sec, {num_ballots / (start_time - setup_time):.3f} ballots/sec"
+    )
 
     keypair = (
         elgamal_keypair_random()
@@ -292,6 +298,7 @@ def ray_tally_everything(
         Sequence[Tuple[PlaintextBallot, ElementModQ]]
     ] = shard_list(inputs, bps)
 
+    log_and_print("Launching remote encryption.")
     start_time = timer()
 
     # If Ray had type parameters, the actual type of cballot_refs would
@@ -300,15 +307,21 @@ def ray_tally_everything(
         r_encrypt.remote(r_ied, r_cec, r_seed_hash, t) for t in sharded_inputs
     ]
 
+    log_and_print("Launching remote tallying.")
+
     # We're now starting a computation on the tally even though we don't have
     # the ballots computed yet. Ray will deal with scheduling the computation.
     tally: TALLY_TYPE = ray.get(ray_tally_ballot_shards(cballot_refs, bps))
 
     assert tally is not None, "tally failed!"
 
+    log_and_print("Launching tally decryption.")
+
     decrypted_tally: DECRYPT_TALLY_OUTPUT_TYPE = ray_decrypt_tally(
         tally, r_cec, r_keypair, seed_hash
     )
+
+    log_and_print("Validating tally.")
 
     # Sanity-checking logic: make sure we don't have any unexpected keys, and that the decrypted totals
     # match up with the columns in the original plaintext data.

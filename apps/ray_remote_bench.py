@@ -7,7 +7,6 @@ from timeit import default_timer as timer
 import ray
 from electionguard.elgamal import elgamal_keypair_from_secret
 from electionguard.group import int_to_q_unchecked
-from electionguard.logs import log_info
 from electionguard.utils import get_optional
 
 from arlo_e2e.dominion import read_dominion_csv
@@ -18,7 +17,6 @@ from arlo_e2e.ray_tally import ray_tally_everything
 def run_bench(filename: str) -> None:
     start_time = timer()
     print(f"Benchmarking: {filename}")
-    log_info(f"Benchmarking: {filename}")
     cvrs = read_dominion_csv(filename)
     if cvrs is None:
         print(f"Failed to read {filename}, terminating.")
@@ -26,10 +24,11 @@ def run_bench(filename: str) -> None:
     rows, cols = cvrs.data.shape
 
     parse_time = timer()
-    print(f"    Parse time: {parse_time - start_time: .3f} sec")
+    print(
+        f"    Parse time: {parse_time - start_time: .3f} sec, {rows / (parse_time - start_time):.3f} ballots/sec"
+    )
 
-    _, ballots, _ = cvrs.to_election_description()
-    assert len(ballots) > 0, "can't have zero ballots!"
+    assert rows > 0, "can't have zero ballots!"
 
     # doesn't matter what the key is, so long as it's consistent for both runs
     keypair = get_optional(elgamal_keypair_from_secret(int_to_q_unchecked(31337)))
@@ -48,17 +47,16 @@ def run_bench(filename: str) -> None:
         verbose=True, recheck_ballots_and_tallies=True
     ), "proof failure!"
 
-    # Note: tally.equivalent() isn't quite as stringent as asserting that absolutely
-    # everything is identical, but it's a pretty good sanity check for our purposes.
-    # In tests/test_ray_tally.py, test_ray_and_multiprocessing_agree goes the extra
-    # distance to create identical tallies from each system and assert their equality.
-
 
 if __name__ == "__main__":
     ray_init_cluster()
 
     for arg in sys.argv[1:]:
         run_bench(arg)
+
+    print("Writing Ray timelines to disk.")
+    ray.timeline("ray-timeline.json")
+    ray.object_transfer_timeline("ray-object-transfer-timeline.json")
 
     ray.shutdown()
     exit(0)
