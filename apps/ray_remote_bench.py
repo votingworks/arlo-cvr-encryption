@@ -36,7 +36,7 @@ def run_bench(filename: str) -> None:
 
     print(f"\nstarting ray.io parallelism")
     rtally_start = timer()
-    rtally = ray_tally_everything(cvrs, secret_key=keypair.secret_key)
+    rtally = ray_tally_everything(cvrs, secret_key=keypair.secret_key, verbose=True)
     rtally_end = timer()
 
     print(f"\nOVERALL PERFORMANCE")

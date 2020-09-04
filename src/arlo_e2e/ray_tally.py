@@ -100,7 +100,7 @@ def ballots_per_shard(num_ballots: int) -> int:
     to the square root of the number of ballots. The result will never be less
     than 4 or greater than 100.
     """
-    return min(100, max(4, int(ceil(sqrt(num_ballots) / 4))))
+    return min(100, max(4, int(ceil(sqrt(num_ballots) / 8))))
 
 
 @ray.remote
@@ -287,7 +287,9 @@ def ray_tally_everything(
         Sequence[Tuple[PlaintextBallot, ElementModQ]]
     ] = shard_list(inputs, bps)
 
-    log_and_print(f"Total available shards for parallelism: {len(sharded_inputs)}")
+    log_and_print(
+        f"Total available shards for parallelism: {len(sharded_inputs)}", verbose
+    )
 
     start_time = timer()
 
