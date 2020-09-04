@@ -17,27 +17,8 @@ initial_workers: 10
 # Whether or not to autoscale aggressively. If this is enabled, if at any point
 #   we would start more workers, we start at least enough to bring us to
 #   initial_workers.
-autoscaling_mode: default
-
-# This executes all commands on all nodes in the docker container,
-# and opens all the necessary ports to support the Ray cluster.
-# Empty string means disabled.
-# TODO: would a docker image be handy, versus putting the setup commands below?
-docker:
-    image: "" # e.g., rayproject/ray:0.8.7
-    container_name: "" # e.g. ray_docker
-    # If true, pulls latest version of image. Otherwise, `docker run` will only pull the image
-    # if no cached version is present.
-    pull_before_run: True
-    run_options: []  # Extra options to pass into "docker run"
-
-    # Example of running a GPU head with CPU workers
-    # head_image: "rayproject/ray:0.8.7-gpu"
-    # head_run_options:
-    #     - --runtime=nvidia
-
-    # worker_image: "rayproject/ray:0.8.7"
-    # worker_run_options: []
+# TODO: the code for "aggressive" doesn't really change very much; do we just want a whole lot of initial workers?
+autoscaling_mode: aggressive
 
 # The autoscaler will scale up the cluster to this target fraction of resource
 # usage. For example, if a cluster of 10 nodes is 100% busy and
@@ -93,6 +74,12 @@ head_node:
 worker_nodes:
     ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
     InstanceType: c5.24xlarge
+
+    # You can provision additional disk space with a conf as follows
+    BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+              VolumeSize: 100
 
     # Run workers on spot by default. Comment this out to use on-demand.
     InstanceMarketOptions:
