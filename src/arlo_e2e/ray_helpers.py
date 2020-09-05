@@ -29,7 +29,11 @@ def ray_init_cluster() -> None:  # pragma: no cover
         two_tb = 1024 * 1024 * 1024 * 1024 * 2
         two_gb = 1024 * 1024 * 1024 * 2
         half_gb = 1024 * 1024 * 512
-        ray.init(address="auto", driver_object_store_memory=two_gb)
+        ray.init(
+            address="auto",
+            driver_object_store_memory=two_gb,
+            object_store_memory=two_gb,
+        )
         ray_init_serializers()
 
 
