@@ -115,6 +115,10 @@ def r_encrypt(
     Remotely encrypts a list of ballots and their associated nonces. Returns a list of
     Ray ObjectRefs to `CiphertextBallot` objects.
     """
+
+    # TODO: change this function to write the ballots out to disk, returning what we
+    #   need for the metadata class as well as a partial tally. The ballots never hit
+    #   the object system.
     return [
         ray.put(
             ciphertext_ballot_to_accepted(
@@ -129,6 +133,7 @@ def r_encrypt(
     ]
 
 
+# TODO: completely redo this, based on fast_tally_ballots; get rid of all the recursion
 @ray.remote
 def r_tally(ptallies: Sequence[ObjectRef]) -> TALLY_TYPE:  # pragma: no cover
     """
@@ -232,6 +237,7 @@ def ray_decrypt_tally(
     return {k: (p, proof) for k, p, proof in result}
 
 
+# TODO: add code here to deal with the manifest and writing files out; borrow from publish.py
 def ray_tally_everything(
     cvrs: DominionCSV,
     verbose: bool = True,
@@ -306,6 +312,7 @@ def ray_tally_everything(
     log_and_print("Launching remote encryption.")
     start_time = timer()
 
+    # TODO: we're not getting ballot refs back any more, we're getting manifest data and a TALLY_TYPE
     # If Ray had type parameters, the actual type of cballot_refs would
     # be List[ObjectRef[List[ObjectRef[CiphertextBallot]]]].
     cballot_refs: List[ObjectRef] = [
@@ -443,6 +450,9 @@ class RayTallyEverythingResults(NamedTuple):
     Cryptographic context used in creating the tally.
     """
 
+    # TODO: this needs to become... filenames? Memos won't work across ray.remote,
+    #   and Ray Actors are way too heavyweight. We'll want to hang onto the manifest
+    #   structure, so we can revalidate those files any time they're read in.
     remote_encrypted_ballot_refs: List[ObjectRef]
     """
     List of remote references to CiphertextAcceptedBallots.
@@ -524,6 +534,10 @@ class RayTallyEverythingResults(NamedTuple):
             # show the progress bar, even if verbose is false
             num_ballots = len(self.remote_encrypted_ballot_refs)
             bps = ballots_per_shard(num_ballots)
+
+            # TODO: rework this so we're sending out the filenames in shards, loading each,
+            #   verifying the individual proofs, and then tallying up everything in the shard.
+            #   Maybe some code reuse opportunities for whatever r_encrypt turns into.
             cballot_shards = [
                 ray.put(s) for s in shard_list(self.remote_encrypted_ballot_refs, bps)
             ]
@@ -545,6 +559,8 @@ class RayTallyEverythingResults(NamedTuple):
             if False in ballot_results:
                 return False
 
+            # TODO: we'll take the result of the refactored load_verify_and_tally, then
+            #   rerun the sharding tally.
             log_and_print("Recomputing tallies.", verbose)
             recomputed_tally: TALLY_TYPE = ray.get(
                 ray_tally_ballot_shards(cballot_shards, bps)

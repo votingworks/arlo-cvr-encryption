@@ -40,6 +40,8 @@ CRYPTO_CONSTANTS: Final[str] = "constants.json"
 CRYPTO_CONTEXT: Final[str] = "cryptographic_context.json"
 
 
+# TODO: this needs to be reworked, probably completely removed from publish.py
+#   and worked into ray_tally.py.
 @ray.remote
 def _r_ballot_to_manifest_write_spec(
     ballot: CiphertextAcceptedBallot,
@@ -60,6 +62,7 @@ def _r_ballot_to_manifest_write_spec(
     )
 
 
+# TODO: this can't be private anymore: it's going to be called from ray_tally.py
 def _write_tally_shared(
     results_dir: str,
     election_description: ElectionDescription,
@@ -134,6 +137,7 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> M
     return manifest
 
 
+# TODO: this will go away, get merged in with ray_tally_everything.
 def write_ray_tally(results: RayTallyEverythingResults, results_dir: str) -> Manifest:
     """
     Writes out a directory with the full contents of the tally structure. Each ciphertext ballot
@@ -316,6 +320,10 @@ def load_ray_tally(
     # While we're "unsharding" the references before storing in the results,
     # we'll re-shard them again as part of the verification, and they'll end
     # up exactly the same.
+
+    # TODO: this all needs to be redone, because we don't want to keep the ballots
+    #   in memory. Instead, we'll set up the RayTallyEverything structure with
+    #   the filenames, and the all_proofs_valid method will do the loading.
     sharded_cballots_refs: Sequence[Sequence[ray.ObjectRef]] = ray.get(
         [r_load_ballots.remote(r_manifest, files) for files in sharded_ballot_files]
     )
