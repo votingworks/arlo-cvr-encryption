@@ -25,7 +25,8 @@ def ray_init_cluster() -> None:  # pragma: no cover
     Initializes Ray for computation on a big cluster.
     """
     if not ray.is_initialized():
-        ray.init(address="auto")
+        # for a million ballots, we'll need 1TB of storage, so we're doubling that for now
+        ray.init(address="auto", driver_object_store_memory=2 * 1024 * 1024 * 1024)
         ray_init_serializers()
 
 

@@ -130,6 +130,18 @@ setup_commands:
     - sudo -H pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
     # we need *lots* of open files to make this work, for some reason
     - sudo sysctl -w fs.file-max=5000000
+    # recommendations per http://www.brendangregg.com/blog/2017-12-31/reinvent-netflix-ec2-tuning.html
+    - sudo sysctl -w net.core.somaxconn=1000
+    - sudo sysctl -w net.core.netdev_max_backlog=5000
+    - sudo sysctl -w net.core.rmem_max=16777216
+    - sudo sysctl -w net.core.wmem_max=16777216
+    - sudo sysctl -w 'net.ipv4.tcp_wmem=4096 12582912 16777216'
+    - sudo sysctl -w 'net.ipv4.tcp_rmem=4096 12582912 16777216'
+    - sudo sysctl -w net.ipv4.tcp_max_syn_backlog=8096
+    - sudo sysctl -w net.ipv4.tcp_slow_start_after_idle=0
+    - sudo sysctl -w net.ipv4.tcp_tw_reuse=1
+    - sudo sysctl -w 'net.ipv4.ip_local_port_range=10240 65535'
+    - sudo sysctl -w net.ipv4.tcp_abort_on_overflow=1
 
 # Custom commands that will be run on the head node after common setup.
 head_setup_commands:
