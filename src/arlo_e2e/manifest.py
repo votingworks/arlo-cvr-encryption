@@ -106,6 +106,24 @@ class Manifest:
     hashes: Dict[str, FileInfo]
     bytes_written: int = 0
 
+    # TODO: build unit tests for this.
+    # TODO: add a call to this in the tally verification process.
+    def all_hashes_unique(self) -> bool:
+        """
+        Checks that every hash value is unique. If a file hash repeated, then there's
+        a chance that something went really wrong, like an identical ballot being repeated.
+        """
+        expected_num_hashes = len(self.hashes.keys())
+        actual_num_hashes = len({v.hash for v in self.hashes.values()})
+
+        if expected_num_hashes != actual_num_hashes:
+            log_error(
+                f"Expected to find {expected_num_hashes} unique ballot hashes, only found {actual_num_hashes}."
+            )
+            return False
+        else:
+            return True
+
     def to_manifest_external(self) -> ManifestExternal:
         """
         Converts this to a ManifestExternal class, suitable for serializing to disk.

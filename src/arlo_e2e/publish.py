@@ -310,11 +310,8 @@ def load_ray_tally(
     sharded_ballot_files: Sequence[Sequence[PurePath]] = shard_list(ballot_files, bps)
 
     # TODO: shard the manifest itself, so we don't have to copy the whole thing to
-    #   every node when we're only using a fraction of it. For a million ballots,
-    #   the manifest will have maybe 100 bytes per ballot, so we're asking the
-    #   poor database to shove 100MB to every node in the cluster. Fun argument:
-    #   we gain a significant savings here by using VMs with more CPU cores per VM,
-    #   because we'll only need to do the replication once per VM.
+    #   every node when we're only using a fraction of it. All we need to do is
+    #   pass along the expected hash with each file name.
     r_manifest = ray.put(manifest)
 
     # While we're "unsharding" the references before storing in the results,
