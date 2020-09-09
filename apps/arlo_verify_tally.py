@@ -1,8 +1,8 @@
 import argparse
 import os
 from multiprocessing import Pool
-from typing import Optional, Set, Dict, Tuple, Union
 from sys import exit
+from typing import Optional, Set, Dict, Tuple, Union
 
 import ray
 from electionguard.serializable import set_serializers, set_deserializers
@@ -10,7 +10,7 @@ from electionguard.serializable import set_serializers, set_deserializers
 from arlo_e2e.eg_helpers import log_nothing_to_stdout
 from arlo_e2e.metadata import SelectionMetadata
 from arlo_e2e.publish import load_fast_tally, load_ray_tally
-from arlo_e2e.ray_helpers import ray_init_localhost
+from arlo_e2e.ray_helpers import ray_init_cluster
 from arlo_e2e.ray_tally import RayTallyEverythingResults
 from arlo_e2e.tally import FastTallyEverythingResults, SelectionInfo
 
@@ -51,7 +51,7 @@ if __name__ == "__main__":
 
     print(f"Loading and verifying tallies and ballots from {tallydir}.")
     if use_cluster:
-        ray_init_localhost()
+        ray_init_cluster()
 
         ray_results = load_ray_tally(
             tallydir, check_proofs=True, recheck_ballots_and_tallies=True

@@ -54,13 +54,7 @@ class TestManifestPublishing(unittest.TestCase):
         self.assertTrue(manifest.all_hashes_unique())
 
         manifest2 = make_existing_manifest(MANIFEST_TESTING_DIR)
-
-        # we're going to remove the entry for MANIFEST.json just so we can test for equality of the result,
-        # and tweak the number of bytes appropriately.
-        manifest_bytes = manifest.hashes["MANIFEST.json"].num_bytes
-        del manifest.hashes["MANIFEST.json"]
-        manifest.bytes_written -= manifest_bytes
-        self.assertEqual(manifest, manifest2)
+        self.assertTrue(manifest.equivalent(manifest2))
 
         file_contents2 = [
             manifest2.read_file(file_name, file_path)

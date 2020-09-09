@@ -121,6 +121,7 @@ class Manifest:
         file_name: str,
         content_obj: Serializable,
         subdirectories: List[str] = None,
+        skip_manifest: bool = False,
     ) -> str:
         """
         Given a filename, subdirectory, and contents of the file, writes the contents out to the file. As a
@@ -130,14 +131,19 @@ class Manifest:
         :param subdirectories: paths to be introduced between `root_dir` and the file; empty-list means no subdirectory
         :param file_name: name of the file, including any suffix
         :param content_obj: any ElectionGuard "Serializable" object
+        :param skip_manifest: if true, the manifest is not updated for this particular file being written
         :returns: the SHA256 hash of `file_contents`
         """
 
         json_txt = content_obj.to_json(strip_privates=True)
-        return self.write_file(file_name, json_txt, subdirectories)
+        return self.write_file(file_name, json_txt, subdirectories, skip_manifest)
 
     def write_file(
-        self, file_name: str, file_contents: str, subdirectories: List[str] = None
+        self,
+        file_name: str,
+        file_contents: str,
+        subdirectories: List[str] = None,
+        skip_manifest: bool = False,
     ) -> str:
         """
         Given a filename, subdirectory, and contents of the file, writes the contents out to the file. As a
@@ -147,6 +153,7 @@ class Manifest:
         :param subdirectories: paths to be introduced between `root_dir` and the file; empty-list means no subdirectory
         :param file_name: name of the file, including any suffix
         :param file_contents: string to be written to the file
+        :param skip_manifest: if true, the manifest is not updated for this particular file being written
         :returns: the SHA256 hash of `file_contents`
         """
 
@@ -168,8 +175,9 @@ class Manifest:
                 f"Writing a file through a manifest that has already been written: {manifest_name}"
             )
 
-        self.bytes_written += file_info.num_bytes
-        self.hashes[manifest_name] = file_info
+        if not skip_manifest:
+            self.bytes_written += file_info.num_bytes
+            self.hashes[manifest_name] = file_info
         return file_info.hash
 
     def write_manifest(self) -> str:
@@ -180,10 +188,11 @@ class Manifest:
         """
 
         # Note that we don't want to have the manifest, itself, inside the manifest, so
-        # we're going to remove the side-effect after having it.
-        result = self.write_json_file("MANIFEST.json", self.to_manifest_external(), [])
-        del self.hashes["MANIFEST.json"]
+        # we're going to use the skip_manifest flag.
 
+        result = self.write_json_file(
+            "MANIFEST.json", self.to_manifest_external(), [], skip_manifest=True
+        )
         return result
 
     def _get_hash_required(self, filename: str) -> Optional[FileInfo]:
