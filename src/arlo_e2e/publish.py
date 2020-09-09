@@ -1,11 +1,9 @@
 import csv
+from io import StringIO
 from multiprocessing.pool import Pool
 from os import path
-from io import StringIO
-from pathlib import PurePath
-from typing import Final, Optional, TypeVar, List, Dict, Tuple, Sequence
+from typing import Final, Optional, TypeVar, Dict, Tuple
 
-import ray
 import pandas as pd
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.election import (
@@ -24,9 +22,9 @@ from arlo_e2e.manifest import (
 )
 from arlo_e2e.memo import Memo, make_memo_lambda
 from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.ray_tally import RayTallyEverythingResults, ballots_per_shard
+from arlo_e2e.ray_tally import RayTallyEverythingResults
 from arlo_e2e.tally import FastTallyEverythingResults, SelectionTally
-from arlo_e2e.utils import all_files_in_directory, mkdir_helper, shard_list, flatmap
+from arlo_e2e.utils import mkdir_helper
 
 T = TypeVar("T")
 U = TypeVar("U", bound=Serializable)
@@ -81,34 +79,6 @@ def _write_tally_shared(
     return manifest
 
 
-def write_ciphertext_ballot(
-    manifest: Manifest, ballot: CiphertextAcceptedBallot
-) -> None:
-    """
-    Given a manifest and a ciphertext ballot, writes the ballot to disk and updates
-    the manifest.
-    """
-    ballot_name = ballot.object_id
-    ballot_name_prefix = ballot_name[0:4]
-    manifest.write_json_file(
-        ballot_name + ".json", ballot, ["ballots", ballot_name_prefix]
-    )
-
-
-def load_ciphertext_ballot(
-    manifest: Manifest, ballot_id: str
-) -> Optional[CiphertextAcceptedBallot]:
-    """
-    Given a manifest and a ballot identifier string, attempts to load the ballot
-    from disk. Returns `None` if the ballot doesn't exist or if the hashes fail
-    to verify.
-    """
-    ballot_name_prefix = ballot_id[0:4]
-    return manifest.read_json_file(
-        ballot_id + ".json", CiphertextAcceptedBallot, ["ballots", ballot_name_prefix]
-    )
-
-
 def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> Manifest:
     """
     Writes out a directory with the full contents of the tally structure. Each ciphertext ballot
@@ -128,7 +98,7 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> M
     log_info("write_fast_tally: writing ballots")
 
     for ballot in results.encrypted_ballots:
-        write_ciphertext_ballot(manifest, ballot)
+        manifest.write_ciphertext_ballot(ballot)
 
     log_info("write_fast_tally: writing MANIFEST.json")
     manifest.write_manifest()
@@ -137,20 +107,18 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> M
     return manifest
 
 
-# TODO: this will go away, get merged in with ray_tally_everything.
-def write_ray_tally(results: RayTallyEverythingResults, results_dir: str) -> Manifest:
+def write_ray_tally(
+    results: RayTallyEverythingResults,
+    results_dir: str,
+    prior_manifest: Optional[Manifest] = None,
+) -> Manifest:
     """
-    Writes out a directory with the full contents of the tally structure. Each ciphertext ballot
-    will end up in its own file. Everything is JSON. Returns a `Manifest` object that reflects
+    Writes out a directory with the full contents of the tally structure. Basically everything
+    except for the ballots themselves. Everything is JSON. Returns a `Manifest` object that reflects
     everything that was written.
 
-    This method is explicitly engineered around the use of Ray.io for cluster computing. We expect
-    to have encrypted ballots spread across a huge cluster. Our assumption is that every node has
-    access to a common filesystem, perhaps mounted via NFS or SMB, so that we'll have every node
-    writing its local ballots out but we'll get a shared result in a single location.
-
-    All the file hash information, necessary to write out `MANIFEST.json` is collected back to
-    the main compute node and written from there.
+    If any ballots have been previously written out, perhaps using the Ray tally, the `prior_manifest`
+    is merged into the final manifest that's returned.
     """
     manifest = _write_tally_shared(
         results_dir,
@@ -162,15 +130,12 @@ def write_ray_tally(results: RayTallyEverythingResults, results_dir: str) -> Man
         results.cvr_metadata,
     )
 
-    log_info("write_ray_tally: writing ballots")
+    if prior_manifest is not None:
+        # This is slower than merging the new results into the prior_manifest, but we're mutating
+        # a local object rather than something that was passed in. That seems preferable.
+        manifest.merge_from(prior_manifest)
 
-    assert results.remote_encrypted_ballot_refs is not None, "got no remote ballot refs"
-
-    manifest_specs = [
-        _r_ballot_to_manifest_write_spec.remote(ballot)
-        for ballot in results.remote_encrypted_ballot_refs
-    ]
-    manifest.write_remote_json_files(manifest_specs)
+    # ballots were written during the encryption process, so we don't write them here
 
     log_info("write_ray_tally: writing MANIFEST.json")
     manifest.write_manifest()
@@ -259,21 +224,6 @@ def _load_tally_shared(
     return manifest, election_description, cec, encrypted_tally, metadata, df
 
 
-@ray.remote
-def r_load_ballots(
-    m: Manifest, filenames: Sequence[PurePath]
-) -> Sequence[ray.ObjectRef]:  # pragma: no cover
-    """
-    Given a list of filenames, loads them, returning a sequence of ray ObjectRef's
-    to CiphertextBallots.
-    """
-    return [
-        ray.put(m.read_json_file(f, CiphertextAcceptedBallot))
-        for f in filenames
-        if f.name != "index.html"
-    ]
-
-
 def load_ray_tally(
     results_dir: str,
     check_proofs: bool = True,
@@ -301,40 +251,14 @@ def load_ray_tally(
         cvr_metadata,
     ) = result
 
-    ballots_dir = path.join(results_dir, "ballots")
-    ballot_files: List[PurePath] = all_files_in_directory(ballots_dir)
-
-    # We're going to load the ballots across the whole cluster, using a sharding
-    # strategy that will make the first round of redoing the tally cheap.
-    bps = ballots_per_shard(len(ballot_files))
-    sharded_ballot_files: Sequence[Sequence[PurePath]] = shard_list(ballot_files, bps)
-
-    # TODO: shard the manifest itself, so we don't have to copy the whole thing to
-    #   every node when we're only using a fraction of it. All we need to do is
-    #   pass along the expected hash with each file name.
-    r_manifest = ray.put(manifest)
-
-    # While we're "unsharding" the references before storing in the results,
-    # we'll re-shard them again as part of the verification, and they'll end
-    # up exactly the same.
-
-    # TODO: this all needs to be redone, because we don't want to keep the ballots
-    #   in memory. Instead, we'll set up the RayTallyEverything structure with
-    #   the filenames, and the all_proofs_valid method will do the loading.
-    sharded_cballots_refs: Sequence[Sequence[ray.ObjectRef]] = ray.get(
-        [r_load_ballots.remote(r_manifest, files) for files in sharded_ballot_files]
-    )
-    flatter_cballot_refs: List[ray.ObjectRef] = list(
-        flatmap(lambda x: x, sharded_cballots_refs)
-    )
-
     everything = RayTallyEverythingResults(
         metadata,
         cvr_metadata,
         election_description,
         encrypted_tally,
         cec,
-        flatter_cballot_refs,
+        manifest,
+        len(cvr_metadata),
     )
 
     if check_proofs:
@@ -373,27 +297,13 @@ def load_fast_tally(
         cvr_metadata,
     ) = result
 
-    ballots_dir = path.join(results_dir, "ballots")
-    ballot_files: List[PurePath] = [
-        f for f in all_files_in_directory(ballots_dir) if f.name != "index.html"
-    ]
-
-    # What's with the nested lambdas? Python lambdas aren't real closures. This is a workaround.
-    # https://louisabraham.github.io/articles/python-lambda-closures.html
-    encrypted_ballot_memos: Dict[str, Memo[CiphertextAcceptedBallot]] = {
-        filename.stem: make_memo_lambda(
-            (lambda f, m: lambda: m.read_json_file(f, CiphertextAcceptedBallot))(
-                filename, manifest
-            )
-        )
-        for filename in ballot_files
-    }
+    ballot_memos = ballot_memos_from_metadata(cvr_metadata, manifest)
 
     everything = FastTallyEverythingResults(
         metadata,
         cvr_metadata,
         election_description,
-        encrypted_ballot_memos,
+        ballot_memos,
         encrypted_tally,
         cec,
     )
@@ -407,3 +317,22 @@ def load_fast_tally(
             return None
 
     return everything
+
+
+def ballot_memos_from_metadata(
+    cvr_metadata: pd.DataFrame, manifest: Manifest
+) -> Dict[str, Memo[CiphertextAcceptedBallot]]:
+    """
+    Helper function: given the CVR metadata and a manifest, returns a dict from ballot id's to memos that will
+    lazily load the ballots themselves.
+    """
+    ballot_memos: Dict[str, Memo[CiphertextAcceptedBallot]] = {}
+
+    for index, row in cvr_metadata.iterrows():
+        ballot_id = row["BallotId"]
+        ballot_memo = (
+            lambda b, m: make_memo_lambda(lambda: m.load_ciphertext_ballot(b))
+        )(ballot_id, manifest)
+        ballot_memos[ballot_id] = ballot_memo
+
+    return ballot_memos

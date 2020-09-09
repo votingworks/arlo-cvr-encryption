@@ -5,6 +5,7 @@ from hashlib import sha256
 from pathlib import PurePath
 from typing import Dict, Optional, Type, List, Union, Tuple
 
+from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.logs import log_error, log_warning
 from electionguard.serializable import WRITE, Serializable
 from electionguard.utils import flatmap_optional
@@ -273,6 +274,32 @@ class Manifest:
             return file_contents
         else:
             return None
+
+    def write_ciphertext_ballot(self, ballot: CiphertextAcceptedBallot) -> None:
+        """
+        Given a manifest and a ciphertext ballot, writes the ballot to disk and updates
+        the manifest.
+        """
+        ballot_name = ballot.object_id
+        ballot_name_prefix = ballot_name[0:4]
+        self.write_json_file(
+            ballot_name + ".json", ballot, ["ballots", ballot_name_prefix]
+        )
+
+    def load_ciphertext_ballot(
+        self, ballot_id: str
+    ) -> Optional[CiphertextAcceptedBallot]:
+        """
+        Given a manifest and a ballot identifier string, attempts to load the ballot
+        from disk. Returns `None` if the ballot doesn't exist or if the hashes fail
+        to verify.
+        """
+        ballot_name_prefix = ballot_id[0:4]
+        return self.read_json_file(
+            ballot_id + ".json",
+            CiphertextAcceptedBallot,
+            ["ballots", ballot_name_prefix],
+        )
 
 
 def make_fresh_manifest(root_dir: str, delete_existing: bool = False) -> Manifest:

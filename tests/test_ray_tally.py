@@ -53,6 +53,8 @@ class TestRayTallies(unittest.TestCase):
     def test_ray_end_to_end(
         self, input: str, keypair: ElGamalKeyPair, use_keypair: bool
     ) -> None:
+        self.removeTree()
+
         cvrs = read_dominion_csv(StringIO(input))
         self.assertIsNotNone(cvrs)
 
@@ -61,10 +63,13 @@ class TestRayTallies(unittest.TestCase):
 
         if use_keypair:
             rtally = ray_tally_everything(
-                cvrs, verbose=True, secret_key=keypair.secret_key
+                cvrs,
+                verbose=True,
+                secret_key=keypair.secret_key,
+                root_dir="rtally_output",
             )
         else:
-            rtally = ray_tally_everything(cvrs, verbose=True)
+            rtally = ray_tally_everything(cvrs, verbose=True, root_dir="rtally_output")
 
         ftally = rtally.to_fast_tally()
         self.assertTrue(ftally.all_proofs_valid(verbose=False))
@@ -90,8 +95,7 @@ class TestRayTallies(unittest.TestCase):
     def test_ray_and_multiprocessing_agree(
         self, input: str, keypair: ElGamalKeyPair
     ) -> None:
-        coverage.process_startup()  # necessary for coverage testing to work in parallel
-
+        self.removeTree()
         # Normally these are generated internally, but by making them be the same, we take all
         # the non-determinism out of the tally_everything methods and get identical results.
         seed_hash = rand_q()
@@ -120,6 +124,7 @@ class TestRayTallies(unittest.TestCase):
             secret_key=keypair.secret_key,
             seed_hash=seed_hash,
             master_nonce=master_nonce,
+            root_dir="rtally_output",
         )
 
         self.assertEqual(tally, rtally.to_fast_tally())

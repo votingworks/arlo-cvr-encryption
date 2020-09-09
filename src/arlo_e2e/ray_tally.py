@@ -4,7 +4,7 @@
 from datetime import datetime
 from math import sqrt, ceil, floor
 from timeit import default_timer as timer
-from typing import Optional, List, Tuple, Sequence, Dict, NamedTuple
+from typing import Optional, List, Tuple, Sequence, Dict, NamedTuple, cast
 
 import pandas as pd
 import ray
@@ -35,7 +35,7 @@ from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.manifest import Manifest, make_fresh_manifest, manifest_name_to_filename
 from arlo_e2e.memo import make_memo_lambda, Memo
 from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.publish import write_ciphertext_ballot, load_ciphertext_ballot
+from arlo_e2e.publish import ballot_memos_from_metadata
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
     TALLY_TYPE,
@@ -147,7 +147,7 @@ def r_encrypt_tally_and_write(
         )
 
         if manifest is not None:
-            write_ciphertext_ballot(manifest, cballot)
+            manifest.write_ciphertext_ballot(cballot)
 
         cballots.append(ciphertext_ballot_to_dict(cballot))
 
@@ -170,8 +170,9 @@ def partial_tally(ptallies: Sequence[ObjectRef]) -> ObjectRef:
     If any of the partial tallies is `None`, the result is `None`.
     """
     local_ptallies: Sequence[TALLY_TYPE] = ray.get(ptallies)
-    result = sequential_tally(local_ptallies)
-    return ray.put(result)
+    result: TALLY_TYPE = sequential_tally(local_ptallies)
+    result_ref: ObjectRef = ray.put(result)
+    return result_ref
 
 
 @ray.remote
@@ -431,7 +432,7 @@ def r_verify_tally_selection_proofs(
 
 def manifest_ballot_name_to_cballot(
     manifest: Manifest, manifest_name: str
-) -> CiphertextAcceptedBallot:
+) -> Optional[CiphertextAcceptedBallot]:
     """
     Helper to fetch a ballot from disk.
     """
@@ -470,19 +471,29 @@ def r_verify_ballot_proofs(
     # we're immediately done with them.  This puts a lot of pressure on the filesystem
     # but S3 buckets, Azure blob storage, etc. can handle it.
 
-    cballots: List[CiphertextAcceptedBallot] = [
+    cballots: List[Optional[CiphertextAcceptedBallot]] = [
         manifest_ballot_name_to_cballot(manifest, name) for name in cballot_filenames
     ]
 
+    if None in cballots:
+        return VerifyBallotsResult(False, ray.put({}))
+
+    cballots_not_none: List[CiphertextAcceptedBallot] = cast(
+        List[CiphertextAcceptedBallot], cballots
+    )
+
     results = [
         b.is_valid_encryption(b.description_hash, public_key, hash_header)
-        for b in cballots
+        for b in cballots_not_none
     ]
-
     encryptions_valid = all(results)
-    ptally = sequential_tally([ciphertext_ballot_to_dict(b) for b in cballots])
 
-    return VerifyBallotsResult(encryptions_valid, ray.put(ptally))
+    if not encryptions_valid:
+        return VerifyBallotsResult(False, ray.put({}))
+
+    ptally = sequential_tally([ciphertext_ballot_to_dict(b) for b in cballots_not_none])
+
+    return VerifyBallotsResult(True, ray.put(ptally))
 
 
 class RayTallyEverythingResults(NamedTuple):
@@ -526,29 +537,25 @@ class RayTallyEverythingResults(NamedTuple):
     """
 
     @property
-    def num_ballots(self) -> int:
-        """
-        Returns the number of ballots stored here.
-        """
-        return self.num_ballots
-
-    @property
     def encrypted_ballots(self) -> List[CiphertextAcceptedBallot]:
         """
         Returns a list of all encrypted ballots. This only works if the ballots
         were written to disk. This will be very slow for large numbers of ballots.
         """
 
-        # we're going to have to load everything from disk!
         assert (
             self.manifest is not None
         ), "cannot get to encrypted ballots because they weren't written"
 
-        result: List[CiphertextAcceptedBallot] = [
+        result: List[Optional[CiphertextAcceptedBallot]] = [
             manifest_ballot_name_to_cballot(self.manifest, name)
             for name in self.manifest.hashes.keys()
         ]
-        return result
+
+        # We're just going to skip over the None values, which is what happens
+        # if a hash is invalid or a file is missing, even though we might
+        # perhaps want to scream a bit about it.
+        return [b for b in result if b is not None]
 
     def equivalent(
         self, other: "RayTallyEverythingResults", keys: ElGamalKeyPair
@@ -603,6 +610,10 @@ class RayTallyEverythingResults(NamedTuple):
             return False
 
         if recheck_ballots_and_tallies:
+            if self.manifest is None:
+                log_and_print("cannot recheck ballots and tallies without a manifest")
+                return False
+
             # next, check each individual ballot's proofs; in this case, we're going to always
             # show the progress bar, even if verbose is false
             num_ballots = self.num_ballots
@@ -658,14 +669,7 @@ class RayTallyEverythingResults(NamedTuple):
             self.manifest is not None
         ), "cannot convert to fast tally without a manifest"
 
-        ballot_memos: Dict[str, Memo[CiphertextAcceptedBallot]] = {}
-
-        for index, row in self.cvr_metadata.iterrows():
-            ballot_id = row["BallotId"]
-            ballot_memo = (
-                lambda b, m: make_memo_lambda(lambda: load_ciphertext_ballot(b, m))
-            )(ballot_id, self.manifest)
-            ballot_memos[ballot_id] = ballot_memo
+        ballot_memos = ballot_memos_from_metadata(self.cvr_metadata, self.manifest)
 
         return FastTallyEverythingResults(
             metadata=self.metadata,
