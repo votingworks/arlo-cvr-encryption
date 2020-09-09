@@ -146,7 +146,7 @@ TALLY_INPUT_TYPE = Union[Dict[str, ElGamalCiphertext], CiphertextBallot]
 def sequential_tally(ptallies: Sequence[TALLY_INPUT_TYPE]) -> TALLY_TYPE:
     """
     Internal function: sequentially tallies all of the ciphertext ballots, or other partial tallies,
-    and returns a partial tally.
+    and returns a partial tally. If any input tally happens to be `None`, the result is `None`.
     """
     result: TALLY_TYPE = {}
     for ptally in ptallies:

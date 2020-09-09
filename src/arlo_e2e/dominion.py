@@ -361,11 +361,11 @@ class DominionCSV(NamedTuple):
 
         # And now, for the ballots
         ballots: List[PlaintextBallot] = list()
-        ballot_uids = UidMaker("b")
+        # ballot_uids = UidMaker("b")
 
         for index, row in self.data.iterrows():
             ballot_type = row["BallotType"]
-            # ballot_id = row["BallotId"]
+            ballot_id = row["BallotId"]
             pbcontests: List[PlaintextBallotContest] = []
 
             contest_titles: Set[str] = self.metadata.style_map[ballot_type]
@@ -398,7 +398,7 @@ class DominionCSV(NamedTuple):
 
             ballots.append(
                 PlaintextBallot(
-                    object_id=ballot_uids.next(),
+                    object_id=ballot_id,
                     ballot_style=ballotstyle_map[ballot_type].object_id,
                     contests=pbcontests,
                 )

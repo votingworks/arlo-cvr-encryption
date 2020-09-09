@@ -20,7 +20,6 @@ from arlo_e2e.html_index import generate_index_html_files
 from arlo_e2e.manifest import (
     make_fresh_manifest,
     make_existing_manifest,
-    ManifestFileWriteSpec,
     Manifest,
 )
 from arlo_e2e.memo import Memo, make_memo_lambda
@@ -38,28 +37,6 @@ ELECTION_DESCRIPTION: Final[str] = "election_description.json"
 ENCRYPTED_TALLY: Final[str] = "encrypted_tally.json"
 CRYPTO_CONSTANTS: Final[str] = "constants.json"
 CRYPTO_CONTEXT: Final[str] = "cryptographic_context.json"
-
-
-# TODO: this needs to be reworked, probably completely removed from publish.py
-#   and worked into ray_tally.py.
-@ray.remote
-def _r_ballot_to_manifest_write_spec(
-    ballot: CiphertextAcceptedBallot,
-) -> ManifestFileWriteSpec:  # pragma: no cover
-    # This prefix stuff: ballot uids are encoded as 'b' plus a 7-digit number.
-    # Ballot #3 should be 'b0000003'. By taking the first 4 digits, and making
-    # that into a directory, we get a max of 10,000 files per directory, which
-    # should be good enough. We never want to type 'ls' in a directory and have
-    # it wedge because it's trying to digest a million filenmes.
-
-    ballot_name = ballot.object_id
-    ballot_name_prefix = ballot_name[0:4]  # letter b plus first three digits
-
-    return ManifestFileWriteSpec(
-        file_name=ballot_name + ".json",
-        content=ballot,
-        subdirectories=["ballots", ballot_name_prefix],
-    )
 
 
 # TODO: this can't be private anymore: it's going to be called from ray_tally.py
@@ -104,6 +81,34 @@ def _write_tally_shared(
     return manifest
 
 
+def write_ciphertext_ballot(
+    manifest: Manifest, ballot: CiphertextAcceptedBallot
+) -> None:
+    """
+    Given a manifest and a ciphertext ballot, writes the ballot to disk and updates
+    the manifest.
+    """
+    ballot_name = ballot.object_id
+    ballot_name_prefix = ballot_name[0:4]
+    manifest.write_json_file(
+        ballot_name + ".json", ballot, ["ballots", ballot_name_prefix]
+    )
+
+
+def load_ciphertext_ballot(
+    manifest: Manifest, ballot_id: str
+) -> Optional[CiphertextAcceptedBallot]:
+    """
+    Given a manifest and a ballot identifier string, attempts to load the ballot
+    from disk. Returns `None` if the ballot doesn't exist or if the hashes fail
+    to verify.
+    """
+    ballot_name_prefix = ballot_id[0:4]
+    return manifest.read_json_file(
+        ballot_id + ".json", CiphertextAcceptedBallot, ["ballots", ballot_name_prefix]
+    )
+
+
 def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> Manifest:
     """
     Writes out a directory with the full contents of the tally structure. Each ciphertext ballot
@@ -123,12 +128,7 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> M
     log_info("write_fast_tally: writing ballots")
 
     for ballot in results.encrypted_ballots:
-        # See comment in _r_ballot_to_manifest_write_spec for more on what's going on here.
-        ballot_name = ballot.object_id
-        ballot_name_prefix = ballot_name[0:4]
-        manifest.write_json_file(
-            ballot_name + ".json", ballot, ["ballots", ballot_name_prefix]
-        )
+        write_ciphertext_ballot(manifest, ballot)
 
     log_info("write_fast_tally: writing MANIFEST.json")
     manifest.write_manifest()
