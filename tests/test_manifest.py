@@ -7,7 +7,7 @@ from typing import List
 
 from electionguard.logs import log_warning
 from hypothesis import given, assume, settings
-from hypothesis.strategies import lists
+from hypothesis.strategies import lists, integers
 
 from arlo_e2e.manifest import (
     make_fresh_manifest,
@@ -18,6 +18,7 @@ from arlo_e2e.utils import mkdir_helper
 from arlo_e2e_testing.manifest_hypothesis import (
     file_name_and_contents,
     FileNameAndContents,
+    list_file_names_contents,
 )
 
 MANIFEST_TESTING_DIR = "manifest_testing"
@@ -38,14 +39,7 @@ class TestManifestPublishing(unittest.TestCase):
         log_warning("EXPECT MANY ERRORS TO BE LOGGED. THIS IS NORMAL.")
         self.removeTree()
 
-    @given(
-        lists(
-            min_size=2,
-            max_size=10,
-            elements=file_name_and_contents(),
-            unique_by=lambda f: f.file_name,
-        )
-    )
+    @given(integers(2, 10).flatmap(lambda length: list_file_names_contents(length)))
     @settings(
         deadline=timedelta(milliseconds=50000),
     )
@@ -53,15 +47,11 @@ class TestManifestPublishing(unittest.TestCase):
         self.removeTree()
         mkdir_helper(MANIFEST_TESTING_DIR)
 
-        for f in files:
-            for f2 in files:
-                if f.file_name != f2.file_name:
-                    assume(f.file_contents != f2.file_contents)
-
         manifest = make_fresh_manifest(MANIFEST_TESTING_DIR)
         for file_name, file_path, file_contents in files:
             manifest.write_file(file_name, file_contents, file_path)
         manifest.write_manifest()
+        self.assertTrue(manifest.all_hashes_unique())
 
         manifest2 = make_existing_manifest(MANIFEST_TESTING_DIR)
 
@@ -104,5 +94,107 @@ class TestManifestPublishing(unittest.TestCase):
             self.assertFalse(
                 manifest2.validate_contents(manifest_names[1], files[0].file_contents)
             )
+
+        self.removeTree()
+
+    @given(
+        list_file_names_contents(5, file_name_prefix="list1_"),
+        list_file_names_contents(5, file_name_prefix="list2_"),
+    )
+    @settings(
+        deadline=timedelta(milliseconds=50000),
+    )
+    def test_manifest_merge(
+        self, files: List[FileNameAndContents], files2: List[FileNameAndContents]
+    ) -> None:
+        self.removeTree()
+        mkdir_helper(MANIFEST_TESTING_DIR)
+
+        manifest1 = make_fresh_manifest(MANIFEST_TESTING_DIR)
+        for file_name, file_path, file_contents in files:
+            manifest1.write_file(file_name, file_contents, file_path)
+
+        manifest2 = make_fresh_manifest(MANIFEST_TESTING_DIR)
+        for file_name, file_path, file_contents in files2:
+            manifest2.write_file(file_name, file_contents, file_path)
+
+        manifest1.merge_from(manifest2)
+
+        manifest1_keys = set(manifest1.hashes.keys())
+        manifest2_keys = set(manifest1.hashes.keys())
+        intersection_keys = manifest1_keys.intersection(manifest2_keys)
+
+        self.assertEqual(manifest2_keys, intersection_keys)
+
+        self.removeTree()
+
+    @given(
+        list_file_names_contents(5, file_name_prefix="list1_"),
+        list_file_names_contents(5, file_name_prefix="list2_"),
+        file_name_and_contents(),
+    )
+    @settings(
+        deadline=timedelta(milliseconds=50000),
+    )
+    def test_manifest_merge_with_safe_overlap(
+        self,
+        files: List[FileNameAndContents],
+        files2: List[FileNameAndContents],
+        extra: FileNameAndContents,
+    ) -> None:
+        self.removeTree()
+        mkdir_helper(MANIFEST_TESTING_DIR)
+
+        manifest1 = make_fresh_manifest(MANIFEST_TESTING_DIR)
+        for file_name, file_path, file_contents in files:
+            manifest1.write_file(file_name, file_contents, file_path)
+        manifest1.write_file(extra.file_name, extra.file_contents, extra.file_path)
+
+        manifest2 = make_fresh_manifest(MANIFEST_TESTING_DIR)
+        for file_name, file_path, file_contents in files2:
+            manifest2.write_file(file_name, file_contents, file_path)
+        manifest2.write_file(extra.file_name, extra.file_contents, extra.file_path)
+
+        manifest1.merge_from(manifest2)
+
+        manifest1_keys = set(manifest1.hashes.keys())
+        manifest2_keys = set(manifest1.hashes.keys())
+        intersection_keys = manifest1_keys.intersection(manifest2_keys)
+
+        self.assertEqual(manifest2_keys, intersection_keys)
+
+        self.removeTree()
+
+    @given(
+        list_file_names_contents(5, file_name_prefix="list1_"),
+        list_file_names_contents(5, file_name_prefix="list2_"),
+        file_name_and_contents(),
+    )
+    @settings(
+        deadline=timedelta(milliseconds=50000),
+    )
+    def test_manifest_merge_with_unsafe_overlap(
+        self,
+        files: List[FileNameAndContents],
+        files2: List[FileNameAndContents],
+        extra: FileNameAndContents,
+    ) -> None:
+        self.removeTree()
+        mkdir_helper(MANIFEST_TESTING_DIR)
+
+        manifest1 = make_fresh_manifest(MANIFEST_TESTING_DIR)
+        for file_name, file_path, file_contents in files:
+            manifest1.write_file(file_name, file_contents, file_path)
+        manifest1.write_file(extra.file_name, extra.file_contents, extra.file_path)
+
+        manifest2 = make_fresh_manifest(MANIFEST_TESTING_DIR)
+        for file_name, file_path, file_contents in files2:
+            manifest2.write_file(file_name, file_contents, file_path)
+        manifest2.write_file(
+            extra.file_name, extra.file_contents + "something", extra.file_path
+        )
+
+        with self.assertRaises(RuntimeError):
+            manifest1.merge_from(manifest2)
 
         self.removeTree()

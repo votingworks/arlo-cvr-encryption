@@ -10,9 +10,18 @@ class FileNameAndContents(NamedTuple):
 
 
 @composite
-def file_name_and_contents(draw: _DrawType):
+def file_name_and_contents(
+    draw: _DrawType, file_name_prefix: str = "", file_contents_prefix: str = ""
+):
+    """
+    Generates `FileNameAndContents` instances, suitable for stuffing into a Manifest. The optional
+    `file_name_prefix` and `file_contents_prefix` arguments are handy for ensuring the outputs
+    are different from other generated values.
+    """
     atoz = characters(min_codepoint=ord("a"), max_codepoint=ord("z"))
-    file_contents = draw(text(min_size=1, max_size=100, alphabet=atoz))
+    file_contents = file_contents_prefix + draw(
+        text(min_size=1, max_size=100, alphabet=atoz)
+    )
 
     # make our lives easier: file path elements are 2 or 3 chars, while file names are 4 or 5 chars
 
@@ -24,7 +33,25 @@ def file_name_and_contents(draw: _DrawType):
         )
     )
 
-    file_name = draw(
+    file_name = file_name_prefix + draw(
         text(min_size=4, max_size=5, alphabet=atoz),
     )
     return FileNameAndContents(file_name, file_path, file_contents)
+
+
+@composite
+def list_file_names_contents(draw: _DrawType, length: int, file_name_prefix: str = ""):
+    """
+    Generates a `List[FileNameAndContents]`, of the desired length, suitable for stuffing into a
+    Manifest. The optional `file_name_prefix` is handy for ensuring that the outputs have unique
+    filenames. This strategy also guarantees that the file names and contents for each file are unique.
+    """
+    return [
+        draw(
+            file_name_and_contents(
+                file_name_prefix=file_name_prefix + f"{n:010d}",
+                file_contents_prefix=f"{n:010d}",
+            )
+        )
+        for n in range(0, length)
+    ]
