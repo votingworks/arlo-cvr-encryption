@@ -126,8 +126,6 @@ def file_exists_helper(
         return False
 
 
-# TODO: add an argument here that does the hash check, and then we'll be able to use
-#   this for distributed reads where we don't have the full manifest available.
 def load_file_helper(
     root_dir: str,
     file_name: Union[str, PurePath],

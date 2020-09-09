@@ -136,11 +136,6 @@ def r_encrypt_tally_and_write(
     # the tens or hundreds of kbytes.
 
     manifest = flatmap_optional(root_dir, lambda d: make_fresh_manifest(d))
-    if manifest is not None:
-        print("Got manifest")
-    else:
-        print(f"Missing manifest for {root_dir}")
-
     cballots: List[TALLY_TYPE] = []
 
     for b, n in input_tuples:
@@ -159,7 +154,7 @@ def r_encrypt_tally_and_write(
     return RemoteTallyResult(manifest, ray.put(tally))
 
 
-def partial_tally(ptallies: Sequence[ObjectRef]) -> ObjectRef:
+def partial_tally(ptallies: Sequence[ObjectRef]) -> TALLY_TYPE:
     """
     This is a front-end for `sequential_tally`, which runs locally
     (for remote: see `r_partial_tally`).
@@ -180,19 +175,18 @@ def partial_tally(ptallies: Sequence[ObjectRef]) -> ObjectRef:
         ), "type problem; we were expecting a dict, not an objectref"
 
     result: TALLY_TYPE = sequential_tally(local_ptallies)
-    result_ref: ObjectRef = ray.put(result)
-    return result_ref
+    return result
 
 
 @ray.remote
-def r_partial_tally(ptallies: Sequence[ObjectRef]) -> ObjectRef:  # pragma: no cover
+def r_partial_tally(ptallies: Sequence[ObjectRef]) -> TALLY_TYPE:  # pragma: no cover
     """
     This is a front-end for `partial_tally`, that can be called remotely via Ray.
     """
     return partial_tally(ptallies)
 
 
-def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> ObjectRef:
+def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> TALLY_TYPE:
     """
     Launches a parallel tally reduction tree, with a fanout based on `bps` ballots per shard. Returns
     a Ray ObjectRef reference to the future result, which the caller will then need to call
@@ -373,7 +367,7 @@ def ray_tally_everything(
     partial_tally_refs: List[ObjectRef] = [r.partial_tally for r in results]
 
     log_and_print("Remote tallying.")
-    tally: TALLY_TYPE = ray.get(ray_tally_ballots(partial_tally_refs, bps))
+    tally: TALLY_TYPE = ray_tally_ballots(partial_tally_refs, bps)
     assert tally is not None, "tally failed!"
 
     log_and_print("Tally decryption.")
@@ -487,7 +481,7 @@ def r_verify_ballot_proofs(
     # but S3 buckets, Azure blob storage, etc. can handle it.
 
     cballots: List[Optional[CiphertextAcceptedBallot]] = [
-        manifest_ballot_name_to_cballot(manifest, name) for name in cballot_filenames
+        manifest.load_ciphertext_ballot(name) for name in cballot_filenames
     ]
 
     if None in cballots:
@@ -563,8 +557,8 @@ class RayTallyEverythingResults(NamedTuple):
         ), "cannot get to encrypted ballots because they weren't written"
 
         result: List[Optional[CiphertextAcceptedBallot]] = [
-            manifest_ballot_name_to_cballot(self.manifest, name)
-            for name in self.manifest.hashes.keys()
+            self.manifest.load_ciphertext_ballot(name)
+            for name in self.cvr_metadata["BallotId"]
         ]
 
         # We're just going to skip over the None values, which is what happens
@@ -635,14 +629,16 @@ class RayTallyEverythingResults(NamedTuple):
             bps = ballots_per_shard(num_ballots)
 
             cballot_manifest_name_shards: Sequence[Sequence[str]] = shard_list(
-                self.manifest.hashes.keys(), bps
+                self.cvr_metadata["BallotId"], bps
             )
+
+            r_manifest = ray.put(self.manifest)
 
             ballot_start = timer()
             ballot_results: List[VerifyBallotsResult] = ray.get(
                 [
                     r_verify_ballot_proofs.remote(
-                        r_public_key, r_hash_header, ray.put(shard)
+                        r_manifest, r_public_key, r_hash_header, ray.put(shard)
                     )
                     for shard in cballot_manifest_name_shards
                 ]
@@ -668,7 +664,7 @@ class RayTallyEverythingResults(NamedTuple):
             ptally_refs: List[ObjectRef] = [
                 result.partial_tally for result in ballot_results
             ]
-            recomputed_tally: TALLY_TYPE = ray.get(ray_tally_ballots(ptally_refs, bps))
+            recomputed_tally: TALLY_TYPE = ray_tally_ballots(ptally_refs, bps)
 
             tally_success = tallies_match(self.tally.to_tally_map(), recomputed_tally)
 

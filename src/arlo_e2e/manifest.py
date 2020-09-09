@@ -10,6 +10,7 @@ from electionguard.logs import log_error, log_warning
 from electionguard.serializable import WRITE, Serializable
 from electionguard.utils import flatmap_optional
 
+from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.utils import (
     load_json_helper,
     load_file_helper,
@@ -178,9 +179,12 @@ class Manifest:
         :returns: the SHA256 hash of `MANIFEST.json`, itself
         """
 
-        # As a side-effect, this will also add a hash for the manifest itself into the `hashes` dictionary,
-        # but that's something of an oddball case that won't ever matter in practice.
-        return self.write_json_file("MANIFEST.json", self.to_manifest_external(), [])
+        # Note that we don't want to have the manifest, itself, inside the manifest, so
+        # we're going to remove the side-effect after having it.
+        result = self.write_json_file("MANIFEST.json", self.to_manifest_external(), [])
+        del self.hashes["MANIFEST.json"]
+
+        return result
 
     def _get_hash_required(self, filename: str) -> Optional[FileInfo]:
         """
@@ -300,6 +304,21 @@ class Manifest:
             CiphertextAcceptedBallot,
             ["ballots", ballot_name_prefix],
         )
+
+    def equivalent(self, other: "Manifest") -> bool:
+        """
+        Not exactly checking equality, but does check that the manifests are "equivalent",
+        which means we're ignoring the root directories, but checking the rest.
+        """
+        same_bytes = self.bytes_written == other.bytes_written
+        same_hashes = self.hashes == other.hashes
+
+        if not same_hashes:
+            for k in self.hashes.keys():
+                if self.hashes[k] != other.hashes[k]:
+                    log_and_print(f"different values for key {k}")
+
+        return same_hashes and same_bytes
 
 
 def make_fresh_manifest(root_dir: str, delete_existing: bool = False) -> Manifest:

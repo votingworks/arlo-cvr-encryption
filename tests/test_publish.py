@@ -161,7 +161,10 @@ class TestTallyPublishing(unittest.TestCase):
         assert len(ballots) > 0, "can't have zero ballots!"
 
         results = ray_tally_everything(
-            cvrs, secret_key=keypair.secret_key, verbose=True
+            cvrs,
+            secret_key=keypair.secret_key,
+            verbose=True,
+            root_dir=TALLY_TESTING_DIR,
         )
 
         self.assertTrue(results.all_proofs_valid())
