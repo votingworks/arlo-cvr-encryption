@@ -112,7 +112,6 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> M
 def write_ray_tally(
     results: RayTallyEverythingResults,
     results_dir: str,
-    prior_manifest: Optional[Manifest] = None,
 ) -> Manifest:
     """
     Writes out a directory with the full contents of the tally structure. Basically everything
@@ -131,6 +130,8 @@ def write_ray_tally(
         results.metadata,
         results.cvr_metadata,
     )
+
+    prior_manifest = results.manifest
 
     if prior_manifest is not None:
         # This is slower than merging the new results into the prior_manifest, but we're mutating

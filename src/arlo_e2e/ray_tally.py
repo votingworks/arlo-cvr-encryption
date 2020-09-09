@@ -47,7 +47,7 @@ from arlo_e2e.tally import (
     tallies_match,
     ballot_memos_from_metadata,
 )
-from arlo_e2e.utils import shard_list
+from arlo_e2e.utils import shard_list, mkdir_helper
 
 
 # High-level design: What Ray gives us is the ability to call a remote method -- decorated with
@@ -136,6 +136,11 @@ def r_encrypt_tally_and_write(
     # the tens or hundreds of kbytes.
 
     manifest = flatmap_optional(root_dir, lambda d: make_fresh_manifest(d))
+    if manifest is not None:
+        print("Got manifest")
+    else:
+        print(f"Missing manifest for {root_dir}")
+
     cballots: List[TALLY_TYPE] = []
 
     for b, n in input_tuples:
@@ -169,6 +174,11 @@ def partial_tally(ptallies: Sequence[ObjectRef]) -> ObjectRef:
     If any of the partial tallies is `None`, the result is `None`.
     """
     local_ptallies: Sequence[TALLY_TYPE] = ray.get(ptallies)
+    if len(local_ptallies) > 0:
+        assert isinstance(
+            local_ptallies[0], Dict
+        ), "type problem; we were expecting a dict, not an objectref"
+
     result: TALLY_TYPE = sequential_tally(local_ptallies)
     result_ref: ObjectRef = ray.put(result)
     return result_ref
@@ -288,6 +298,7 @@ def ray_tally_everything(
     ballots to be read back in again. Conversely, if `root_dir` is `None`, then nothing is
     written to disk, and the result will not have access to individual ballots.
     """
+
     rows, cols = cvrs.data.shape
 
     if date is None:
@@ -342,6 +353,10 @@ def ray_tally_everything(
     ] = shard_list(inputs, bps)
 
     log_and_print("Launching remote encryption.")
+
+    if root_dir is not None:
+        mkdir_helper(root_dir)
+
     r_root_dir = ray.put(root_dir)
     start_time = timer()
 
@@ -378,12 +393,13 @@ def ray_tally_everything(
     final_manifest: Optional[Manifest] = None
 
     if root_dir is not None:
-        log_and_print("Merging and writing manifest.")
+        log_and_print("Merging manifest data.")
         final_manifest = make_fresh_manifest(root_dir)
         for m in manifests:
             assert m is not None, "found a missing partial manifest"
             final_manifest.merge_from(m)
-        final_manifest.write_manifest()
+        # We don't want to write the manifest, itself, at this point; that's going
+        # to happen later on, probably in ray_write_everything.
 
     # Assemble the data structure that we're returning. Having nonces in the ciphertext makes these
     # structures sensitive for writing out to disk, but otherwise they're ready to go.
