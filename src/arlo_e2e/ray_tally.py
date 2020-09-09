@@ -33,9 +33,7 @@ from ray import ObjectRef
 from arlo_e2e.dominion import DominionCSV
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.manifest import Manifest, make_fresh_manifest, manifest_name_to_filename
-from arlo_e2e.memo import make_memo_lambda, Memo
 from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.publish import ballot_memos_from_metadata
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
     TALLY_TYPE,
@@ -47,6 +45,7 @@ from arlo_e2e.tally import (
     SelectionTally,
     sequential_tally,
     tallies_match,
+    ballot_memos_from_metadata,
 )
 from arlo_e2e.utils import shard_list
 
@@ -458,7 +457,7 @@ def r_verify_ballot_proofs(
     manifest: Manifest,
     public_key: ElementModP,
     hash_header: ElementModQ,
-    cballot_filenames: List[str],
+    cballot_filenames: Sequence[str],
 ) -> VerifyBallotsResult:  # pragma: no cover
     """
     Given a list of ballots, verify their Chaum-Pedersen proofs and redo the tally.
@@ -619,12 +618,16 @@ class RayTallyEverythingResults(NamedTuple):
             num_ballots = self.num_ballots
             bps = ballots_per_shard(num_ballots)
 
-            cballot_manifest_name_shards = shard_list(self.manifest.hashes.keys(), bps)
+            cballot_manifest_name_shards: Sequence[Sequence[str]] = shard_list(
+                self.manifest.hashes.keys(), bps
+            )
 
             ballot_start = timer()
             ballot_results: List[VerifyBallotsResult] = ray.get(
                 [
-                    r_verify_ballot_proofs.remote(r_public_key, r_hash_header, shard)
+                    r_verify_ballot_proofs.remote(
+                        r_public_key, r_hash_header, ray.put(shard)
+                    )
                     for shard in cballot_manifest_name_shards
                 ]
             )

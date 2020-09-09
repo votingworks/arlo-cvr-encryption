@@ -3,7 +3,7 @@ from base64 import b64encode
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import PurePath
-from typing import Dict, Optional, Type, List, Union, Tuple
+from typing import Dict, Optional, Type, List, Union
 
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.logs import log_error, log_warning
