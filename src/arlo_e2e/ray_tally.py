@@ -156,7 +156,7 @@ def r_encrypt_tally_and_write(
 
 def partial_tally(ptallies: Sequence[ObjectRef]) -> TALLY_TYPE:
     """
-    This is a front-end for `sequential_tally`, which runs locally
+    This is a front-end for `sequential_tally`, which can be called locally
     (for remote: see `r_partial_tally`).
 
     The input is a sequence of tally references (i.e., if Ray supported
@@ -166,13 +166,18 @@ def partial_tally(ptallies: Sequence[ObjectRef]) -> TALLY_TYPE:
     tallies together, accumulate them, and return a result that we
     can later pass to another node.
 
-    If any of the partial tallies is `None`, the result is `None`.
+    If any of the partial tallies is `None`, the result is an empty dict,
+    but still `TALLY_TYPE`.
     """
     local_ptallies: Sequence[TALLY_TYPE] = ray.get(ptallies)
+    assert not isinstance(
+        local_ptallies, Dict
+    ), "type failure: got a dict when we should have gotten a sequence"
+
     if len(local_ptallies) > 0:
         assert isinstance(
             local_ptallies[0], Dict
-        ), "type problem; we were expecting a dict, not an objectref"
+        ), "type failure: we were expecting a dict (TALLY_TYPE), not an objectref"
 
     result: TALLY_TYPE = sequential_tally(local_ptallies)
     return result
@@ -197,14 +202,29 @@ def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> TALLY_TYPE:
     """
 
     iter_count = 1
-    ballots_iter: Sequence[ObjectRef] = ptallies
+    initial_tallies = ptallies
+
+    assert not isinstance(
+        ptallies, Dict
+    ), "type failure: got a dict when we should have gotten a sequence"
+    assert bps > 1, f"bps = {bps}, should be greater than 1"
 
     while True:
-        if len(ballots_iter) <= bps:
+        assert not isinstance(
+            initial_tallies, Dict
+        ), "type error: got a dict when we were expecting a sequence"
+        if len(initial_tallies) <= bps:
             # run locally; no need for remote dispatch when we're this close to done
-            return partial_tally(ballots_iter)
+            log_and_print(
+                f"tally iteration {iter_count} (FINAL): {len(initial_tallies)} partial tallies"
+            )
+            return partial_tally(initial_tallies)
 
-        shards: Sequence[Sequence[ObjectRef]] = shard_list(ptallies, bps)
+        shards: Sequence[Sequence[ObjectRef]] = shard_list(initial_tallies, bps)
+
+        log_and_print(
+            f"tally iteration {iter_count}: {len(initial_tallies)} partial tallies --> {len(shards)} shards (bps = {bps})"
+        )
         partial_tallies: Sequence[ObjectRef] = [
             r_partial_tally.remote(shard) for shard in shards
         ]
@@ -215,7 +235,7 @@ def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> TALLY_TYPE:
         ray.wait(partial_tallies, num_returns=len(partial_tallies), timeout=None)
 
         iter_count += 1
-        ballots_iter = partial_tallies
+        initial_tallies = partial_tallies
 
 
 @ray.remote
@@ -337,6 +357,7 @@ def ray_tally_everything(
 
     inputs = list(zip(ballots, nonces))
     bps = ballots_per_shard(len(ballots))
+    assert bps > 1, f"bps = {bps}, should be greater than 1"
     log_and_print(
         f"Total available shards for parallelism: {int(floor(len(inputs) / bps))}",
         verbose,

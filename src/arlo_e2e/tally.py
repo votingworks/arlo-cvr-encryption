@@ -144,25 +144,38 @@ TALLY_TYPE = Dict[str, ElGamalCiphertext]
 TALLY_INPUT_TYPE = Union[Dict[str, ElGamalCiphertext], CiphertextBallot]
 
 
-def sequential_tally(ptallies: Sequence[TALLY_INPUT_TYPE]) -> TALLY_TYPE:
+def sequential_tally(ptallies: Sequence[Optional[TALLY_INPUT_TYPE]]) -> TALLY_TYPE:
     """
     Internal function: sequentially tallies all of the ciphertext ballots, or other partial tallies,
-    and returns a partial tally. If any input tally happens to be `None`, the result is `None`.
+    and returns a partial tally. If any input tally happens to be `None` or an empty dict,
+    the result is an empty dict.
     """
+    # log_and_print(f"Sequential, local tally with {len(ptallies)} inputs")
+
+    num_nones = sum([1 for p in ptallies if p is None or p == {}])
+    if num_nones > 0 in ptallies:
+        log_and_print(
+            f"Found {num_nones} failed partial tallies, returning an empty tally"
+        )
+        return {}
+
     result: TALLY_TYPE = {}
     for ptally in ptallies:
         # we want do our computation purely in terms of TALLY_TYPE, so we'll convert CiphertextBallots
         if isinstance(ptally, CiphertextBallot):
             ptally = ciphertext_ballot_to_dict(ptally)
 
-        for k in ptally.keys():
-            if k not in result:
-                result[k] = ptally[k]
-            else:
-                counter_sum = result[k]
-                counter_partial = ptally[k]
-                counter_sum = elgamal_add(counter_sum, counter_partial)
-                result[k] = counter_sum
+        if (
+            ptally is not None
+        ):  # should always be true, but paranoia to keep the type system happy
+            for k in ptally.keys():
+                if k not in result:
+                    result[k] = ptally[k]
+                else:
+                    counter_sum = result[k]
+                    counter_partial = ptally[k]
+                    counter_sum = elgamal_add(counter_sum, counter_partial)
+                    result[k] = counter_sum
     return result
 
 
@@ -186,19 +199,25 @@ def fast_tally_ballots(
     """
 
     iter_count = 1
-    ballots_iter: Sequence[TALLY_INPUT_TYPE] = ballots
+    initial_tallies: Sequence[TALLY_INPUT_TYPE] = ballots
 
     while True:
-        if pool is None or len(ballots_iter) <= BALLOTS_PER_SHARD:
-            return sequential_tally(ballots_iter)
+        if pool is None or len(initial_tallies) <= BALLOTS_PER_SHARD:
+            log_and_print(
+                f"tally iteration {iter_count} (FINAL): {len(initial_tallies)} partial tallies"
+            )
+            return sequential_tally(initial_tallies)
 
-        shards = shard_list(ballots_iter, BALLOTS_PER_SHARD)
+        shards = shard_list(initial_tallies, BALLOTS_PER_SHARD)
+        log_and_print(
+            f"tally iteration {iter_count}: {len(initial_tallies)} partial tallies --> {len(shards)} shards"
+        )
         partial_tallies: Sequence[TALLY_TYPE] = pool.map(
             func=sequential_tally, iterable=shards
         )
 
         iter_count += 1
-        ballots_iter = partial_tallies
+        initial_tallies = partial_tallies
 
 
 # object_id, seed, ciphertext
