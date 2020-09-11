@@ -29,11 +29,13 @@ from electionguard.group import ElementModQ, rand_q, ElementModP
 from electionguard.nonces import Nonces
 from electionguard.utils import get_optional, flatmap_optional
 from ray import ObjectRef
+from ray.actor import ActorHandle
 
 from arlo_e2e.dominion import DominionCSV
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.manifest import Manifest, make_fresh_manifest, manifest_name_to_filename
 from arlo_e2e.metadata import ElectionMetadata
+from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
     TALLY_TYPE,
@@ -48,22 +50,6 @@ from arlo_e2e.tally import (
     ballot_memos_from_metadata,
 )
 from arlo_e2e.utils import shard_list, mkdir_helper
-
-
-# High-level design: What Ray gives us is the ability to call a remote method -- decorated with
-# @ray.remote, called with methodname.remote(args), returning a ray.ObjectRef immediately. That
-# ObjectRef is a future or promise for a computation that hasn't (necessarily) happened yet.
-# We can then pass it as an argument to another remote method, all without worrying about
-# whether the computation has happened or where the ultimate value might be stored.
-# Ray tries to be clever enough to do a topological sort on the dependency graph, as it's
-# being constructed, and dispatch work to your cluster. It also claims to have some affinity
-# features, so it will try to dispatch work to the data, rather than forcing the data to
-# migrate to where the compute is.
-
-# One nice feature about Ray is that all the values contained inside a ray.ObjectRef are
-# immutable. That makes them easy to replicate, anybody who has the answer is as good
-# as anybody else, and if you need it recomputed, because a computer failed, then it shouldn't
-# be a problem. Functional programming for the win!
 
 # Our general plan is that we're going to "shard" up the plaintext ballots into lists of ballots,
 # and that's the unit of work that we'll dispatch out to remote workers. Those ciphertexts will
@@ -111,7 +97,8 @@ def r_encrypt_tally_and_write(
     cec: CiphertextElectionContext,
     seed_hash: ElementModQ,
     input_tuples: Sequence[Tuple[PlaintextBallot, ElementModQ]],
-    root_dir: Optional[str] = None,
+    root_dir: Optional[str],
+    progressbar_actor: Optional[ActorHandle],
 ) -> RemoteTallyResult:  # pragma: no cover
     """
     Remotely encrypts a list of ballots and their associated nonces. If a `root_dir`
@@ -150,7 +137,11 @@ def r_encrypt_tally_and_write(
 
         cballots.append(ciphertext_ballot_to_dict(cballot))
 
+        if progressbar_actor is not None:
+            progressbar_actor.update.remote(1)
+
     tally = sequential_tally(cballots)
+
     return RemoteTallyResult(manifest, ray.put(tally))
 
 
@@ -375,14 +366,23 @@ def ray_tally_everything(
     r_root_dir = ray.put(root_dir)
     start_time = timer()
 
-    results: List[RemoteTallyResult] = ray.get(
-        [
-            r_encrypt_tally_and_write.remote(
-                r_ied, r_cec, r_seed_hash, shard, r_root_dir
-            )
-            for shard in sharded_inputs
-        ]
-    )
+    pb = ProgressBar(num_ballots, "Ballots")
+    actor = pb.actor
+
+    result_tasks = [
+        r_encrypt_tally_and_write.remote(
+            r_ied,
+            r_cec,
+            r_seed_hash,
+            shard,
+            r_root_dir,
+            actor,
+        )
+        for shard in sharded_inputs
+    ]
+
+    pb.print_until_done()
+    results: List[RemoteTallyResult] = ray.get(result_tasks)
 
     manifests: List[Optional[Manifest]] = [r.partial_manifest for r in results]
     partial_tally_refs: List[ObjectRef] = [r.partial_tally for r in results]
