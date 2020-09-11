@@ -12,7 +12,7 @@ max_workers: 300
 # The initial number of worker nodes to launch in addition to the head
 # node. When the cluster is first brought up (or when it is refreshed with a
 # subsequent `ray up`) this number of nodes will be started.
-initial_workers: 2
+initial_workers: 200
 
 # Whether or not to autoscale aggressively. If this is enabled, if at any point
 #   we would start more workers, we start at least enough to bring us to
@@ -57,7 +57,7 @@ auth:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 head_node:
     ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-    InstanceType: m5.large
+    InstanceType: c5.large # two vCPUs, 4GB RAM
 
     # You can provision additional disk space with a conf as follows
     BlockDeviceMappings:
@@ -73,7 +73,7 @@ head_node:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 worker_nodes:
     ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-    InstanceType: c5.24xlarge
+    InstanceType: c5.xlarge # four slightly faster vCPUs, 8GB
 
     # You can provision additional disk space with a conf as follows
     BlockDeviceMappings:
@@ -128,8 +128,8 @@ setup_commands:
     - sudo -H pip install ray
     - sudo -H pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
     - sudo -H pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
-    # we need *lots* of open files to make this work, for some reason
-    - sudo sysctl -w fs.file-max=5000000
+    # we need *lots* of open files to make this work, for some reason (or, we need many more VMs with fewer cores)
+    #    - sudo sysctl -w fs.file-max=5000000
     # recommendations per http://www.brendangregg.com/blog/2017-12-31/reinvent-netflix-ec2-tuning.html
     - sudo sysctl -w net.core.somaxconn=1000
     - sudo sysctl -w net.core.netdev_max_backlog=5000
