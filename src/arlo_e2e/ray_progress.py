@@ -81,7 +81,8 @@ class ProgressBar:
     def print_until_done(self) -> None:
         """
         Blocking call. Do this after starting a series of remote Ray tasks, to which you've
-        passed the actor handle. Each of
+        passed the actor handle. Each of them calls `update` on the actor. When the progress
+        meter reaches 100%, this method returns.
         """
         pbar = tqdm(desc=self.description, total=self.total)
         while True:
