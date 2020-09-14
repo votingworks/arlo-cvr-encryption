@@ -11,8 +11,8 @@ from tqdm import tqdm
 class ProgressBarActor:
     """
     This is the Ray "actor" that can be called from anywhere to update our progress.
-    You'll be using the `update` method. Don't make this yourself. Instead, it's
-    something that you'll get from a `ProgressBar`.
+    You'll be using the `update` method. Don't instantiate this class yourself. Instead,
+    it's something that you'll get from a `ProgressBar`.
     """
 
     counter: int
@@ -30,17 +30,20 @@ class ProgressBarActor:
         were just completed.
         """
         self.counter += num_items_completed
-        self.delta = num_items_completed
+        self.delta += num_items_completed
         self.event.set()
 
     async def wait_for_update(self) -> Tuple[int, int]:
         """
         Blocking call: waits until somebody calls `update`, then returns a tuple of
-        the number of updates since last time, and the total number of completed items.
+        the number of updates since the last call to `wait_for_update`, and the total
+        number of completed items.
         """
         await self.event.wait()
         self.event.clear()
-        return self.delta, self.counter
+        saved_delta = self.delta
+        self.delta = 0
+        return saved_delta, self.counter
 
     def get_counter(self) -> int:
         """
@@ -66,8 +69,8 @@ class ProgressBar:
     pbar: tqdm
 
     def __init__(self, total: int, description: str = ""):
-        # Ray actors don't seem to play nice with mypy, generating a spurious warning for the following line,
-        # which we need to suppress. The code is fine.
+        # Ray actors don't seem to play nice with mypy, generating a spurious warning
+        # for the following line, which we need to suppress. The code is fine.
         self.progress_actor = ProgressBarActor.remote()  # type: ignore
         self.total = total
         self.description = description
