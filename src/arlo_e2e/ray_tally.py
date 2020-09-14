@@ -78,9 +78,9 @@ def ballots_per_shard(num_ballots: int) -> int:
     """
     Computes the number of ballots per shard that we'll use. Scales in proportion
     to the square root of the number of ballots. The result will never be less
-    than 4 or greater than 100.
+    than 2 or greater than 30.
     """
-    return min(100, max(4, int(ceil(sqrt(num_ballots) / 16))))
+    return min(30, max(2, int(ceil(sqrt(num_ballots) / 30))))
 
 
 class RemoteTallyResult(NamedTuple):
