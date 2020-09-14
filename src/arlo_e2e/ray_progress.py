@@ -66,7 +66,9 @@ class ProgressBar:
     pbar: tqdm
 
     def __init__(self, total: int, description: str = ""):
-        self.progress_actor = ProgressBarActor.remote()
+        # Ray actors don't seem to play nice with mypy, generating a spurious warning for the following line,
+        # which we need to suppress. The code is fine.
+        self.progress_actor = ProgressBarActor.remote()  # type: ignore
         self.total = total
         self.description = description
 

@@ -16,6 +16,7 @@ from typing import (
 )
 
 import pandas as pd
+import modin.pandas as mpd
 from electionguard.ballot import PlaintextBallot, PlaintextBallotContest
 from electionguard.election import (
     ElectionDescription,
@@ -422,7 +423,7 @@ class DominionCSV(NamedTuple):
         )
 
 
-def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
+def read_dominion_csv(file: Union[str, StringIO], use_modin: bool = False) -> Optional[DominionCSV]:
     """
     Given a filename of a Dominion CSV (or a StringIO buffer with the same data), tries
     to read it. If successful, you get back a named-tuple which describes the election.
@@ -431,9 +432,13 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     values are a second level of dictionary, mapping from the name of each choice to
     the ultimate string that's used as a column identifier in the Pandas dataframe.
 
+    The `use_modin` flag specifies that rather than regular Pandas, we'll use Modin,
+    which implements the Pandas APIs, but will use Ray under the hood to make things
+    faster.
     """
     try:
-        df = pd.read_csv(
+        read_csv_func = mpd.read_csv if use_modin else pd.read_csv
+        df = read_csv_func(
             file,
             header=[0, 1, 2, 3],
             quoting=csv.QUOTE_MINIMAL,

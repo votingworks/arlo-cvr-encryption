@@ -10,14 +10,14 @@ from electionguard.group import int_to_q_unchecked
 from electionguard.utils import get_optional
 
 from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.ray_helpers import ray_init_cluster
+from arlo_e2e.ray_helpers import ray_init_cluster, ray_init_localhost
 from arlo_e2e.ray_tally import ray_tally_everything
 
 
 def run_bench(filename: str, output_dir: Optional[str]) -> None:
     start_time = timer()
     print(f"Benchmarking: {filename}")
-    cvrs = read_dominion_csv(filename)
+    cvrs = read_dominion_csv(filename, use_modin=True)
     if cvrs is None:
         print(f"Failed to read {filename}, terminating.")
         exit(1)
@@ -27,6 +27,8 @@ def run_bench(filename: str, output_dir: Optional[str]) -> None:
     print(
         f"    Parse time: {parse_time - start_time: .3f} sec, {rows / (parse_time - start_time):.3f} ballots/sec"
     )
+
+    exit(0)
 
     assert rows > 0, "can't have zero ballots!"
 
@@ -55,11 +57,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Runs a tallying benchmark, using Ray (either locally or on a remote cluster)"
     )
-    # parser.add_argument(
-    #     "--cluster",
-    #     action="store_true",
-    #     help="uses a Ray cluster for distributed computation (local by default)",
-    # )
+    parser.add_argument(
+        "--cluster",
+        action="store_true",
+        help="uses a Ray cluster for distributed computation (local by default)",
+    )
     parser.add_argument(
         "--dir",
         type=str,
@@ -77,8 +79,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
     files = args.cvr_file
     file_dir = args.dir[0] if args.dir else None
+    use_cluster = args.cluster
 
-    ray_init_cluster()
+    if use_cluster:
+        ray_init_cluster()
+    else:
+        ray_init_localhost()
 
     for arg in files:
         run_bench(arg, file_dir)

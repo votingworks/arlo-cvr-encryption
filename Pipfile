@@ -15,13 +15,15 @@ pydocstyle = "*"
 [packages]
 gmpy2 = "==2.1.0b5"
 numpy = '==1.18.2'
-pandas = '==1.0.4'
 hypothesis = "==5.29.4"
 typish = '==1.7.0'
 jsons = '==1.1.2'
 tqdm = "==4.47.0"
 cryptography = "==2.9.2"
+#modin = {extras=["ray"], version="==0.8.0"}  # this version depends on Ray 0.8.6, but our code is using 0.8.7
+modin = {extras=["ray"], editable = true, git = "https://github.com/modin-project/modin.git", ref = "master"}
 ray = "==0.8.7"
+pandas = '==1.0.5'  # modin seems to want this specific version
 electionguard = {editable = true, git = "https://github.com/microsoft/electionguard-python.git", ref = "feature/generic_chaum_petersen"}
 
 [requires]
