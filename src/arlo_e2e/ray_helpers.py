@@ -35,6 +35,10 @@ def ray_init_serializers() -> None:
     this is completely unrelated to the JSON serialization features that ElectionGuard
     supports for writing its data structures to disk.
     """
+
+    # TODO: change these things to instruct pickle what to do.
+    #  - add new methods to ElementModP and ElementModQ: https://www.ianlewis.org/en/dynamically-adding-method-classes-or-class-instanc
+    #  - relevant pickle docs: https://docs.python.org/3/library/pickle.html#object.__getstate__
     ray.register_custom_serializer(
         ElementModP, lambda p: p.to_int(), lambda i: int_to_p_unchecked(i)
     )

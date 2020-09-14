@@ -21,7 +21,13 @@ typish = '==1.7.0'
 jsons = '==1.1.2'
 tqdm = "==4.47.0"
 cryptography = "==2.9.2"
-ray = "==0.8.7"
+
+# relevant description and useful links on how to do platform-specific includes for nightly builds:
+# https://dev.to/tomoyukiaota/creating-a-pipfile-which-has-different-installation-instructions-depending-on-operating-systems-pytorch-v041-as-an-example-56i8
+# https://github.com/python-poetry/poetry/issues/2138
+ray_mac = {file = "https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-macosx_10_13_x86_64.whl", markers = "sys_platform == 'darwin'"}
+ray_linux = {file = "https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-manylinux1_x86_64.whl", markers = "sys_platform == 'linux'"}
+
 electionguard = {editable = true, git = "https://github.com/microsoft/electionguard-python.git", ref = "feature/generic_chaum_petersen"}
 
 [requires]

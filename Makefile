@@ -14,7 +14,7 @@ requirements.txt: Pipfile
 environment:
 	@echo 🔧 PIPENV SETUP
 	pip install pipenv
-	python -m pipenv install --dev
+	python -m pipenv install --de
 
 install:
 	@echo 📦 Install Module
