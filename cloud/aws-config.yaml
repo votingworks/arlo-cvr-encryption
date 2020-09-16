@@ -129,7 +129,8 @@ setup_commands:
 #    - sudo -H python -m pip install --upgrade pip
 #    - sudo -H pip install virtualenv==20.0.23 pipenv
 #    - sudo -H pip install ray
-#    - sudo -H pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
+    - sudo -H pip uninstall electionguard-python
+    - sudo -H pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
     - sudo -H pip uninstall ray  # because we're installing a newer version as a dependency below
     - sudo -H pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
     # we need *lots* of open files to make this work, for some reason (or, we need many more VMs with fewer cores)
