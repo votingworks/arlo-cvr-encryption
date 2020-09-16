@@ -122,6 +122,7 @@ setup_commands:
     # while this command just updates arlo-e2e plus the nightly Ray wheel and leaves the rest alone
     - sudo -H pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
     - sudo -H pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-manylinux1_x86_64.whl
+    - sudo -H sysctl -w fs.file-max=5000000
 
 # Custom commands that will be run on the head node after common setup.
 head_setup_commands: []
