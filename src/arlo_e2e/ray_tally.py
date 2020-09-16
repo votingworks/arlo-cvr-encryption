@@ -61,13 +61,15 @@ from arlo_e2e.utils import shard_list, mkdir_helper
 # we're moving data around the network in a tree-like reduction.
 
 # The exact number of ballots per shard should vary with the number of ballots. With huge numbers
-# of ballots, tally affinity is going to be really important and the bandwidth savings will
-# be significant, whereas for small numbers of ballots we'd rather have smaller batches that
-# can run on many more nodes. Solution: we've got a dedicated function to compute the
-# ballots_per_shard. We want something roughly on the order of the square root of the number
-# of ballots (so, 10k ballots -> 200 shards of 50 ballots per shard). We'll cap the ballots per
-# shard at 100, so if we get millions of ballots, we can scale to mammoth clusters while still
-# getting most of the benefits of tally affinity.
+# of ballots, tally affinity is going to save us significant bandwidth on the first round of
+# the tallying, since it happens as part of r_encrypt_tally_and_write(). After that, we'll
+# have something of a reduction tree. Experimentally, this runs much faster than the encryption
+# phase.
+
+# Exactly how many ballots (or partial tallies) are computed in a given batch is controlled by
+# ballots_per_shard(), which is meant to be relatively small when we have a small number of
+# ballots -- giving us as much parallelism as possible -- and a bit larger when we have a huge
+# number of ballots -- giving us bigger shards and better locality.
 
 # Nomenclature in this file: methods starting with "ray_" are meant to be called from the
 # main node. Methods starting with "r_" are "Ray remote methods". Variables starting with
