@@ -145,41 +145,35 @@ def r_encrypt_tally_and_write(
     return RemoteTallyResult(manifest, ray.put(tally))
 
 
-def partial_tally(ptallies: Sequence[ObjectRef]) -> TALLY_TYPE:
+def partial_tally(*ptallies: TALLY_TYPE) -> TALLY_TYPE:
     """
     This is a front-end for `sequential_tally`, which can be called locally
     (for remote: see `r_partial_tally`).
 
-    The input is a sequence of tally references (i.e., if Ray supported
-    type parameters, this would be `Sequence[ObjectRef[Optional[TALLY_TYPE]]]`)
-    and the result is a tally reference (i.e., `ObjectRef[Optional[TALLY_TYPE]]`).
-    The idea is that we're asking the remote node to gather all these
-    tallies together, accumulate them, and return a result that we
-    can later pass to another node.
+    The input is a sequence of TALLY_TYPE and the result is also TALLY_TYPE.
 
     If any of the partial tallies is `None`, the result is an empty dict,
     but still `TALLY_TYPE`.
     """
-    local_ptallies: Sequence[TALLY_TYPE] = ray.get(ptallies)
     assert not isinstance(
-        local_ptallies, Dict
+        ptallies, Dict
     ), "type failure: got a dict when we should have gotten a sequence"
 
-    if len(local_ptallies) > 0:
+    if len(ptallies) > 0:
         assert isinstance(
-            local_ptallies[0], Dict
+            ptallies[0], Dict
         ), "type failure: we were expecting a dict (TALLY_TYPE), not an objectref"
 
-    result: TALLY_TYPE = sequential_tally(local_ptallies)
+    result: TALLY_TYPE = sequential_tally(ptallies)
     return result
 
 
 @ray.remote
-def r_partial_tally(ptallies: Sequence[ObjectRef]) -> TALLY_TYPE:  # pragma: no cover
+def r_partial_tally(*ptallies: TALLY_TYPE) -> TALLY_TYPE:  # pragma: no cover
     """
     This is a front-end for `partial_tally`, that can be called remotely via Ray.
     """
-    return partial_tally(ptallies)
+    return partial_tally(*ptallies)
 
 
 def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> TALLY_TYPE:
@@ -209,7 +203,7 @@ def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> TALLY_TYPE:
             log_and_print(
                 f"tally iteration {iter_count} (FINAL): {len(initial_tallies)} partial tallies"
             )
-            return partial_tally(initial_tallies)
+            return partial_tally(*(ray.get(initial_tallies)))
 
         shards: Sequence[Sequence[ObjectRef]] = shard_list(initial_tallies, bps)
 
@@ -217,7 +211,7 @@ def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> TALLY_TYPE:
             f"tally iteration {iter_count}: {len(initial_tallies)} partial tallies --> {len(shards)} shards (bps = {bps})"
         )
         partial_tallies: Sequence[ObjectRef] = [
-            r_partial_tally.remote(shard) for shard in shards
+            r_partial_tally.remote(*shard) for shard in shards
         ]
 
         # To avoid deeply nested tasks, we're going to wait for this to finish.
