@@ -189,7 +189,7 @@ def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> TALLY_TYPE:
     `ray.get()` to retrieve. The input is expected to be a sequence of references to ballots.
 
     If Ray supported type parameters, the actual type of the input would be
-    `Sequence[ObjectRef[CiphertextBallot]]]]`.
+    `Sequence[ObjectRef[TALLY_TYPE]]]]`.
     """
 
     iter_count = 1

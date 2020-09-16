@@ -57,7 +57,7 @@ auth:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 head_node:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-    ImageId: ami-019990a09b12eadcc # customized version of above, with pre-installed libraries
+    ImageId: ami-0bdeed082863e3eef  # customized version of above, with pre-installed libraries
 
     InstanceType: c5.large # two vCPUs, 4GB RAM
 
@@ -75,7 +75,7 @@ head_node:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 worker_nodes:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-    ImageId: ami-019990a09b12eadcc # customized version of above, with pre-installed libraries
+    ImageId: ami-0bdeed082863e3eef  # customized version of above, with pre-installed libraries
     InstanceType: c5.large # two vCPUs, 4GB RAM
 
     # You can provision additional disk space with a conf as follows
@@ -117,36 +117,11 @@ initialization_commands: []
 
 # List of shell commands to run to set up nodes.
 setup_commands:
-#    - echo 'export PATH="$HOME/anaconda3/envs/tensorflow_p36/bin:$PATH"' >> ~/.bashrc
-#    - sudo pkill -9 apt-get || true
-#    - sudo pkill -9 dpkg || true
-#    - sudo dpkg --configure -a
-#    - sudo add-apt-repository ppa:deadsnakes/ppa -y
-#    - sudo apt update
-#    - sudo apt install --assume-yes make python3-pip python3.8 libgmp-dev libmpfr-dev libmpc-dev python3.8-dev
-#    - sudo rm -f /bin/python
-#    - sudo ln -s /usr/bin/python3.8 /bin/python
-#    - sudo -H python -m pip install --upgrade pip
-#    - sudo -H pip install virtualenv==20.0.23 pipenv
-#    - sudo -H pip install ray
-    - sudo -H pip uninstall electionguard-python
-    - sudo -H pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
-    - sudo -H pip uninstall ray  # because we're installing a newer version as a dependency below
+    # this command does everything from scratch
+    # - sudo -H ubuntu-setup.sh
+    # while this command just updates arlo-e2e plus the nightly Ray wheel and leaves the rest alone
     - sudo -H pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
-    # we need *lots* of open files to make this work, for some reason (or, we need many more VMs with fewer cores)
-#    - sudo sysctl -w fs.file-max=5000000
-    # recommendations per http://www.brendangregg.com/blog/2017-12-31/reinvent-netflix-ec2-tuning.html
-#    - sudo sysctl -w net.core.somaxconn=1000
-#    - sudo sysctl -w net.core.netdev_max_backlog=5000
-#    - sudo sysctl -w net.core.rmem_max=16777216
-#    - sudo sysctl -w net.core.wmem_max=16777216
-#    - sudo sysctl -w 'net.ipv4.tcp_wmem=4096 12582912 16777216'
-#    - sudo sysctl -w 'net.ipv4.tcp_rmem=4096 12582912 16777216'
-#    - sudo sysctl -w net.ipv4.tcp_max_syn_backlog=8096
-#    - sudo sysctl -w net.ipv4.tcp_slow_start_after_idle=0
-#    - sudo sysctl -w net.ipv4.tcp_tw_reuse=1
-#    - sudo sysctl -w 'net.ipv4.ip_local_port_range=10240 65535'
-#    - sudo sysctl -w net.ipv4.tcp_abort_on_overflow=1
+    - sudo -H pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-manylinux1_x86_64.whl
 
 # Custom commands that will be run on the head node after common setup.
 head_setup_commands: []
