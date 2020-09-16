@@ -7,7 +7,6 @@ from timeit import default_timer as timer
 from typing import Optional, List, Tuple, Sequence, Dict, NamedTuple, cast
 
 import pandas as pd
-import ray
 from electionguard.ballot import PlaintextBallot, CiphertextAcceptedBallot
 from electionguard.decrypt_with_secrets import (
     decrypt_ciphertext_with_proof,
@@ -28,6 +27,8 @@ from electionguard.encrypt import encrypt_ballot
 from electionguard.group import ElementModQ, rand_q, ElementModP
 from electionguard.nonces import Nonces
 from electionguard.utils import get_optional, flatmap_optional
+
+import ray
 from ray import ObjectRef
 from ray.actor import ActorHandle
 
@@ -74,6 +75,14 @@ from arlo_e2e.utils import shard_list, mkdir_helper
 # Nomenclature in this file: methods starting with "ray_" are meant to be called from the
 # main node. Methods starting with "r_" are "Ray remote methods". Variables starting with
 # "r_" are ObjectRefs to remote values.
+
+# BTW: super-important engineering rule when working with Ray:
+#
+#     Thou shalt never call ray.get() or ray.put() when on a remote node!
+#
+# Even though these will work and do exactly what you want when the problem sizes are small, you
+# end up in a world of hurt once the problem size scales up. Dealing with these problems ultimately
+# shaped a lot of how the code here works.
 
 
 def ballots_per_shard(num_ballots: int) -> int:
@@ -241,11 +250,12 @@ def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> TALLY_TYPE:
         assert not isinstance(
             initial_tallies, Dict
         ), "type error: got a dict when we were expecting a sequence"
-        if len(initial_tallies) <= bps:
-            # run locally; no need for remote dispatch when we're this close to done
-            log_and_print(
-                f"tally iteration {iter_count} (FINAL): {len(initial_tallies)} partial tallies"
-            )
+        num_tallies = len(initial_tallies)
+        if num_tallies <= bps or num_tallies <= 20:
+            # Run locally; no need for remote dispatch when we're this close to done.
+            # Nothing magic about 20 here, except that there's no point in running the
+            # tree structure for small n, when we can just blast through on a single node.
+            log_and_print(f"Tally iteration (FINAL): {num_tallies} partial tallies")
             local_tally_copy: Sequence[TALLY_TYPE] = ray.get(initial_tallies)
             result = partial_tally(*local_tally_copy)
             assert result is not None, "unexpected failure in partial_tally"
@@ -254,7 +264,7 @@ def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> TALLY_TYPE:
         shards: Sequence[Sequence[ObjectRef]] = shard_list(initial_tallies, bps)
 
         log_and_print(
-            f"tally iteration {iter_count}: {len(initial_tallies)} partial tallies --> {len(shards)} shards (bps = {bps})"
+            f"Tally iteration {iter_count:2d}: {num_tallies:6d} partial tallies --> {len(shards)} shards (bps = {bps})"
         )
         partial_tallies: Sequence[ObjectRef] = [
             r_partial_tally.remote(*shard) for shard in shards
@@ -406,7 +416,7 @@ def ray_tally_everything(
         Sequence[Tuple[PlaintextBallot, ElementModQ]]
     ] = shard_list(inputs, bps)
 
-    log_and_print("Launching remote encryption.")
+    log_and_print("Launching Ray.io remote encryption!")
 
     start_time = timer()
 
