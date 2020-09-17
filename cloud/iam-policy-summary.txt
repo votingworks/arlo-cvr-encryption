@@ -11,6 +11,8 @@ Also, we have ray-autoscaler-v1
 
 Every EC2 instance is associated with the IAM role ray-head-arlo-v1 or ray-worker-arlo-v1
 
+Of note, see aws-config.yaml, which includes an IamInstanceProfile line that sets everything up.
+
 ray-ec2-launcher:
 {
     "Version": "2012-10-17",

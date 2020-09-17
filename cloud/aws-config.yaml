@@ -57,7 +57,7 @@ auth:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 head_node:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-    ImageId: ami-0bdeed082863e3eef  # customized version of above, with pre-installed libraries
+    ImageId: ami-048d11da5dca6e6f0  # customized version of above, with pre-installed libraries
 
     InstanceType: c5.large # two vCPUs, 4GB RAM
 
@@ -78,7 +78,7 @@ head_node:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 worker_nodes:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-    ImageId: ami-0bdeed082863e3eef  # customized version of above, with pre-installed libraries
+    ImageId: ami-048d11da5dca6e6f0  # customized version of above, with pre-installed libraries
     InstanceType: c5.large # two vCPUs, 4GB RAM
 
     IamInstanceProfile:
