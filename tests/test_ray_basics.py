@@ -34,9 +34,6 @@ class TestRayBasics(unittest.TestCase):
     def setUp(self) -> None:
         ray_init_localhost()
 
-    def tearDown(self) -> None:
-        ray.shutdown()
-
     def test_hello_world(self) -> None:
         inputs = range(0, 1000)
         serial_outputs = [i * i for i in inputs]

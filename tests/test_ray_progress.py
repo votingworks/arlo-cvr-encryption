@@ -1,10 +1,8 @@
 import unittest
-from asyncio import as_completed
 from time import sleep
 
 import ray
 from ray.actor import ActorHandle
-from tqdm import tqdm
 
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.ray_progress import ProgressBar
@@ -20,9 +18,6 @@ def sleep_then_increment(i: int, pba: ActorHandle) -> int:
 class TestRayProgressBar(unittest.TestCase):
     def setUp(self) -> None:
         ray_init_localhost(num_cpus=2)
-
-    def tearDown(self) -> None:
-        ray.shutdown()
 
     def test_ray_progressbar(self) -> None:
         num_ticks = 6

@@ -9,7 +9,6 @@ from sys import exit
 from timeit import default_timer as timer
 from typing import Optional
 
-import ray
 from electionguard.elgamal import elgamal_keypair_from_secret
 from electionguard.group import int_to_q_unchecked
 from electionguard.logs import log_info
@@ -117,12 +116,3 @@ if __name__ == "__main__":
         run_bench(arg, pool, file_dir)
 
     pool.close()
-    ray.shutdown()
-    exit(0)
-
-# Benchmarking results: On a 6-core MacPro desktop, Ray pays a non-trivial penalty (5-10%) versus
-# Multiprocessing. However, this is only with no IO. Once we have files being written to disk, Ray
-# catches up, since it's doing concurrent writes, whereas our Multiprocessing implementation does
-# the writes sequentially from a single process. On a big multicore server, Ray starts off slightly
-# ahead, which could be an artifact of better NUMA memory behavior. And, of course, Ray allows us
-# to run across big clusters, which we couldn't really do with Multiprocesing.

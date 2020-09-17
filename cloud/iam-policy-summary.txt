@@ -1,0 +1,88 @@
+Role: ray-head-arlo-v1 and ray-worker-arlo-v1
+- Three attached policies:
+  - AmazonEC2FullAccess (maybe we don't need this?)
+  - ray-ec2-launcher
+  - ray-s3-access
+
+Also, we have ray-autoscaler-v1
+- Two attached policies:
+  - AmazonEC2FullAccess
+  - AmazonS3FullAccess (maybe this is what we should put on the above?)
+
+Every EC2 instance is associated with the IAM role ray-head-arlo-v1 or ray-worker-arlo-v1
+
+ray-ec2-launcher:
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "VisualEditor0",
+            "Effect": "Allow",
+            "Action": [
+                "iam:PassRole",
+                "ec2:RunInstances"
+            ],
+            "Resource": [
+                "arn:aws:iam::39914263940:instance-profile/ray-head-v1",
+                "arn:aws:iam::39914263940:instance-profile/ray-worker-v1",
+                "arn:aws:iam::339914263940:role/*",
+                "arn:aws:ec2:*:339914263940:subnet/*",
+                "arn:aws:ec2:*:339914263940:volume/*",
+                "arn:aws:ec2:*:339914263940:instance/*",
+                "arn:aws:ec2:*:339914263940:network-interface/*",
+                "arn:aws:ec2:*::image/*",
+                "arn:aws:ec2:*:339914263940:security-group/*"
+            ]
+        },
+        {
+            "Sid": "VisualEditor1",
+            "Effect": "Allow",
+            "Action": "ec2:RunInstances",
+            "Resource": [
+                "arn:aws:ec2:us-east-2:39914263940:subnet/*",
+                "arn:aws:ec2:us-east-2:39914263940:key-pair/*",
+                "arn:aws:ec2:us-east-2:39914263940:instance/*",
+                "arn:aws:ec2:us-east-2:39914263940:volume/*",
+                "arn:aws:ec2:us-east-2:39914263940:security-group/*",
+                "arn:aws:ec2:*::image/*",
+                "arn:aws:ec2:us-east-2:39914263940:network-interface/*"
+            ]
+        },
+        {
+            "Sid": "VisualEditor2",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:TerminateInstances",
+                "ec2:DeleteTags",
+                "ec2:StartInstances",
+                "ec2:CreateTags",
+                "ec2:StopInstances"
+            ],
+            "Resource": "arn:aws:ec2:us-east-2:39914263940:instance/*"
+        },
+        {
+            "Sid": "VisualEditor3",
+            "Effect": "Allow",
+            "Action": "ec2:Describe*",
+            "Resource": "*"
+        }
+    ]
+}
+
+ray-s3-access:
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "VisualEditor0",
+            "Effect": "Allow",
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::arlo-e2e-denver-demo",
+                "arn:aws:s3:::arlo-e2e-denver-demo/*",
+                "arn:aws:s3:*:339914263940:accesspoint/*",
+                "arn:aws:s3:*:339914263940:job/*"
+            ]
+        }
+    ]
+}

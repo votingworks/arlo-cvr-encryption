@@ -90,6 +90,3 @@ if __name__ == "__main__":
     print("Writing Ray timelines to disk.")
     ray.timeline("ray-timeline.json")
     ray.object_transfer_timeline("ray-object-transfer-timeline.json")
-
-    ray.shutdown()
-    exit(0)

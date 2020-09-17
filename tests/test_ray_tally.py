@@ -6,7 +6,6 @@ from multiprocessing import Pool
 from os import cpu_count
 
 import coverage
-import ray
 from electionguard.elgamal import ElGamalKeyPair
 from electionguard.group import rand_q
 from electionguardtest.elgamal import elgamal_keypairs
@@ -38,7 +37,6 @@ class TestRayTallies(unittest.TestCase):
         coverage.process_startup()  # necessary for coverage testing to work in parallel
 
     def tearDown(self) -> None:
-        ray.shutdown()
         self.pool.close()
         self.removeTree()
 

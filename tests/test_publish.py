@@ -6,7 +6,6 @@ from multiprocessing import Pool, cpu_count
 from os import stat, path
 
 import coverage
-import ray
 from electionguard.ballot import _list_eq
 from electionguard.election import InternalElectionDescription
 from electionguard.elgamal import ElGamalKeyPair
@@ -56,7 +55,6 @@ class TestTallyPublishing(unittest.TestCase):
     def tearDown(self) -> None:
         self.removeTree()
         self.pool.close()
-        ray.shutdown()
 
     @given(dominion_cvrs(max_rows=50), booleans(), elgamal_keypairs())
     @settings(

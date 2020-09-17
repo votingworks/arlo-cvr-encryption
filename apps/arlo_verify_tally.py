@@ -4,7 +4,6 @@ from multiprocessing import Pool
 from sys import exit
 from typing import Optional, Set, Dict, Tuple, Union
 
-import ray
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.eg_helpers import log_nothing_to_stdout
@@ -57,7 +56,6 @@ if __name__ == "__main__":
             tallydir, check_proofs=True, recheck_ballots_and_tallies=True
         )
 
-        ray.shutdown()
         results = ray_results
 
     else:
@@ -79,52 +77,58 @@ if __name__ == "__main__":
     )
     print("Tally proofs valid, and consistent with the encrypted ballots.")
 
-    if not totals:
-        exit(0)
+    if totals:
+        print()
+        for contest_title in results.metadata.contest_name_order:
+            max_votes_per_contest = results.metadata.max_votes_for_map[contest_title]
+            explanation = (
+                ""
+                if max_votes_per_contest == 1
+                else f" (VOTE FOR={max_votes_per_contest})"
+            )
+            print(f"{contest_title}{explanation}")
 
-    print()
-    for contest_title in results.metadata.contest_name_order:
-        max_votes_per_contest = results.metadata.max_votes_for_map[contest_title]
-        explanation = (
-            "" if max_votes_per_contest == 1 else f" (VOTE FOR={max_votes_per_contest})"
-        )
-        print(f"{contest_title}{explanation}")
+            selections: Set[SelectionMetadata] = results.metadata.contest_map[
+                contest_title
+            ]
+            contest_result: Dict[str, Tuple[int, int]] = {}
 
-        selections: Set[SelectionMetadata] = results.metadata.contest_map[contest_title]
-        contest_result: Dict[str, Tuple[int, int]] = {}
+            for s in selections:
+                if s.object_id not in results.tally.map:
+                    print(
+                        f"Internal error: didn't find {s.object_id} for {s.to_string()} in the tally!"
+                    )
+                    exit(1)
 
-        for s in selections:
-            if s.object_id not in results.tally.map:
-                print(
-                    f"Internal error: didn't find {s.object_id} for {s.to_string()} in the tally!"
+                tally: SelectionInfo = results.tally.map[s.object_id]
+                contest_result[s.to_string_no_contest()] = (
+                    tally.decrypted_tally,
+                    s.sequence_number,
                 )
-                exit(1)
 
-            tally: SelectionInfo = results.tally.map[s.object_id]
-            contest_result[s.to_string_no_contest()] = (
-                tally.decrypted_tally,
-                s.sequence_number,
+            sorted_result = sorted(
+                [
+                    (name, contest_result[name][0], contest_result[name][1])
+                    for name in contest_result.keys()
+                ],
+                key=lambda t: t[1],
+                reverse=True,
             )
 
-        sorted_result = sorted(
-            [
-                (name, contest_result[name][0], contest_result[name][1])
-                for name in contest_result.keys()
-            ],
-            key=lambda t: t[1],
-            reverse=True,
-        )
+            winners = [
+                (name, result, sequence_number, " (*)")
+                for name, result, sequence_number in sorted_result[
+                    :max_votes_per_contest
+                ]
+            ]
+            losers = [
+                (name, result, sequence_number, "")
+                for name, result, sequence_number in sorted_result[
+                    max_votes_per_contest:
+                ]
+            ]
 
-        winners = [
-            (name, result, sequence_number, " (*)")
-            for name, result, sequence_number in sorted_result[:max_votes_per_contest]
-        ]
-        losers = [
-            (name, result, sequence_number, "")
-            for name, result, sequence_number in sorted_result[max_votes_per_contest:]
-        ]
-
-        for name, result, sequence_number, asterisk in sorted(
-            winners + losers, key=lambda ss: ss[2]
-        ):
-            print(f"    {name}: {result}{asterisk}")
+            for name, result, sequence_number, asterisk in sorted(
+                winners + losers, key=lambda ss: ss[2]
+            ):
+                print(f"    {name}: {result}{asterisk}")

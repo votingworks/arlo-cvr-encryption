@@ -5,7 +5,6 @@ from sys import exit
 from timeit import default_timer as timer
 from typing import Optional
 
-import ray
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.admin import ElectionAdmin
@@ -87,8 +86,6 @@ if __name__ == "__main__":
         write_ray_tally(rtally, tallydir)
         print(f"Tally written to {tallydir}")
 
-        ray.shutdown()
-
     else:
         pool = Pool(cpu_count())
 
@@ -102,5 +99,3 @@ if __name__ == "__main__":
         print(f"Tally written to {tallydir}")
 
         pool.close()
-
-    exit(0)

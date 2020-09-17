@@ -6,6 +6,8 @@ dpkg --configure -a
 add-apt-repository ppa:deadsnakes/ppa -y
 apt update
 apt install --assume-yes make python3-pip python3.8 libgmp-dev libmpfr-dev libmpc-dev python3.8-dev
+apt install s3fs
+apt update libcurl4
 rm -f /bin/python
 ln -s /usr/bin/python3.8 /bin/python
 python -m pip install --upgrade pip
@@ -29,3 +31,5 @@ sysctl -w net.ipv4.tcp_slow_start_after_idle=0
 sysctl -w net.ipv4.tcp_tw_reuse=1
 sysctl -w 'net.ipv4.ip_local_port_range=10240 65535'
 sysctl -w net.ipv4.tcp_abort_on_overflow=1
+
+mkdir /mnt/arlo-data
