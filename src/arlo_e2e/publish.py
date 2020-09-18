@@ -20,7 +20,7 @@ from arlo_e2e.manifest import (
     Manifest,
 )
 from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.ray_tally import RayTallyEverythingResults
+from arlo_e2e.ray_tally import RayTallyEverythingResults, NUM_WRITE_RETRIES
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
     SelectionTally,
@@ -48,34 +48,39 @@ def _write_tally_shared(
     tally: SelectionTally,
     metadata: ElectionMetadata,
     cvr_metadata: pd.DataFrame,
+    num_retries: int = 1,
 ) -> Manifest:
     set_serializers()
     set_deserializers()
 
     results_dir = results_dir
     log_info("_write_tally_shared: starting!")
-    mkdir_helper(results_dir)
+    mkdir_helper(results_dir, num_retries=num_retries)
 
     manifest = make_fresh_manifest(results_dir)
 
     log_info("_write_tally_shared: writing election_description")
-    manifest.write_json_file(ELECTION_DESCRIPTION, election_description)
+    manifest.write_json_file(
+        ELECTION_DESCRIPTION, election_description, num_retries=num_retries
+    )
 
     log_info("_write_tally_shared: writing crypto context")
-    manifest.write_json_file(CRYPTO_CONTEXT, context)
+    manifest.write_json_file(CRYPTO_CONTEXT, context, num_retries=num_retries)
 
     log_info("_write_tally_shared: writing crypto constants")
-    manifest.write_json_file(CRYPTO_CONSTANTS, constants)
+    manifest.write_json_file(CRYPTO_CONSTANTS, constants, num_retries=num_retries)
 
     log_info("_write_tally_shared: writing tally")
-    manifest.write_json_file(ENCRYPTED_TALLY, tally)
+    manifest.write_json_file(ENCRYPTED_TALLY, tally, num_retries=num_retries)
 
     log_info("_write_tally_shared: writing metadata")
-    manifest.write_json_file(ELECTION_METADATA, metadata)
+    manifest.write_json_file(ELECTION_METADATA, metadata, num_retries=num_retries)
 
     log_info("_write_tally_shared: writing cvr metadata")
     manifest.write_file(
-        CVR_METADATA, cvr_metadata.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC)
+        CVR_METADATA,
+        cvr_metadata.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC),
+        num_retries=num_retries,
     )
 
     return manifest
@@ -129,6 +134,7 @@ def write_ray_tally(
         results.tally,
         results.metadata,
         results.cvr_metadata,
+        num_retries=NUM_WRITE_RETRIES,
     )
 
     prior_manifest = results.manifest
@@ -141,8 +147,10 @@ def write_ray_tally(
     # ballots were written during the encryption process, so we don't write them here
 
     log_info("write_ray_tally: writing MANIFEST.json")
-    manifest.write_manifest()
-    generate_index_html_files(results.metadata.election_name, results_dir)
+    manifest.write_manifest(num_retries=NUM_WRITE_RETRIES)
+    generate_index_html_files(
+        results.metadata.election_name, results_dir, num_retries=NUM_WRITE_RETRIES
+    )
 
     return manifest
 

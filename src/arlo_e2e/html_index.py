@@ -1,8 +1,10 @@
 # inspiration: https://github.com/byjokese/Generate-Index-Files/blob/master/generate-index.py
 
-from os import path, stat
 from os import listdir
+from os import path, stat
 from stat import S_ISDIR
+
+from arlo_e2e.utils import write_file_with_retries
 
 index_start_text = """<!DOCTYPE html>
 <html>
@@ -25,7 +27,9 @@ index_end_text = """
 """
 
 
-def generate_index_html_files(title_text: str, directory_name: str) -> None:
+def generate_index_html_files(
+    title_text: str, directory_name: str, num_retries: int = 1
+) -> None:
     """
     Creates index.html files at every level of the directory. Note that this doesn't cause
     anything to be added to the manifest. That's not necessary, and could be messy.
@@ -50,9 +54,9 @@ def generate_index_html_files(title_text: str, directory_name: str) -> None:
             )
 
         if is_dir:
-            generate_index_html_files(title_text, full_path)
+            generate_index_html_files(title_text, full_path, num_retries=num_retries)
 
     index_text += index_end_text
 
-    with open(path.join(directory_name, "index.html"), "w") as index:
-        index.write(index_text)
+    file_path = path.join(directory_name, "index.html")
+    write_file_with_retries(file_path, index_text, num_retries)

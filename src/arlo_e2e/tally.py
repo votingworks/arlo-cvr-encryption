@@ -650,6 +650,9 @@ class FastTallyEverythingResults(NamedTuple):
 
         my_ied = InternalElectionDescription(self.election_description)
         other_ied = InternalElectionDescription(other.election_description)
+
+        same_ied = my_ied == other_ied
+
         my_cballots = self.encrypted_ballots
         other_cballots = other.encrypted_ballots
 
@@ -688,7 +691,13 @@ class FastTallyEverythingResults(NamedTuple):
 
         same_cvr_metadata = self.cvr_metadata.equals(other.cvr_metadata)
 
-        success = same_metadata and same_ballots and same_tallies and same_cvr_metadata
+        success = (
+            same_metadata
+            and same_ballots
+            and same_tallies
+            and same_cvr_metadata
+            and same_ied
+        )
         return success
 
 

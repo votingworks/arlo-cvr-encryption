@@ -1,4 +1,3 @@
-import sys
 from os import path, stat, walk
 from pathlib import PurePath, Path
 from stat import S_ISREG
@@ -11,12 +10,15 @@ from typing import (
     Optional,
     Type,
     Union,
+    AnyStr,
 )
 
 from electionguard.logs import log_error
-from electionguard.serializable import Serializable, WRITE
+from electionguard.serializable import Serializable
 from electionguard.utils import flatmap_optional
 from jsons import DecodeError, UnfulfilledArgumentError
+
+from arlo_e2e.eg_helpers import log_and_print
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -53,19 +55,36 @@ def shard_list(input: Iterable[T], num_per_group: int) -> Sequence[Sequence[T]]:
     return [input_list[i : i + num_per_group] for i in range(0, length, num_per_group)]
 
 
-def mkdir_helper(p: Union[str, Path]) -> None:
+def mkdir_helper(p: Union[str, Path], num_retries: int = 1) -> None:
     """
     Wrapper around `os.mkdir` that will work correctly even if the directory already exists.
     """
+    prev_exception = None
     if isinstance(p, str):
         path = Path(p)
     else:
         path = p
 
-    path.mkdir(parents=True, exist_ok=True)
+    for attempt in range(0, num_retries):
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            return
+        except Exception as e:
+            prev_exception = e
+            log_and_print(f"failed to make directory {p} (attempt {attempt}): {str(e)}")
+
+    if num_retries > 1:
+        log_and_print(
+            f"failed to make directory {p} after {num_retries} attempts, failing"
+        )
+
+    if prev_exception:
+        raise prev_exception
 
 
-def mkdir_list_helper(root_dir: str, paths: List[str] = None) -> None:
+def mkdir_list_helper(
+    root_dir: str, paths: List[str] = None, num_retries: int = 1
+) -> None:
     """
     Like mkdir_helper, but takes a list of strings, each of which corresponds to a directory
     to make if it doesn't exist, each within the previous. So, `mkdir_list_helper('foo', ['a', 'b', 'c'])`
@@ -73,9 +92,9 @@ def mkdir_list_helper(root_dir: str, paths: List[str] = None) -> None:
     """
 
     if paths is not None:
-        mkdir_helper(Path(root_dir, *paths))
+        mkdir_helper(Path(root_dir, *paths), num_retries=num_retries)
     else:
-        mkdir_helper(Path(root_dir))
+        mkdir_helper(Path(root_dir), num_retries=num_retries)
 
 
 def compose_filename(
@@ -196,6 +215,7 @@ def write_json_helper(
     file_name: Union[str, PurePath],
     json_obj: Serializable,
     subdirectories: List[str] = None,
+    num_retries: int = 1,
 ) -> int:
     """
     Wrapper around JSON serialization that, given a directory name and file name (including
@@ -209,6 +229,7 @@ def write_json_helper(
     :param file_name: name of the file, including the suffix, excluding any directories leading up to the file
     :param json_obj: any ElectionGuard serializable object
     :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
+    :param num_retries: how many attempts to make writing the file; works around occasional network filesystem glitches
     :returns: the number of bytes written
     """
 
@@ -216,13 +237,13 @@ def write_json_helper(
         full_name = file_name
     else:
         full_name = compose_filename(root_dir, file_name, subdirectories)
-        mkdir_list_helper(root_dir, subdirectories)
+        mkdir_list_helper(root_dir, subdirectories, num_retries=num_retries)
 
     json_txt = json_obj.to_json(strip_privates=True)
-    num_bytes = len(json_txt.encode("utf-8"))
+    json_bytes = json_txt.encode("utf-8")
+    num_bytes = len(json_bytes)
 
-    with open(full_name, WRITE) as f:
-        f.write(json_txt)
+    write_file_with_retries(full_name, json_bytes, num_retries)
 
     return num_bytes
 
@@ -265,3 +286,35 @@ def all_files_in_directory(root_dir: str) -> List[PurePath]:
         for file in files:
             results.append(path.join(root, file))
     return [PurePath(x) for x in results]
+
+
+def write_file_with_retries(
+    full_file_name: Union[str, PurePath],
+    contents: AnyStr,  # bytes or str
+    num_retries: int = 1,
+) -> None:
+    """
+    Helper function: given a fully resolved file path, or a path-like object describing
+    a file location, writes the given contents to the a file of that name, and if it
+    fails, tries it again and again (based on the `num_retries` parameter). This works
+    around occasional failures that happen, for no good reason, with s3fs-fuse in big
+    clouds.
+    """
+    prev_exception = None
+    write_mode = "w" if isinstance(contents, str) else "wb"
+
+    for retry_number in range(0, num_retries):
+        try:
+            with open(full_file_name, write_mode) as f:
+                f.write(contents)
+            return
+        except Exception as e:
+            prev_exception = e
+            log_and_print(
+                f"failed to write {full_file_name} (attempt #{retry_number}): {str(e)}"
+            )
+
+    if num_retries > 1:
+        log_and_print(f"giving up writing {full_file_name}: failed {num_retries} times")
+    if prev_exception:
+        raise prev_exception

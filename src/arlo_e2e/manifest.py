@@ -3,11 +3,11 @@ from base64 import b64encode
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import PurePath
-from typing import Dict, Optional, Type, List, Union
+from typing import Dict, Optional, Type, List, Union, AnyStr
 
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.logs import log_error, log_warning
-from electionguard.serializable import WRITE, Serializable
+from electionguard.serializable import Serializable
 from electionguard.utils import flatmap_optional
 
 from arlo_e2e.eg_helpers import log_and_print
@@ -18,6 +18,7 @@ from arlo_e2e.utils import (
     T,
     mkdir_list_helper,
     decode_json_file_contents,
+    write_file_with_retries,
 )
 
 
@@ -122,6 +123,7 @@ class Manifest:
         content_obj: Serializable,
         subdirectories: List[str] = None,
         skip_manifest: bool = False,
+        num_retries: int = 1,
     ) -> str:
         """
         Given a filename, subdirectory, and contents of the file, writes the contents out to the file. As a
@@ -132,18 +134,22 @@ class Manifest:
         :param file_name: name of the file, including any suffix
         :param content_obj: any ElectionGuard "Serializable" object
         :param skip_manifest: if true, the manifest is not updated for this particular file being written
+        :param num_retries: how many attempts to make writing the file; works around occasional network filesystem glitches
         :returns: the SHA256 hash of `file_contents`
         """
 
         json_txt = content_obj.to_json(strip_privates=True)
-        return self.write_file(file_name, json_txt, subdirectories, skip_manifest)
+        return self.write_file(
+            file_name, json_txt, subdirectories, skip_manifest, num_retries=num_retries
+        )
 
     def write_file(
         self,
         file_name: str,
-        file_contents: str,
+        file_contents: AnyStr,
         subdirectories: List[str] = None,
         skip_manifest: bool = False,
+        num_retries: int = 1,
     ) -> str:
         """
         Given a filename, subdirectory, and contents of the file, writes the contents out to the file. As a
@@ -154,6 +160,7 @@ class Manifest:
         :param file_name: name of the file, including any suffix
         :param file_contents: string to be written to the file
         :param skip_manifest: if true, the manifest is not updated for this particular file being written
+        :param num_retries: how many attempts to make writing the file; works around occasional network filesystem glitches
         :returns: the SHA256 hash of `file_contents`
         """
 
@@ -162,12 +169,17 @@ class Manifest:
 
         manifest_name = compose_manifest_name(file_name, subdirectories)
 
-        mkdir_list_helper(self.root_dir, subdirectories)
+        mkdir_list_helper(self.root_dir, subdirectories, num_retries=num_retries)
         h = sha256_hash(file_contents)
-        file_content_bytes = len(file_contents.encode("utf-8"))
+
+        if isinstance(file_contents, bytes):
+            file_utf8_bytes = file_contents
+        else:
+            file_utf8_bytes = file_contents.encode("utf-8")
+
+        file_content_bytes = len(file_utf8_bytes)
         full_name = compose_filename(self.root_dir, file_name, subdirectories)
-        with open(full_name, WRITE) as f:
-            f.write(file_contents)
+        write_file_with_retries(full_name, file_utf8_bytes, num_retries=num_retries)
         file_info = FileInfo(h, file_content_bytes)
 
         if manifest_name in self.hashes:
@@ -180,10 +192,11 @@ class Manifest:
             self.hashes[manifest_name] = file_info
         return file_info.hash
 
-    def write_manifest(self) -> str:
+    def write_manifest(self, num_retries: int = 1) -> str:
         """
         Writes out `MANIFEST.json` into the existing `root_dir`, providing a mapping from filenames
         to their SHA256 hashes.
+        :param num_retries: how many attempts to make writing the file; works around occasional network filesystem glitches
         :returns: the SHA256 hash of `MANIFEST.json`, itself
         """
 
@@ -191,7 +204,11 @@ class Manifest:
         # we're going to use the skip_manifest flag.
 
         result = self.write_json_file(
-            "MANIFEST.json", self.to_manifest_external(), [], skip_manifest=True
+            "MANIFEST.json",
+            self.to_manifest_external(),
+            [],
+            skip_manifest=True,
+            num_retries=num_retries,
         )
         return result
 
@@ -288,15 +305,22 @@ class Manifest:
         else:
             return None
 
-    def write_ciphertext_ballot(self, ballot: CiphertextAcceptedBallot) -> None:
+    def write_ciphertext_ballot(
+        self, ballot: CiphertextAcceptedBallot, num_retries: int = 1
+    ) -> None:
         """
         Given a manifest and a ciphertext ballot, writes the ballot to disk and updates
         the manifest.
+        :param ballot: any "accepted" ballot, ready to be written out
+        :param num_retries: how many attempts to make writing the file; works around occasional network filesystem glitches
         """
         ballot_name = ballot.object_id
         ballot_name_prefix = ballot_name[0:4]
         self.write_json_file(
-            ballot_name + ".json", ballot, ["ballots", ballot_name_prefix]
+            ballot_name + ".json",
+            ballot,
+            ["ballots", ballot_name_prefix],
+            num_retries=num_retries,
         )
 
     def load_ciphertext_ballot(
@@ -357,13 +381,16 @@ def make_existing_manifest(root_dir: str) -> Optional[Manifest]:
     return flatmap_optional(manifest_ex, lambda m: m.to_manifest(root_dir))
 
 
-def sha256_hash(input: str) -> str:
+def sha256_hash(input: AnyStr) -> str:
     """
-    Given a string, returns an base64-encoded representation of the 256-bit SHA2-256
-    hash of that input string (in utf8).
+    Given a string or array of bytes, returns a base64-encoded representation of the
+    256-bit SHA2-256 hash of that input string (in utf8).
     """
     h = sha256()
-    h.update(input.encode("utf-8"))
+    if isinstance(input, str):
+        h.update(input.encode("utf-8"))
+    else:
+        h.update(input)
     return b64encode(h.digest()).decode("utf-8")
 
 

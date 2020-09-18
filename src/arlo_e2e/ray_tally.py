@@ -7,6 +7,7 @@ from timeit import default_timer as timer
 from typing import Optional, List, Tuple, Sequence, Dict, NamedTuple, cast
 
 import pandas as pd
+import ray
 from electionguard.ballot import PlaintextBallot, CiphertextAcceptedBallot
 from electionguard.decrypt_with_secrets import (
     decrypt_ciphertext_with_proof,
@@ -27,8 +28,6 @@ from electionguard.encrypt import encrypt_ballot
 from electionguard.group import ElementModQ, rand_q, ElementModP
 from electionguard.nonces import Nonces
 from electionguard.utils import get_optional, flatmap_optional
-
-import ray
 from ray import ObjectRef
 from ray.actor import ActorHandle
 
@@ -84,6 +83,12 @@ from arlo_e2e.utils import shard_list, mkdir_helper
 # end up in a world of hurt once the problem size scales up. Dealing with these problems ultimately
 # shaped a lot of how the code here works.
 
+NUM_WRITE_RETRIES = 10
+"""
+When we're writing files to s3fs, we'll rarely see failures, but with enough files, it's a certainty.
+This is how many times we'll retry each write until it works.
+"""
+
 
 def ballots_per_shard(num_ballots: int) -> int:
     """
@@ -126,9 +131,9 @@ def r_encrypt_tally_and_write(
     cec: CiphertextElectionContext,
     seed_hash: ElementModQ,
     input_tuples: Sequence[Tuple[PlaintextBallot, ElementModQ]],
-    root_dir: Optional[str] = None,
-    manifest_aggregator: Optional[ActorHandle] = None,
-    progressbar_actor: Optional[ActorHandle] = None,
+    root_dir: Optional[str],
+    manifest_aggregator: Optional[ActorHandle],
+    progressbar_actor: Optional[ActorHandle],
 ) -> TALLY_TYPE:  # pragma: no cover
     """
     Remotely encrypts a list of ballots and their associated nonces. If a `root_dir`
@@ -168,7 +173,7 @@ def r_encrypt_tally_and_write(
         )
 
         if manifest is not None:
-            manifest.write_ciphertext_ballot(cballot)
+            manifest.write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
 
         cballots.append(ciphertext_ballot_to_dict(cballot))
 
@@ -382,7 +387,7 @@ def ray_tally_everything(
     r_ied = ray.put(ied)
 
     if root_dir is not None:
-        mkdir_helper(root_dir)
+        mkdir_helper(root_dir, num_retries=NUM_WRITE_RETRIES)
         r_manifest_aggregator = ManifestAggregatorActor.remote(root_dir)  # type: ignore
     else:
         r_manifest_aggregator = None
