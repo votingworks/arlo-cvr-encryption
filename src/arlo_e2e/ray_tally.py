@@ -358,6 +358,14 @@ def ray_tally_everything(
     if date is None:
         date = datetime.now()
 
+    if root_dir is not None:
+        mkdir_helper(root_dir, num_retries=NUM_WRITE_RETRIES)
+        r_manifest_aggregator = ManifestAggregatorActor.remote(root_dir)  # type: ignore
+    else:
+        r_manifest_aggregator = None
+
+    r_root_dir = ray.put(root_dir)
+
     start_time = timer()
     ed, ballots, id_map = cvrs.to_election_description(date=date)
     setup_time = timer()
@@ -385,14 +393,6 @@ def ray_tally_everything(
 
     ied = InternalElectionDescription(ed)
     r_ied = ray.put(ied)
-
-    if root_dir is not None:
-        mkdir_helper(root_dir, num_retries=NUM_WRITE_RETRIES)
-        r_manifest_aggregator = ManifestAggregatorActor.remote(root_dir)  # type: ignore
-    else:
-        r_manifest_aggregator = None
-
-    r_root_dir = ray.put(root_dir)
 
     if seed_hash is None:
         seed_hash = rand_q()
