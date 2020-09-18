@@ -97,36 +97,27 @@ def ballots_per_shard(num_ballots: int) -> int:
 @ray.remote
 class ManifestAggregatorActor:
     """
-    This is a Ray "actor" to which we'll send all of the partial manifests, and which
-    will eventually accumulate them. This happens as a side-effect of
-    r_encrypt_tally_and_write.
+    This is a Ray "actor" to which we'll send all of the partial manifests from within
+    r_encrypt_tally_and_write. They're accumulated as they show up.
     """
 
-    manifests: List[Manifest]
+    aggregate: Manifest
 
     def __init__(self, root_dir: str) -> None:
-        self.manifests = []
-        self.manifests.append(make_fresh_manifest(root_dir))
+        self.aggregate = make_fresh_manifest(root_dir)
 
     def add(self, m: Manifest) -> None:
         """
-        Saves this manifest for future aggregation.
+        Aggregates this manifest.
         """
-        # Design decision: rather than doing the merger now, we're just going to save
-        # the manifest, and we'll do the aggregation all at once, which allows us to
-        # run faster now, and deal with errors later.
-        self.manifests.append(m)
+        self.aggregate.merge_from(m)
 
     def result(self) -> Manifest:
         """
-        Once all the partial manifests have been sent here, this merges them all
-        together and returns the result.
+        Gets the aggregate of all the partial manifests.
         """
 
-        result = self.manifests[0]
-        for m in self.manifests[1:]:
-            result.merge_from(m)
-        return result
+        return self.aggregate
 
 
 @ray.remote
@@ -135,9 +126,9 @@ def r_encrypt_tally_and_write(
     cec: CiphertextElectionContext,
     seed_hash: ElementModQ,
     input_tuples: Sequence[Tuple[PlaintextBallot, ElementModQ]],
-    root_dir: Optional[str],
-    manifest_aggregator: Optional[ActorHandle],
-    progressbar_actor: Optional[ActorHandle],
+    root_dir: Optional[str] = None,
+    manifest_aggregator: Optional[ActorHandle] = None,
+    progressbar_actor: Optional[ActorHandle] = None,
 ) -> TALLY_TYPE:  # pragma: no cover
     """
     Remotely encrypts a list of ballots and their associated nonces. If a `root_dir`
@@ -241,6 +232,11 @@ def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> TALLY_TYPE:
     iter_count = 1
     initial_tallies = ptallies
 
+    # The shards used for encryption can be pretty small, since there's so much work
+    # being done per shard. For tallying, it's a lot less work, so having a bigger
+    # number here speeds things up by having fewer rounds of tally reduction.
+    bps = max(10, bps)
+
     assert not isinstance(
         ptallies, Dict
     ), "type failure: got a dict when we should have gotten a sequence"
@@ -251,10 +247,8 @@ def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> TALLY_TYPE:
             initial_tallies, Dict
         ), "type error: got a dict when we were expecting a sequence"
         num_tallies = len(initial_tallies)
-        if num_tallies <= bps or num_tallies <= 20:
+        if num_tallies <= bps:
             # Run locally; no need for remote dispatch when we're this close to done.
-            # Nothing magic about 20 here, except that there's no point in running the
-            # tree structure for small n, when we can just blast through on a single node.
             log_and_print(f"Tally iteration (FINAL): {num_tallies} partial tallies")
             local_tally_copy: Sequence[TALLY_TYPE] = ray.get(initial_tallies)
             result = partial_tally(*local_tally_copy)
@@ -459,7 +453,6 @@ def ray_tally_everything(
     final_manifest: Optional[Manifest] = None
 
     if root_dir is not None:
-        log_and_print("Merging manifest data.")
         final_manifest = ray.get(r_manifest_aggregator.result.remote())
         assert isinstance(
             final_manifest, Manifest
