@@ -447,6 +447,7 @@ def ray_tally_everything(
     )
 
     log_and_print("Validating tally.")
+
     # Sanity-checking logic: make sure we don't have any unexpected keys, and that the decrypted totals
     # match up with the columns in the original plaintext data.
     for obj_id in decrypted_tally.keys():

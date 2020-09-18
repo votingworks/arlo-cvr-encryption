@@ -1,11 +1,12 @@
 # Hypothesis "strategies" to generate Dominion ballots
 from io import StringIO
-from typing import List, Union, Tuple, Dict, Sequence, NamedTuple, Optional
+from typing import List, Union, Tuple, Dict, Sequence, NamedTuple, Optional, Set
 
 from electionguard.ballot import PlaintextBallot
 from electionguard.election import ElectionDescription, CiphertextElectionContext
 from electionguard.group import ElementModQ
 from electionguardtest.election import human_names, _DrawType, ciphertext_elections
+from hypothesis import assume
 from hypothesis.strategies import (
     composite,
     booleans,
@@ -139,6 +140,12 @@ def dominion_cvrs(draw: _DrawType, max_rows: int = 300, max_votes_per_race: int 
         )
         for n in num_candidates_per_contest
     ]
+
+    # we need to make sure that each name/party tuple is unique within each contest
+    for contest in candidates_and_parties:
+        seen: Set[Tuple[str, str]] = {tuple for tuple in contest}
+        assume(len(contest) == len(seen))
+
     num_human_contests = len(candidates_and_parties)
 
     contest_names: List[str] = [
