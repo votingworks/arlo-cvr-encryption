@@ -65,12 +65,18 @@ if __name__ == "__main__":
         print(f"Election administration key material wasn't valid")
         exit(1)
 
+    print(f"Starting up, reading {cvrfile}")
+    start_time = timer()
     cvrs = read_dominion_csv(cvrfile)
     if cvrs is None:
         print(f"Failed to read {cvrfile}, terminating.")
         exit(1)
     rows, cols = cvrs.data.shape
-    print(f"Found {rows} CVRs in {cvrs.metadata.election_name}.")
+    parse_time = timer()
+    print(
+        f"    Parse time: {parse_time - start_time: .3f} sec, {rows / (parse_time - start_time):.3f} ballots/sec"
+    )
+    print(f"    Found {rows} CVRs in {cvrs.metadata.election_name}.")
 
     if use_cluster:
         ray_init_cluster()
