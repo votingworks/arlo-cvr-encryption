@@ -77,6 +77,8 @@ available_node_types:
         resources: {"CPU": 2}
         max_workers: 2
 
+# Eventually, we'll be able to specify multiple node types here. But not yet>
+# https://github.com/ray-project/ray/issues/10929
 head_node_type: amd_large
 worker_default_node_type: amd_large_spot
 #head_node_type: intel_large
