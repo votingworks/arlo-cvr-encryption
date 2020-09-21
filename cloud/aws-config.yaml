@@ -55,22 +55,26 @@ available_node_types:
     intel_large:
         node_config:
             InstanceType: c5.large # two vCPUs, 4GB RAM
+        resources: {"CPU": 2}
         max_workers: 2
     intel_large_spot:
         node_config:
             InstanceType: c5.large # two vCPUs, 4GB RAM
             InstanceMarketOptions:
                 MarketType: spot
+        resources: {"CPU": 2}
         max_workers: 2
     amd_large:
         node_config:
             InstanceType: c5a.large # two vCPUs, 4GB RAM
+        resources: {"CPU": 2}
         max_workers: 2
     amd_large_spot:
         node_config:
             InstanceType: c5a.large # two vCPUs, 4GB RAM
             InstanceMarketOptions:
                 MarketType: spot
+        resources: {"CPU": 2}
         max_workers: 2
 
 head_node_type: amd_large
