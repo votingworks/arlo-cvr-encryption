@@ -461,7 +461,7 @@ def ray_tally_everything(
         final_manifest = ray.get(r_manifest_aggregator.result.remote())
         assert isinstance(
             final_manifest, Manifest
-        ), "type error: bad result from manfiest aggregation"
+        ), "type error: bad result from manifest aggregation"
 
     # Assemble the data structure that we're returning. Having nonces in the ciphertext makes these
     # structures sensitive for writing out to disk, but otherwise they're ready to go.
