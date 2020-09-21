@@ -19,6 +19,7 @@ from arlo_e2e.utils import (
     mkdir_list_helper,
     decode_json_file_contents,
     write_file_with_retries,
+    BALLOT_FILENAME_PREFIX_DIGITS,
 )
 
 
@@ -315,7 +316,7 @@ class Manifest:
         :param num_retries: how many attempts to make writing the file; works around occasional network filesystem glitches
         """
         ballot_name = ballot.object_id
-        ballot_name_prefix = ballot_name[0:4]
+        ballot_name_prefix = ballot_name[0:BALLOT_FILENAME_PREFIX_DIGITS]
         self.write_json_file(
             ballot_name + ".json",
             ballot,
@@ -331,7 +332,7 @@ class Manifest:
         from disk. Returns `None` if the ballot doesn't exist or if the hashes fail
         to verify.
         """
-        ballot_name_prefix = ballot_id[0:4]
+        ballot_name_prefix = ballot_id[0:BALLOT_FILENAME_PREFIX_DIGITS]
         return self.read_json_file(
             ballot_id + ".json",
             CiphertextAcceptedBallot,

@@ -51,6 +51,33 @@ auth:
 # configurations below.
 #    ssh_private_key: /path/to/your/key.pem
 
+available_node_types:
+    intel_large:
+        node_config:
+            InstanceType: c5.large # two vCPUs, 4GB RAM
+        max_workers: 2
+    intel_large_spot:
+        node_config:
+            InstanceType: c5.large # two vCPUs, 4GB RAM
+            InstanceMarketOptions:
+                MarketType: spot
+        max_workers: 2
+    amd_large:
+        node_config:
+            InstanceType: c5a.large # two vCPUs, 4GB RAM
+        max_workers: 2
+    amd_large_spot:
+        node_config:
+            InstanceType: c5a.large # two vCPUs, 4GB RAM
+            InstanceMarketOptions:
+                MarketType: spot
+        max_workers: 2
+
+head_node_type: amd_large
+worker_default_node_type: amd_large_spot
+#head_node_type: intel_large
+#worker_default_node_type: intel_large_spot
+
 # Provider-specific config for the head node, e.g. instance type. By default
 # Ray will auto-configure unspecified fields such as SubnetId and KeyName.
 # For more documentation on available fields, see:
@@ -59,7 +86,7 @@ head_node:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
     ImageId: ami-048d11da5dca6e6f0  # customized version of above, with pre-installed libraries
 
-    InstanceType: c5.large # two vCPUs, 4GB RAM
+#    InstanceType: c5.large # two vCPUs, 4GB RAM
 
     IamInstanceProfile:
       Arn: arn:aws:iam::339914263940:instance-profile/ray-head-arlo-v1
@@ -79,7 +106,7 @@ head_node:
 worker_nodes:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
     ImageId: ami-048d11da5dca6e6f0  # customized version of above, with pre-installed libraries
-    InstanceType: c5.large # two vCPUs, 4GB RAM
+#    InstanceType: c5.large # two vCPUs, 4GB RAM
 
     IamInstanceProfile:
       Arn: arn:aws:iam::339914263940:instance-profile/ray-worker-arlo-v1
@@ -91,8 +118,8 @@ worker_nodes:
               VolumeSize: 100
 
     # Run workers on spot by default. Comment this out to use on-demand.
-    InstanceMarketOptions:
-        MarketType: spot
+#    InstanceMarketOptions:
+#        MarketType: spot
         # Additional options can be found in the boto docs, e.g.
         #   SpotOptions:
         #       MaxPrice: MAX_HOURLY_PRICE

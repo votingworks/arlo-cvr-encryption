@@ -16,7 +16,12 @@ from electionguard.group import ElementModQ, ElementModP
 from electionguard.logs import log_error
 from tqdm import tqdm
 
-from arlo_e2e.utils import load_json_helper, write_json_helper, file_exists_helper
+from arlo_e2e.utils import (
+    load_json_helper,
+    write_json_helper,
+    file_exists_helper,
+    BALLOT_FILENAME_PREFIX_DIGITS,
+)
 
 
 def verify_proven_ballot_proofs(
@@ -107,7 +112,9 @@ def write_proven_ballot(pballot: ProvenPlaintextBallot, decrypted_dir: str) -> N
     Writes out a `ProvenPlaintextBallot` in the desired directory.
     """
     ballot_object_id = pballot.ballot.object_id
-    ballot_name_prefix = ballot_object_id[0:4]  # letter b plus first three digits
+    ballot_name_prefix = ballot_object_id[
+        0:BALLOT_FILENAME_PREFIX_DIGITS
+    ]  # letter b plus first few digits
     write_json_helper(
         decrypted_dir, ballot_object_id + ".json", pballot, [ballot_name_prefix]
     )
@@ -125,7 +132,9 @@ def load_proven_ballot(
     if not exists_proven_ballot(ballot_object_id, decrypted_dir):
         return None
 
-    ballot_name_prefix = ballot_object_id[0:4]  # letter b plus first three digits
+    ballot_name_prefix = ballot_object_id[
+        0:BALLOT_FILENAME_PREFIX_DIGITS
+    ]  # letter b plus first few digits
     return load_json_helper(
         decrypted_dir,
         ballot_object_id + ".json",
@@ -138,7 +147,9 @@ def exists_proven_ballot(ballot_object_id: str, decrypted_dir: str) -> bool:
     """
     Checks if the desired `ballot_object_id` has been decrypted and written to `decrypted_dir`.
     """
-    ballot_name_prefix = ballot_object_id[0:4]  # letter b plus first three digits
+    ballot_name_prefix = ballot_object_id[
+        0:BALLOT_FILENAME_PREFIX_DIGITS
+    ]  # letter b plus first few digits
     return file_exists_helper(
         decrypted_dir,
         ballot_object_id + ".json",

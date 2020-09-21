@@ -24,6 +24,14 @@ T = TypeVar("T")
 U = TypeVar("U")
 
 
+BALLOT_FILENAME_PREFIX_DIGITS = 5
+"""
+When we're writing ballots out to disk, we'll carve out this many characters and 
+use that as a directory name. This avoids directories with insane numbers of files
+that take forever to list or interact with.
+"""
+
+
 def flatmap(f: Callable[[T], Iterable[U]], li: Iterable[T]) -> Sequence[U]:
     """
     General-purpose flatmapping on sequences/lists/iterables. The lambda is
