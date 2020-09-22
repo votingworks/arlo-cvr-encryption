@@ -147,6 +147,52 @@ def _str_to_internationalized_text_en(s: str) -> InternationalizedText:
     return InternationalizedText([Language(s, language="en")])
 
 
+def _get_plaintext_ballot_for_row(
+    row: Dict[str, Any],
+    style_map: STYLE_MAP,
+    contest_map: Dict[str, ContestDescription],
+    ballotstyle_map: Dict[str, BallotStyle],
+    all_candidate_ids_to_columns: Dict[str, str],
+) -> PlaintextBallot:
+    ballot_type = row["BallotType"]
+    ballot_id = row["BallotId"]
+    pbcontests: List[PlaintextBallotContest] = []
+
+    contest_titles: Set[str] = style_map[ballot_type]
+    for title in contest_titles:
+        # This is insanely complicated. The challenge is that we have the Dominion data structures,
+        # which has its own column names, but we have to connect that with all of the ElectionGuard
+        # structures, which don't just let you follow from one to the other. Instead, it's a twisty
+        # world of object_ids. Thus, we need mappings to go from one to the next, and have to do all
+        # this extra bookkeeping, in Python dictionaries, to make all the connections.
+
+        contest = contest_map[title]
+        candidate_ids = [s.candidate_id for s in contest.ballot_selections]
+        column_names = [all_candidate_ids_to_columns[c] for c in candidate_ids]
+        voter_intents = [row[x] > 0 for x in column_names]
+        selections: List[SelectionDescription] = contest.ballot_selections
+        plaintexts = [
+            selection_from(
+                description=selections[i],
+                is_placeholder=False,
+                is_affirmative=voter_intents[i],
+            )
+            for i in range(0, len(selections))
+        ]
+        pbcontests.append(
+            PlaintextBallotContest(
+                object_id=contest.object_id,
+                ballot_selections=plaintexts,
+            )
+        )
+
+    return PlaintextBallot(
+        object_id=ballot_id,
+        ballot_style=ballotstyle_map[ballot_type].object_id,
+        contests=pbcontests,
+    )
+
+
 class DominionCSV(NamedTuple):
     metadata: ElectionMetadata
     """
@@ -297,8 +343,27 @@ class DominionCSV(NamedTuple):
         """
         return self.data[self.metadata_columns]
 
+    def _get_plaintext_ballots(
+        self,
+        contest_map: Dict[str, ContestDescription],
+        ballotstyle_map: Dict[str, BallotStyle],
+        all_candidate_ids_to_columns: Dict[str, str],
+    ) -> List[PlaintextBallot]:
+
+        rows: List[Dict[str, Any]] = self.data.to_dict("records")
+        return [
+            _get_plaintext_ballot_for_row(
+                row,
+                self.metadata.style_map,
+                contest_map,
+                ballotstyle_map,
+                all_candidate_ids_to_columns,
+            )
+            for row in rows
+        ]
+
     def to_election_description(
-        self, date: Optional[datetime] = None
+        self, date: Optional[datetime] = None, use_ray: bool = False
     ) -> Tuple[ElectionDescription, List[PlaintextBallot], Dict[str, str]]:
         """
         Converts this data to a ElectionGuard `ElectionDescription` (having all of the metadata
@@ -359,51 +424,11 @@ class DominionCSV(NamedTuple):
             for bt in self.metadata.ballot_types.keys()
         }
 
+        ballots = self._get_plaintext_ballots(
+            contest_map, ballotstyle_map, all_candidate_ids_to_columns
+        )
+
         # And now, for the ballots
-        ballots: List[PlaintextBallot] = list()
-        # ballot_uids = UidMaker("b")
-
-        for index, row in self.data.iterrows():
-            ballot_type = row["BallotType"]
-            ballot_id = row["BallotId"]
-            pbcontests: List[PlaintextBallotContest] = []
-
-            contest_titles: Set[str] = self.metadata.style_map[ballot_type]
-            for title in contest_titles:
-                # This is insanely complicated. The challenge is that we have the Dominion data structures,
-                # which has its own column names, but we have to connect that with all of the ElectionGuard
-                # structures, which don't just let you follow from one to the other. Instead, it's a twisty
-                # world of object_ids. Thus, we need mappings to go from one to the next, and have to do all
-                # this extra bookkeeping, in Python dictionaries, to make all the connections.
-
-                contest = contest_map[title]
-                candidate_ids = [s.candidate_id for s in contest.ballot_selections]
-                column_names = [all_candidate_ids_to_columns[c] for c in candidate_ids]
-                voter_intents = [row[x] > 0 for x in column_names]
-                selections: List[SelectionDescription] = contest.ballot_selections
-                plaintexts = [
-                    selection_from(
-                        description=selections[i],
-                        is_placeholder=False,
-                        is_affirmative=voter_intents[i],
-                    )
-                    for i in range(0, len(selections))
-                ]
-                pbcontests.append(
-                    PlaintextBallotContest(
-                        object_id=contest.object_id,
-                        ballot_selections=plaintexts,
-                    )
-                )
-
-            ballots.append(
-                PlaintextBallot(
-                    object_id=ballot_id,
-                    ballot_style=ballotstyle_map[ballot_type].object_id,
-                    contests=pbcontests,
-                )
-            )
-
         return (
             ElectionDescription(
                 name=_str_to_internationalized_text_en(self.metadata.election_name),
@@ -436,6 +461,9 @@ def read_dominion_csv(
     """
     try:
         if use_modin:
+            import os
+
+            os.environ["MODIN_ENGINE"] = "ray"
             import modin.pandas as mpd
 
             df = mpd.read_csv(
@@ -592,11 +620,12 @@ def read_dominion_csv(
     # a part of each BallotType.
 
     # Potential degenerate result: in a race with very few ballots cast, it's conceivable that
-    # every single ballot will undervote in at least one contest. In this specific circumstance,
-    # the style map will be "wrong", which would mean that that specific candidate would be
+    # every single ballot will undervote an entire contest. In this specific circumstance,
+    # the style map will be "wrong", which would mean that that entire contest would be
     # completely missing from subsequent e2e crypto results. Hopefully, actual Dominion CVRs
     # will have zeros rather than blank cells to represent these undervotes, and then this case
-    # will never occur.
+    # will never occur. Otherwise, it's unclear how we'd ever be able to distinguish between
+    # a contest that's completely undervoted versus a contest that's not part of a ballot style.
 
     #  For each ballot style:
     #    - fetch all the rows of a given ballot type (e.g., b24 = df[df['BallotType'] == "Ballot 24 - Type 24"])
