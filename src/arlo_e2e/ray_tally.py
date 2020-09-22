@@ -2,9 +2,9 @@
 # code in tally.py, and should yield identical results, just much faster on big cluster computers.
 
 from datetime import datetime
-from math import sqrt, ceil, floor
+from math import sqrt, ceil
 from timeit import default_timer as timer
-from typing import Optional, List, Tuple, Sequence, Dict, NamedTuple, cast
+from typing import Optional, List, Sequence, Dict, NamedTuple, cast, Tuple
 
 import pandas as pd
 import ray
@@ -83,7 +83,7 @@ def ballots_per_shard(num_ballots: int) -> int:
 class ManifestAggregatorActor:
     """
     This is a Ray "actor" to which we'll send all of the partial manifests from within
-    r_encrypt_tally_and_write. They're accumulated as they show up.
+    r_encrypt_and_write. They're accumulated as they show up.
     """
 
     aggregate: Manifest
@@ -110,40 +110,52 @@ def r_encrypt_and_write(
     ied: InternalElectionDescription,
     cec: CiphertextElectionContext,
     seed_hash: ElementModQ,
-    plaintext_ballot: PlaintextBallot,
-    nonce: ElementModQ,
     root_dir: Optional[str],
     manifest_aggregator: Optional[ActorHandle],
     progressbar_actor: Optional[ActorHandle],
+    nonces: List[ElementModQ],
+    *plaintext_ballots: PlaintextBallot,
 ) -> TALLY_TYPE:  # pragma: no cover
     """
-    Remotely encrypts a ballot and its associated nonce. If a `root_dir`
-    is specified, the encrypted ballot is written to disk, otherwise no disk activity.
-    What's returned is a `RemoteTallyResult`. If the ballot was written, the
+    Remotely encrypts a list of ballots and their associated nonces. If a `root_dir`
+    is specified, the encrypted ballots are written to disk, otherwise no disk activity.
+    What's returned is a `RemoteTallyResult`. If the ballots were written, the
     `manifest_aggregator` actor will be notified. A "partial tally" of the
-    encrypted ballot is returned.
+    encrypted ballots is returned.
     """
 
     manifest = flatmap_optional(root_dir, lambda d: make_fresh_manifest(d))
 
-    cballot = ciphertext_ballot_to_accepted(
-        get_optional(
-            encrypt_ballot(
-                plaintext_ballot, ied, cec, seed_hash, nonce, should_verify_proofs=False
+    assert len(nonces) == len(
+        plaintext_ballots
+    ), "mismatching numbers of nonces and ballots!"
+
+    partial_tallies: List[TALLY_TYPE] = []
+    for i in range(0, len(nonces)):
+        cballot = ciphertext_ballot_to_accepted(
+            get_optional(
+                encrypt_ballot(
+                    plaintext_ballots[i],
+                    ied,
+                    cec,
+                    seed_hash,
+                    nonces[i],
+                    should_verify_proofs=False,
+                )
             )
         )
-    )
+        if manifest is not None:
+            manifest.write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
 
-    if manifest is not None:
-        manifest.write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
+        if progressbar_actor is not None:
+            progressbar_actor.update.remote(1)
 
-    partial_tally = ciphertext_ballot_to_dict(cballot)
-
-    if progressbar_actor is not None:
-        progressbar_actor.update.remote(1)
+        partial_tallies.append(ciphertext_ballot_to_dict(cballot))
 
     if manifest is not None and manifest_aggregator is not None:
         manifest_aggregator.add.remote(manifest)
+
+    partial_tally = sequential_tally(partial_tallies)
 
     return partial_tally
 
@@ -287,6 +299,18 @@ def ray_decrypt_tally(
     return {k: (p, proof) for k, p, proof in result}
 
 
+def _ballots_from_shard(
+    input: Sequence[Tuple[ObjectRef, ElementModQ]]
+) -> List[ObjectRef]:
+    return [b for b, n in input]
+
+
+def _nonces_from_shard(
+    input: Sequence[Tuple[ObjectRef, ElementModQ]]
+) -> List[ElementModQ]:
+    return [n for b, n in input]
+
+
 # TODO: add code here to deal with the manifest and writing files out; borrow from publish.py
 def ray_tally_everything(
     cvrs: DominionCSV,
@@ -371,6 +395,7 @@ def ray_tally_everything(
 
     inputs = list(zip(ballots, nonces))
     bps = ballots_per_shard(len(ballots))
+    sharded_inputs = shard_list(inputs, bps)
     assert bps > 1, f"bps = {bps}, should be greater than 1"
 
     log_and_print("Launching Ray.io remote encryption!")
@@ -384,13 +409,13 @@ def ray_tally_everything(
             r_ied,
             r_cec,
             r_seed_hash,
-            b,
-            n,
             r_root_dir,
             r_manifest_aggregator,
             pb.actor,
+            _nonces_from_shard(shard),
+            *(_ballots_from_shard(shard)),
         )
-        for b, n in inputs
+        for shard in sharded_inputs
     ]
 
     pb.print_until_done()
