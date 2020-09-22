@@ -422,7 +422,9 @@ class DominionCSV(NamedTuple):
         )
 
 
-def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
+def read_dominion_csv(
+    file: Union[str, StringIO], use_modin: bool = False
+) -> Optional[DominionCSV]:
     """
     Given a filename of a Dominion CSV (or a StringIO buffer with the same data), tries
     to read it. If successful, you get back a named-tuple which describes the election.
@@ -433,13 +435,24 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
 
     """
     try:
-        df = pd.read_csv(
-            file,
-            header=[0, 1, 2, 3],
-            quoting=csv.QUOTE_MINIMAL,
-            sep=",",
-            engine="python",
-        )
+        if use_modin:
+            import modin.pandas as mpd
+
+            df = mpd.read_csv(
+                file,
+                header=[0, 1, 2, 3],
+                quoting=csv.QUOTE_MINIMAL,
+                sep=",",
+                engine="python",
+            )
+        else:
+            df = pd.read_csv(
+                file,
+                header=[0, 1, 2, 3],
+                quoting=csv.QUOTE_MINIMAL,
+                sep=",",
+                engine="python",
+            )
     except FileNotFoundError:
         return None
     except pd.errors.ParserError:
@@ -556,15 +569,23 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
         return None
 
     ballotstyle_uids = UidMaker("ballotstyle")
-    all_types = sorted(set(df["BallotType"]))
-    ballot_type_to_bsid = {bt: ballotstyle_uids.next() for bt in all_types}
+    all_ballot_types = sorted(set(df["BallotType"]))
+    ballot_type_to_bsid = {bt: ballotstyle_uids.next() for bt in all_ballot_types}
 
     contest_map: CONTEST_MAP = {
         k: set(contest_map_builder[k]) for k in contest_map_builder.keys()
     }
     style_map: STYLE_MAP = {}
 
-    ballot_id_to_ballot_type: Dict[str, str] = {}
+    # extract a list of dictionaries that have two keys: BallotType and BallotId
+    ballot_id_and_types: List[Dict[str, str]] = df.filter(
+        items=["BallotType", "BallotId"]
+    ).to_dict(orient="records")
+
+    # boil this down to a dictionary from BallotId to BallotType
+    ballot_id_to_ballot_type: Dict[str, str] = {
+        elem["BallotId"]: elem["BallotType"] for elem in ballot_id_and_types
+    }
 
     # We're computing a set-union of all the non-empty contest fields we find, in any ballot
     # sharing a given BallotType setting, i.e., we're inferring which contests are actually
@@ -577,17 +598,39 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     # will have zeros rather than blank cells to represent these undervotes, and then this case
     # will never occur.
 
-    for index, row in df.iterrows():
-        ballot_type = row["BallotType"]
-        ballot_id_to_ballot_type[row["BallotId"]] = ballot_type
-        present_contests = {
-            contest_key_to_title[k] for k in contest_keys if _nonempty_elem(row, k)
+    #  For each ballot style:
+    #    - fetch all the rows of a given ballot type (e.g., b24 = df[df['BallotType'] == "Ballot 24 - Type 24"])
+    #    - convert to true/false based on whether we have "not a number" and "add" (e.g., totals = b24.notna().sum())
+    #    - add up the totals for each choice
+    #    - if that contest_total is non-zero, then it's a contest that's included in the race, otherwise not
+
+    # mapping from the name of a contest to a list of all the columns names that have selections for that contest
+    contest_choices: Dict[str, List[str]] = {
+        contest: [selection.to_string() for selection in contest_map[contest]]
+        for contest in contest_map.keys()
+    }
+
+    for bt in all_ballot_types:
+        # Expanded math, useful for debugging:
+
+        # ballots_of_bt = df[df["BallotType"] == bt]
+        # column_trues = ballots_of_bt.notna()
+        # column_true_sums = column_trues.sum()
+
+        # All in one line, might run faster with Modin's query optimizer?
+        column_true_sums = df[df["BallotType"] == bt].notna().sum()
+
+        sums_per_contest = {
+            contest: column_true_sums[contest_choices[contest]].sum()
+            for contest in contest_choices.keys()
+        }
+        non_zero_contests = {
+            contest
+            for contest in contest_choices.keys()
+            if sums_per_contest[contest] > 0
         }
 
-        if ballot_type not in style_map:
-            style_map[ballot_type] = present_contests
-        else:
-            style_map[ballot_type] = style_map[ballot_type].union(present_contests)
+        style_map[bt] = non_zero_contests
 
     return DominionCSV(
         ElectionMetadata(
