@@ -51,26 +51,6 @@ from arlo_e2e.tally import (
 )
 from arlo_e2e.utils import shard_list, mkdir_helper
 
-# Our general plan is that we're going to "shard" up the plaintext ballots into lists of ballots,
-# and that's the unit of work that we'll dispatch out to remote workers. Those ciphertexts will
-# be written to disk and then we're only working with the much smaller partial tallies, and even
-# then, only remote references to them.
-
-# So, round one of the tally just accumulates everything in each initial shard, which was all
-# computed on teh same node, which we've implemented as part of the encryption method. After that,
-# we're moving data around the network in a tree-like reduction.
-
-# The exact number of ballots per shard should vary with the number of ballots. With huge numbers
-# of ballots, tally affinity is going to save us significant bandwidth on the first round of
-# the tallying, since it happens as part of r_encrypt_tally_and_write(). After that, we'll
-# have something of a reduction tree. Experimentally, this runs much faster than the encryption
-# phase.
-
-# Exactly how many ballots (or partial tallies) are computed in a given batch is controlled by
-# ballots_per_shard(), which is meant to be relatively small when we have a small number of
-# ballots -- giving us as much parallelism as possible -- and a bit larger when we have a huge
-# number of ballots -- giving us bigger shards and better locality.
-
 # Nomenclature in this file: methods starting with "ray_" are meant to be called from the
 # main node. Methods starting with "r_" are "Ray remote methods". Variables starting with
 # "r_" are ObjectRefs to remote values.
@@ -96,7 +76,7 @@ def ballots_per_shard(num_ballots: int) -> int:
     to the square root of the number of ballots. The result will never be less
     than 2 or greater than 30.
     """
-    return min(30, max(2, int(ceil(sqrt(num_ballots) / 30))))
+    return min(30, max(10, int(ceil(sqrt(num_ballots) / 30))))
 
 
 @ray.remote
@@ -126,68 +106,46 @@ class ManifestAggregatorActor:
 
 
 @ray.remote
-def r_encrypt_tally_and_write(
+def r_encrypt_and_write(
     ied: InternalElectionDescription,
     cec: CiphertextElectionContext,
     seed_hash: ElementModQ,
-    input_tuples: Sequence[Tuple[ObjectRef, ElementModQ]],
+    plaintext_ballot: PlaintextBallot,
+    nonce: ElementModQ,
     root_dir: Optional[str],
     manifest_aggregator: Optional[ActorHandle],
     progressbar_actor: Optional[ActorHandle],
 ) -> TALLY_TYPE:  # pragma: no cover
     """
-    Remotely encrypts a list of ballots and their associated nonces. If a `root_dir`
-    is specified, the encrypted ballots are written to disk, otherwise no disk activity.
-    What's returned is a `RemoteTallyResult`. If the ballots were written, the
-    `partial_manifest` will be included here, otherwise `None`. The partial tally
-    is always included.
+    Remotely encrypts a ballot and its associated nonce. If a `root_dir`
+    is specified, the encrypted ballot is written to disk, otherwise no disk activity.
+    What's returned is a `RemoteTallyResult`. If the ballot was written, the
+    `manifest_aggregator` actor will be notified. A "partial tally" of the
+    encrypted ballot is returned.
     """
 
-    # While it seems like bad software engineering to smash together everything
-    # here in a single function, we're trying to minimize the amount of data
-    # we're keeping in memory and especially the amount of data that we're moving
-    # through Ray's remote object storage system. The CiphertextBallot objects
-    # can be a megabyte each, and subsequent computations don't need them
-    # directly. Instead, they can be written to disk and simplified to "partial
-    # tallies", which are an order of magnitude smaller. We can even do the
-    # first round of tallying here on the remote node, further shrinking the
-    # volume of data we need to move across the network.
-
-    # All said and done, assuming we're being passed 100 ballots, we're writing
-    # 100MB to disk, and extracting a single partial tally, which will be in
-    # the tens or hundreds of kbytes.
-
-    # Also, a reasonable question to ask is why we're dealing with the ManifestAggregatorActor
-    # rather than just returning a partial manifest as a result. Tried that first,
-    # but because we're handling TALLY_TYPE objects via object-refs, this approach
-    # avoids entangling the partial tallies with the partial manifests.
-
     manifest = flatmap_optional(root_dir, lambda d: make_fresh_manifest(d))
-    cballots: List[TALLY_TYPE] = []
 
-    for b, n in input_tuples:
-        cballot = ciphertext_ballot_to_accepted(
-            get_optional(
-                encrypt_ballot(
-                    ray.get(b), ied, cec, seed_hash, n, should_verify_proofs=False
-                )
+    cballot = ciphertext_ballot_to_accepted(
+        get_optional(
+            encrypt_ballot(
+                plaintext_ballot, ied, cec, seed_hash, nonce, should_verify_proofs=False
             )
         )
+    )
 
-        if manifest is not None:
-            manifest.write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
+    if manifest is not None:
+        manifest.write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
 
-        cballots.append(ciphertext_ballot_to_dict(cballot))
+    partial_tally = ciphertext_ballot_to_dict(cballot)
 
-        if progressbar_actor is not None:
-            progressbar_actor.update.remote(1)
-
-    tally = sequential_tally(cballots)
+    if progressbar_actor is not None:
+        progressbar_actor.update.remote(1)
 
     if manifest is not None and manifest_aggregator is not None:
         manifest_aggregator.add.remote(manifest)
 
-    return tally
+    return partial_tally
 
 
 def partial_tally(*ptallies: Optional[TALLY_TYPE]) -> Optional[TALLY_TYPE]:
@@ -371,10 +329,9 @@ def ray_tally_everything(
     start_time = timer()
 
     # Performance note: by using to_election_description_ray rather than to_election_description, we're
-    # launching the creation of the PlaintextBallot objects all over the Ray cluster. These will later
-    # be gathered by the sharding, encrypted, etc. That gathering seems like a potential slowdown which
-    # could be sped up by maintaining the same sharding strategy, although the cost of the extra network
-    # communication is probably lost in the noise.
+    # launching the creation of the PlaintextBallot objects all over the Ray cluster. The payoff is that
+    # we're not pushing all this data out of the head node when we start the encryption. It's already
+    # out there.
 
     ed, ballots, id_map = cvrs.to_election_description_ray(date=date)
     setup_time = timer()
@@ -415,14 +372,6 @@ def ray_tally_everything(
     inputs = list(zip(ballots, nonces))
     bps = ballots_per_shard(len(ballots))
     assert bps > 1, f"bps = {bps}, should be greater than 1"
-    log_and_print(
-        f"Total available shards for parallelism: {int(floor(len(inputs) / bps))}",
-        verbose,
-    )
-
-    sharded_inputs: Sequence[Sequence[Tuple[ObjectRef, ElementModQ]]] = shard_list(
-        inputs, bps
-    )
 
     log_and_print("Launching Ray.io remote encryption!")
 
@@ -431,16 +380,17 @@ def ray_tally_everything(
     pb = ProgressBar(num_ballots, "Ballots")
 
     partial_tally_refs = [
-        r_encrypt_tally_and_write.remote(
+        r_encrypt_and_write.remote(
             r_ied,
             r_cec,
             r_seed_hash,
-            shard,
+            b,
+            n,
             r_root_dir,
             r_manifest_aggregator,
             pb.actor,
         )
-        for shard in sharded_inputs
+        for b, n in inputs
     ]
 
     pb.print_until_done()
