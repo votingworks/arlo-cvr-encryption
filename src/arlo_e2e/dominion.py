@@ -511,10 +511,9 @@ class DominionCSV(NamedTuple):
         self, date: Optional[datetime] = None
     ) -> Tuple[ElectionDescription, List[ObjectRef], Dict[str, str]]:
         """
-        Converts this data to a ElectionGuard `ElectionDescription` (having all of the metadata
-        describing the election), a list of Ray objectrefs to `PlaintextBallot` (corresponding to
-        each of the rows in the Dominion CVR), and a dictionary from candidate object identifiers
-        to the the name of the candidate (as it appears in the Pandas column).
+        This is just like `to_election_description`, except that it computes the plaintext ballots
+        across a Ray cluster and returns immediately, before that computation is complete, instead
+        giving Ray ObjectRefs to the plaintext ballots.
         """
 
         (

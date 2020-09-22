@@ -130,7 +130,7 @@ def r_encrypt_tally_and_write(
     ied: InternalElectionDescription,
     cec: CiphertextElectionContext,
     seed_hash: ElementModQ,
-    input_tuples: Sequence[Tuple[PlaintextBallot, ElementModQ]],
+    input_tuples: Sequence[Tuple[ObjectRef, ElementModQ]],
     root_dir: Optional[str],
     manifest_aggregator: Optional[ActorHandle],
     progressbar_actor: Optional[ActorHandle],
@@ -168,7 +168,7 @@ def r_encrypt_tally_and_write(
     for b, n in input_tuples:
         cballot = ciphertext_ballot_to_accepted(
             get_optional(
-                encrypt_ballot(b, ied, cec, seed_hash, n, should_verify_proofs=False)
+                encrypt_ballot(ray.get(b), ied, cec, seed_hash, n, should_verify_proofs=False)
             )
         )
 
@@ -367,7 +367,14 @@ def ray_tally_everything(
     r_root_dir = ray.put(root_dir)
 
     start_time = timer()
-    ed, ballots, id_map = cvrs.to_election_description(date=date)
+
+    # Performance note: by using to_election_description_ray rather than to_election_description, we're
+    # launching the creation of the PlaintextBallot objects all over the Ray cluster. These will later
+    # be gathered by the sharding, encrypted, etc. That gathering seems like a potential slowdown which
+    # could be sped up by maintaining the same sharding strategy, although the cost of the extra network
+    # communication is probably lost in the noise.
+
+    ed, ballots, id_map = cvrs.to_election_description_ray(date=date)
     setup_time = timer()
     num_ballots = len(ballots)
     assert num_ballots > 0, "can't have zero ballots!"
@@ -412,7 +419,7 @@ def ray_tally_everything(
     )
 
     sharded_inputs: Sequence[
-        Sequence[Tuple[PlaintextBallot, ElementModQ]]
+        Sequence[Tuple[ObjectRef, ElementModQ]]
     ] = shard_list(inputs, bps)
 
     log_and_print("Launching Ray.io remote encryption!")
