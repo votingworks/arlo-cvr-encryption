@@ -168,7 +168,9 @@ def r_encrypt_tally_and_write(
     for b, n in input_tuples:
         cballot = ciphertext_ballot_to_accepted(
             get_optional(
-                encrypt_ballot(ray.get(b), ied, cec, seed_hash, n, should_verify_proofs=False)
+                encrypt_ballot(
+                    ray.get(b), ied, cec, seed_hash, n, should_verify_proofs=False
+                )
             )
         )
 
@@ -418,9 +420,9 @@ def ray_tally_everything(
         verbose,
     )
 
-    sharded_inputs: Sequence[
-        Sequence[Tuple[ObjectRef, ElementModQ]]
-    ] = shard_list(inputs, bps)
+    sharded_inputs: Sequence[Sequence[Tuple[ObjectRef, ElementModQ]]] = shard_list(
+        inputs, bps
+    )
 
     log_and_print("Launching Ray.io remote encryption!")
 

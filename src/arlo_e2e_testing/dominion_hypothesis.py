@@ -329,14 +329,8 @@ def ballots_and_context(draw: _DrawType):
     """
     max_votes_per_race = draw(integers(1, 3))
     raw_cvrs = draw(dominion_cvrs(max_votes_per_race=max_votes_per_race))
-    use_modin = draw(booleans())
 
-    if use_modin:
-        ray_init_localhost()
-
-    parsed: Optional[DominionCSV] = read_dominion_csv(
-        StringIO(raw_cvrs), use_modin=use_modin
-    )
+    parsed: Optional[DominionCSV] = read_dominion_csv(StringIO(raw_cvrs))
     assert parsed is not None, "CVR parser shouldn't fail!"
     ed, ballots, id_map = parsed.to_election_description()
     secret_key, cec = draw(ciphertext_elections(ed))
