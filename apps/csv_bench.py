@@ -4,15 +4,16 @@ import argparse
 from sys import exit
 from timeit import default_timer as timer
 
+import ray
+
 from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.modin_helpers import suppress_modin_ray_init
 from arlo_e2e.ray_helpers import ray_init_localhost
 
 
-def run_bench(filename: str, use_modin: bool) -> None:
+def run_bench(filename: str) -> None:
     start_time = timer()
-    print(f"Benchmarking: {filename}, use_modin={use_modin}")
-    cvrs = read_dominion_csv(filename, use_modin=use_modin)
+    print(f"Benchmarking: {filename}")
+    cvrs = read_dominion_csv(filename)
     if cvrs is None:
         print(f"Failed to read {filename}, terminating.")
         exit(1)
@@ -29,8 +30,18 @@ def run_bench(filename: str, use_modin: bool) -> None:
     assert len(pballots) == rows, "got wrong number of plaintext ballots!"
     eg_time = timer()
     print(
-        f"    EG setup time: {eg_time - parse_time: .3f} sec, {rows / (eg_time - parse_time): .3f} ballots/sec"
+        f"    EG setup time (scalar): {eg_time - parse_time: .3f} sec, {rows / (eg_time - parse_time): .3f} ballots/sec"
     )
+
+    edr, pballots_refs, infor = cvrs.to_election_description_ray()
+    pballotsr = ray.get(pballots_refs)
+    assert len(pballotsr) == rows, "got wrong number of plaintext ballots!"
+    egr_time = timer()
+    print(
+        f"    EG setup time (Ray): {egr_time - eg_time: .3f} sec, {rows / (egr_time - eg_time): .3f} ballots/sec"
+    )
+
+    assert pballots == pballots, "got mismatching ballots"
 
 
 if __name__ == "__main__":
@@ -47,11 +58,9 @@ if __name__ == "__main__":
 
     cvrfiles = args.cvr_file
 
-    # print("Launching Ray")
-    # ray_init_localhost()
-    # suppress_modin_ray_init()
+    print("Launching Ray")
+    ray_init_localhost()
 
     print("Starting benchmarks")
     for arg in cvrfiles:
-        run_bench(arg, use_modin=False)
-        # run_bench(arg, use_modin=True)
+        run_bench(arg)
