@@ -1,5 +1,6 @@
 import csv
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from io import StringIO
 from math import floor, isnan
@@ -149,63 +150,58 @@ def _str_to_internationalized_text_en(s: str) -> InternationalizedText:
     return InternationalizedText([Language(s, language="en")])
 
 
-def _get_plaintext_ballot_for_row(
-    row: Dict[str, Any],
-    style_map: STYLE_MAP,
-    contest_map: Dict[str, ContestDescription],
-    ballotstyle_map: Dict[str, BallotStyle],
-    all_candidate_ids_to_columns: Dict[str, str],
-) -> PlaintextBallot:
-    ballot_type = row["BallotType"]
-    ballot_id = row["BallotId"]
-    pbcontests: List[PlaintextBallotContest] = []
+@dataclass
+class BallotPlaintextFactory:
+    style_map: STYLE_MAP
+    contest_map: Dict[str, ContestDescription]
+    ballotstyle_map: Dict[str, BallotStyle]
+    all_candidate_ids_to_columns: Dict[str, str]
 
-    contest_titles: Set[str] = style_map[ballot_type]
-    for title in contest_titles:
-        # This is insanely complicated. The challenge is that we have the Dominion data structures,
-        # which has its own column names, but we have to connect that with all of the ElectionGuard
-        # structures, which don't just let you follow from one to the other. Instead, it's a twisty
-        # world of object_ids. Thus, we need mappings to go from one to the next, and have to do all
-        # this extra bookkeeping, in Python dictionaries, to make all the connections.
+    def row_to_plaintext_ballot(self, row: Dict[str, Any]) -> PlaintextBallot:
+        ballot_type = row["BallotType"]
+        ballot_id = row["BallotId"]
+        pbcontests: List[PlaintextBallotContest] = []
 
-        contest = contest_map[title]
-        candidate_ids = [s.candidate_id for s in contest.ballot_selections]
-        column_names = [all_candidate_ids_to_columns[c] for c in candidate_ids]
-        voter_intents = [row[x] > 0 for x in column_names]
-        selections: List[SelectionDescription] = contest.ballot_selections
-        plaintexts = [
-            selection_from(
-                description=selections[i],
-                is_placeholder=False,
-                is_affirmative=voter_intents[i],
+        contest_titles: Set[str] = self.style_map[ballot_type]
+        for title in contest_titles:
+            # This is insanely complicated. The challenge is that we have the Dominion data structures,
+            # which has its own column names, but we have to connect that with all of the ElectionGuard
+            # structures, which don't just let you follow from one to the other. Instead, it's a twisty
+            # world of object_ids. Thus, we need mappings to go from one to the next, and have to do all
+            # this extra bookkeeping, in Python dictionaries, to make all the connections.
+
+            contest = self.contest_map[title]
+            candidate_ids = [s.candidate_id for s in contest.ballot_selections]
+            column_names = [self.all_candidate_ids_to_columns[c] for c in candidate_ids]
+            voter_intents = [row[x] > 0 for x in column_names]
+            selections: List[SelectionDescription] = contest.ballot_selections
+            plaintexts = [
+                selection_from(
+                    description=selections[i],
+                    is_placeholder=False,
+                    is_affirmative=voter_intents[i],
+                )
+                for i in range(0, len(selections))
+            ]
+            pbcontests.append(
+                PlaintextBallotContest(
+                    object_id=contest.object_id,
+                    ballot_selections=plaintexts,
+                )
             )
-            for i in range(0, len(selections))
-        ]
-        pbcontests.append(
-            PlaintextBallotContest(
-                object_id=contest.object_id,
-                ballot_selections=plaintexts,
-            )
+
+        return PlaintextBallot(
+            object_id=ballot_id,
+            ballot_style=self.ballotstyle_map[ballot_type].object_id,
+            contests=pbcontests,
         )
-
-    return PlaintextBallot(
-        object_id=ballot_id,
-        ballot_style=ballotstyle_map[ballot_type].object_id,
-        contests=pbcontests,
-    )
 
 
 @ray.remote
 def r_get_plaintext_ballot_for_row(
-    row: Dict[str, Any],
-    style_map: STYLE_MAP,
-    contest_map: Dict[str, ContestDescription],
-    ballotstyle_map: Dict[str, BallotStyle],
-    all_candidate_ids_to_columns: Dict[str, str],
+    bpf: BallotPlaintextFactory, row: Dict[str, Any]
 ) -> PlaintextBallot:
-    return _get_plaintext_ballot_for_row(
-        row, style_map, contest_map, ballotstyle_map, all_candidate_ids_to_columns
-    )
+    return bpf.row_to_plaintext_ballot(row)
 
 
 class DominionCSV(NamedTuple):
@@ -358,48 +354,11 @@ class DominionCSV(NamedTuple):
         """
         return self.data[self.metadata_columns]
 
-    def _get_plaintext_ballots_ray(
-        self,
-        contest_map: Dict[str, ContestDescription],
-        ballotstyle_map: Dict[str, BallotStyle],
-        all_candidate_ids_to_columns: Dict[str, str],
-    ) -> List[ObjectRef]:
-        rows: List[Dict[str, Any]] = self.data.to_dict("records")
-
-        r_style_map = ray.put(self.metadata.style_map)
-        r_contest_map = ray.put(contest_map)
-        r_ballotstyle_map = ray.put(ballotstyle_map)
-        r_all_candidate_ids_to_columns = ray.put(all_candidate_ids_to_columns)
-        return [
-            r_get_plaintext_ballot_for_row.remote(
-                row,
-                r_style_map,
-                r_contest_map,
-                r_ballotstyle_map,
-                r_all_candidate_ids_to_columns,
-            )
-            for row in rows
-        ]
-
     def _get_plaintext_ballots(
-        self,
-        contest_map: Dict[str, ContestDescription],
-        ballotstyle_map: Dict[str, BallotStyle],
-        all_candidate_ids_to_columns: Dict[str, str],
+        self, bpf: BallotPlaintextFactory
     ) -> List[PlaintextBallot]:
-
         rows: List[Dict[str, Any]] = self.data.to_dict("records")
-
-        return [
-            _get_plaintext_ballot_for_row(
-                row,
-                self.metadata.style_map,
-                contest_map,
-                ballotstyle_map,
-                all_candidate_ids_to_columns,
-            )
-            for row in rows
-        ]
+        return [bpf.row_to_plaintext_ballot(row) for row in rows]
 
     def _to_election_description_common(
         self, date: Optional[datetime] = None
@@ -408,6 +367,7 @@ class DominionCSV(NamedTuple):
         Dict[str, str],
         Dict[str, ContestDescription],
         Dict[str, BallotStyle],
+        BallotPlaintextFactory,
     ]:
         # ballotstyle_map: Dict[str, BallotStyle],
         if date is None:
@@ -462,6 +422,13 @@ class DominionCSV(NamedTuple):
             for bt in self.metadata.ballot_types.keys()
         }
 
+        bpf = BallotPlaintextFactory(
+            self.metadata.style_map,
+            contest_map,
+            ballotstyle_map,
+            all_candidate_ids_to_columns,
+        )
+
         return (
             ElectionDescription(
                 name=_str_to_internationalized_text_en(self.metadata.election_name),
@@ -478,6 +445,7 @@ class DominionCSV(NamedTuple):
             all_candidate_ids_to_columns,
             contest_map,
             ballotstyle_map,
+            bpf,
         )
 
     def to_election_description(
@@ -495,11 +463,10 @@ class DominionCSV(NamedTuple):
             all_candidate_ids_to_columns,
             contest_map,
             ballotstyle_map,
+            bpf,
         ) = self._to_election_description_common(date)
 
-        ballots = self._get_plaintext_ballots(
-            contest_map, ballotstyle_map, all_candidate_ids_to_columns
-        )
+        ballots = self._get_plaintext_ballots(bpf)
 
         return (
             ed,
@@ -509,11 +476,18 @@ class DominionCSV(NamedTuple):
 
     def to_election_description_ray(
         self, date: Optional[datetime] = None
-    ) -> Tuple[ElectionDescription, List[ObjectRef], Dict[str, str]]:
+    ) -> Tuple[
+        ElectionDescription,
+        BallotPlaintextFactory,
+        List[Dict[str, Any]],
+        Dict[str, str],
+    ]:
         """
-        This is just like `to_election_description`, except that it computes the plaintext ballots
-        across a Ray cluster and returns immediately, before that computation is complete, instead
-        giving Ray ObjectRefs to the plaintext ballots.
+        This is similar to `to_election_description`, except that it doesn't compute the PlaintextBallots,
+        since those are relatively big objects. Instead, it just returns a list of dicts, and the
+        BallotPlaintextFactory which can convert those into PlaintextBallots. On a Ray cluster, you'll
+        then send those along with the BallotPlaintextFactory to the remote nodes and do the generation
+        of PlaintextBallots in the same place where you're encrypting them.
         """
 
         (
@@ -521,15 +495,15 @@ class DominionCSV(NamedTuple):
             all_candidate_ids_to_columns,
             contest_map,
             ballotstyle_map,
+            bpf,
         ) = self._to_election_description_common(date)
 
-        ballot_refs = self._get_plaintext_ballots_ray(
-            contest_map, ballotstyle_map, all_candidate_ids_to_columns
-        )
+        ballot_dicts = self.data.to_dict("records")
 
         return (
             ed,
-            ballot_refs,
+            bpf,
+            ballot_dicts,
             all_candidate_ids_to_columns,
         )
 

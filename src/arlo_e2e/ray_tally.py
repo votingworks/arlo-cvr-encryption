@@ -4,7 +4,7 @@
 from datetime import datetime
 from math import sqrt, ceil
 from timeit import default_timer as timer
-from typing import Optional, List, Sequence, Dict, NamedTuple, cast, Tuple
+from typing import Optional, List, Sequence, Dict, NamedTuple, cast, Tuple, Any
 
 import pandas as pd
 import ray
@@ -31,7 +31,7 @@ from electionguard.utils import get_optional, flatmap_optional
 from ray import ObjectRef
 from ray.actor import ActorHandle
 
-from arlo_e2e.dominion import DominionCSV
+from arlo_e2e.dominion import DominionCSV, BallotPlaintextFactory
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.manifest import Manifest, make_fresh_manifest, manifest_name_to_filename
 from arlo_e2e.metadata import ElectionMetadata
@@ -113,8 +113,9 @@ def r_encrypt_and_write(
     root_dir: Optional[str],
     manifest_aggregator: Optional[ActorHandle],
     progressbar_actor: Optional[ActorHandle],
+    bpf: BallotPlaintextFactory,
     nonces: List[ElementModQ],
-    *plaintext_ballots: PlaintextBallot,
+    *plaintext_ballot_dicts: Dict[str, Any],
 ) -> TALLY_TYPE:  # pragma: no cover
     """
     Remotely encrypts a list of ballots and their associated nonces. If a `root_dir`
@@ -126,16 +127,16 @@ def r_encrypt_and_write(
 
     manifest = flatmap_optional(root_dir, lambda d: make_fresh_manifest(d))
 
-    assert len(nonces) == len(
-        plaintext_ballots
-    ), "mismatching numbers of nonces and ballots!"
+    num_ballots = len(plaintext_ballot_dicts)
+    assert len(nonces) == num_ballots, "mismatching numbers of nonces and ballots!"
 
     partial_tallies: List[TALLY_TYPE] = []
     for i in range(0, len(nonces)):
+        pballot = bpf.row_to_plaintext_ballot(plaintext_ballot_dicts[i])
         cballot = ciphertext_ballot_to_accepted(
             get_optional(
                 encrypt_ballot(
-                    plaintext_ballots[i],
+                    pballot,
                     ied,
                     cec,
                     seed_hash,
@@ -300,13 +301,13 @@ def ray_decrypt_tally(
 
 
 def _ballots_from_shard(
-    input: Sequence[Tuple[ObjectRef, ElementModQ]]
-) -> List[ObjectRef]:
+    input: Sequence[Tuple[Dict[str, Any], ElementModQ]]
+) -> List[Dict[str, Any]]:
     return [b for b, n in input]
 
 
 def _nonces_from_shard(
-    input: Sequence[Tuple[ObjectRef, ElementModQ]]
+    input: Sequence[Tuple[Dict[str, Any], ElementModQ]]
 ) -> List[ElementModQ]:
     return [n for b, n in input]
 
@@ -357,9 +358,9 @@ def ray_tally_everything(
     # we're not pushing all this data out of the head node when we start the encryption. It's already
     # out there.
 
-    ed, ballots, id_map = cvrs.to_election_description_ray(date=date)
+    ed, bpf, ballot_dicts, id_map = cvrs.to_election_description_ray(date=date)
     setup_time = timer()
-    num_ballots = len(ballots)
+    num_ballots = len(ballot_dicts)
     assert num_ballots > 0, "can't have zero ballots!"
     log_and_print(
         f"ElectionGuard setup time: {setup_time - start_time: .3f} sec, {num_ballots / (setup_time - start_time):.3f} ballots/sec"
@@ -389,12 +390,14 @@ def ray_tally_everything(
     r_seed_hash = ray.put(seed_hash)
     r_keypair = ray.put(keypair)
 
+    r_ballot_plaintext_factory = ray.put(bpf)
+
     if master_nonce is None:
         master_nonce = rand_q()
-    nonces: List[ElementModQ] = Nonces(master_nonce)[0 : len(ballots)]
+    nonces: List[ElementModQ] = Nonces(master_nonce)[0:num_ballots]
 
-    inputs = list(zip(ballots, nonces))
-    bps = ballots_per_shard(len(ballots))
+    inputs = list(zip(ballot_dicts, nonces))
+    bps = ballots_per_shard(num_ballots)
     sharded_inputs = shard_list(inputs, bps)
     assert bps > 1, f"bps = {bps}, should be greater than 1"
 
@@ -412,6 +415,7 @@ def ray_tally_everything(
             r_root_dir,
             r_manifest_aggregator,
             pb.actor,
+            r_ballot_plaintext_factory,
             _nonces_from_shard(shard),
             *(_ballots_from_shard(shard)),
         )
