@@ -69,6 +69,11 @@ available_node_types:
             InstanceType: c5a.large # two vCPUs, 4GB RAM
         resources: {"CPU": 2}
         max_workers: 2
+    amd_huge:
+        node_config:
+            InstanceType: c5a.2xlarge # eight vCPUs, 16GB RAM, but we're going to limit the number of workers
+        resources: {"CPU": 4}
+        max_workers: 3
     amd_large_spot:
         node_config:
             InstanceType: c5a.large # two vCPUs, 4GB RAM
@@ -79,7 +84,7 @@ available_node_types:
 
 # Eventually, we'll be able to specify multiple node types here. But not yet>
 # https://github.com/ray-project/ray/issues/10929
-head_node_type: amd_large
+head_node_type: amd_huge
 worker_default_node_type: amd_large_spot
 #head_node_type: intel_large
 #worker_default_node_type: intel_large_spot
