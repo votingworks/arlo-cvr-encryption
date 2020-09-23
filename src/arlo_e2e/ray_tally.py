@@ -401,7 +401,9 @@ def ray_tally_everything(
     sharded_inputs = shard_list(inputs, bps)
     assert bps > 1, f"bps = {bps}, should be greater than 1"
 
-    log_and_print(f"Launching Ray.io remote encryption! (number of shards available: {len(sharded_inputs)})")
+    log_and_print(
+        f"Launching Ray.io remote encryption! (number of shards available: {len(sharded_inputs)})"
+    )
 
     start_time = timer()
 
