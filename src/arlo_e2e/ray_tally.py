@@ -27,7 +27,7 @@ from electionguard.elgamal import (
 from electionguard.encrypt import encrypt_ballot
 from electionguard.group import ElementModQ, rand_q, ElementModP
 from electionguard.nonces import Nonces
-from electionguard.utils import get_optional, flatmap_optional
+from electionguard.utils import get_optional
 from ray import ObjectRef
 from ray.actor import ActorHandle
 
@@ -125,7 +125,7 @@ def r_encrypt_and_write(
     encrypted ballots is returned.
     """
 
-    manifest = flatmap_optional(root_dir, lambda d: make_fresh_manifest(d))
+    manifest = make_fresh_manifest(root_dir) if root_dir is not None else None
 
     num_ballots = len(plaintext_ballot_dicts)
     assert len(nonces) == num_ballots, "mismatching numbers of nonces and ballots!"
@@ -222,9 +222,7 @@ def ray_tally_ballots(
     iter_count = 1
     initial_tallies = ptallies
 
-    progressbar_actor: Optional[ActorHandle] = flatmap_optional(
-        progressbar, lambda p: p.actor
-    )
+    progressbar_actor = progressbar.actor if progressbar is not None else None
 
     # The shards used for encryption can be pretty small, since there's so much work
     # being done per shard. For tallying, it's a lot less work, so having a bigger
@@ -431,9 +429,7 @@ def ray_tally_everything(
         if use_progressbar
         else None
     )
-    progressbar_actor: Optional[ActorHandle] = flatmap_optional(
-        progressbar, lambda p: p.actor
-    )
+    progressbar_actor = progressbar.actor if progressbar is not None else None
 
     partial_tally_refs = [
         r_encrypt_and_write.remote(
@@ -721,9 +717,7 @@ class RayTallyEverythingResults(NamedTuple):
                 if use_progressbar
                 else None
             )
-            progressbar_actor: Optional[ActorHandle] = flatmap_optional(
-                progressbar, lambda p: p.actor
-            )
+            progressbar_actor = progressbar.actor if progressbar is not None else None
 
             ballot_start = timer()
             ballot_results: List[ObjectRef] = [

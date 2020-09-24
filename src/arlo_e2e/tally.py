@@ -110,12 +110,12 @@ def fast_encrypt_ballots(
     seed_hash: ElementModQ,
     nonces: List[ElementModQ],
     pool: Optional[Pool] = None,
-    show_progress: bool = True,
+    use_progressbar: bool = True,
 ) -> List[CiphertextBallot]:
     """
     This function encrypts a list of plaintext ballots, returning a list of ciphertext ballots.
     if the optional `pool` is passed, it will be used to evaluate the encryption in parallel.
-    Also, a progress bar is displayed, by default, and can be disabled by setting `show_progress`
+    Also, a progress bar is displayed, by default, and can be disabled by setting `use_progressbar`
     to `False`.
     """
 
@@ -123,8 +123,8 @@ def fast_encrypt_ballots(
     wrapped_func = functools.partial(encrypt_ballot_helper, ied, cec, seed_hash)
 
     inputs = zip(ballots, nonces)
-    if show_progress:  # pragma: no cover
-        inputs = tqdm(list(inputs), desc="Encrypting")
+    if use_progressbar:  # pragma: no cover
+        inputs = tqdm(list(inputs), desc="Ballots")
 
     # Performance note: this will gain as much parallelism as you've got available ballots.
     # So, if you've got millions of ballots, this function can use them. This appears to be
@@ -720,6 +720,7 @@ def fast_tally_everything(
     seed_hash: Optional[ElementModQ] = None,
     master_nonce: Optional[ElementModQ] = None,
     secret_key: Optional[ElementModQ] = None,
+    use_progressbar: bool = True,
 ) -> FastTallyEverythingResults:
     """
     This top-level function takes a collection of Dominion CVRs and produces everything that
@@ -781,7 +782,9 @@ def fast_tally_everything(
     nonces: List[ElementModQ] = Nonces(master_nonce)[0 : len(ballots)]
 
     # even if verbose is false, we still want to see the progress bar for the encryption
-    cballots = fast_encrypt_ballots(ballots, ied, cec, seed_hash, nonces, pool, True)
+    cballots = fast_encrypt_ballots(
+        ballots, ied, cec, seed_hash, nonces, pool, use_progressbar=use_progressbar
+    )
     eg_encrypt_time = timer()
 
     log_and_print(

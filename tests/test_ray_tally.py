@@ -59,15 +59,19 @@ class TestRayTallies(unittest.TestCase):
         _, ballots, _ = cvrs.to_election_description()
         assert len(ballots) > 0, "can't have zero ballots!"
 
+        print(f"End-to-end Ray test with {len(ballots)} ballot(s).")
         if use_keypair:
             rtally = ray_tally_everything(
                 cvrs,
                 verbose=True,
                 secret_key=keypair.secret_key,
                 root_dir="rtally_output",
+                use_progressbar=False,
             )
         else:
-            rtally = ray_tally_everything(cvrs, verbose=True, root_dir="rtally_output")
+            rtally = ray_tally_everything(
+                cvrs, verbose=True, root_dir="rtally_output", use_progressbar=False
+            )
 
         ftally = rtally.to_fast_tally()
         self.assertTrue(ftally.all_proofs_valid(verbose=False))
@@ -106,6 +110,8 @@ class TestRayTallies(unittest.TestCase):
         _, ballots, _ = cvrs.to_election_description()
         assert len(ballots) > 0, "can't have zero ballots!"
 
+        print(f"Comparing tallies with {len(ballots)} ballot(s).")
+
         tally = fast_tally_everything(
             cvrs,
             verbose=False,
@@ -114,6 +120,7 @@ class TestRayTallies(unittest.TestCase):
             pool=self.pool,
             seed_hash=seed_hash,
             master_nonce=master_nonce,
+            use_progressbar=False,
         )
         rtally = ray_tally_everything(
             cvrs,
@@ -123,6 +130,7 @@ class TestRayTallies(unittest.TestCase):
             seed_hash=seed_hash,
             master_nonce=master_nonce,
             root_dir="rtally_output",
+            use_progressbar=False,
         )
 
         self.assertEqual(tally, rtally.to_fast_tally())
