@@ -35,7 +35,7 @@ class ProgressBarState:
 class ProgressBarActor:
     """
     This is the Ray "actor" that can be called from anywhere to update our progress.
-    You'll be using the `update` method. Don't instantiate this class yourself. Instead,
+    You'll be using the `update`* methods. Don't instantiate this class yourself. Instead,
     it's something that you'll get from a `ProgressBar`.
     """
 
@@ -69,7 +69,7 @@ class ProgressBarActor:
     def update_total(self, key: str, delta_total: int) -> None:
         """
         Updates the ProgressBar with the incremental number of items that
-        represent work still to be done.
+        represent new work, still to be done.
         """
         self._check_deltas()
         assert (
@@ -81,10 +81,17 @@ class ProgressBarActor:
     async def wait_for_update(self) -> Dict[str, ProgressBarState]:
         """
         Blocking call: waits until somebody calls `update_completed` or `update_total`,
-        then returns the progress bar state. Also clears the `delta_counter` fields.
+        then returns the progress bar state. Also clears the `delta_counter` fields
+        for next time.
         """
         await self.event.wait()
         self.event.clear()
+
+        # Rather than copying the state, then mutating it, and returning the copy,
+        # we're just setting a flag to deal with it next time. Because the state
+        # we're returning is serialized on the way out, we don't have to worry about
+        # maintaining the original state after this method returns.
+
         self.clear_delta_on_update = True
         return self.state
 
@@ -100,13 +107,16 @@ class ProgressBar:
     Pass along the `actor` reference to any remote task. If, for example, the task just
     completed three "Ballots", it would then call: `actor.update_total.remote("Ballots", 3)`.
 
-    Back on the local node, once you launch your remote Ray tasks, call `print_until_done()`,
-    which will then manage all the `tqdm` counters.
+    Back on the head node, once you launch your remote Ray tasks, call `print_until_done()`,
+    which will then print all the `tqdm` counters as they evolve, and will return when
+    every counter has reached its specified total.
+
+    If your program is the sort that discovers more work to do as it goes along, you can
+    use the actor's `update_total` method.
     """
 
     progress_actor: ActorHandle
     totals: Dict[str, int]
-    pbar: tqdm
 
     def __init__(self, totals: Dict[str, int]):
         # Ray actors don't seem to play nice with mypy, generating a spurious warning
@@ -125,8 +135,8 @@ class ProgressBar:
     def print_until_done(self) -> None:
         """
         Blocking call. Do this after starting a series of remote Ray tasks, to which you've
-        passed the actor handle. Each of them calls `update` methods on the actor. When
-        the progress meter reaches 100%, this method returns.
+        passed the actor handle. Your remote workers might then call the `update` methods
+        on the actor. When the progress meter reaches 100%, this method returns.
         """
         pbars = {
             key: tqdm(desc=key, total=self.totals[key]) for key in self.totals.keys()
