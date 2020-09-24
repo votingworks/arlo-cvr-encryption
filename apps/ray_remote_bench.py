@@ -14,7 +14,7 @@ from arlo_e2e.ray_helpers import ray_init_cluster, ray_init_localhost
 from arlo_e2e.ray_tally import ray_tally_everything
 
 
-def run_bench(filename: str, output_dir: Optional[str]) -> None:
+def run_bench(filename: str, output_dir: Optional[str], use_progressbar: bool) -> None:
     start_time = timer()
     print(f"Benchmarking: {filename}")
     cvrs = read_dominion_csv(filename)
@@ -35,7 +35,11 @@ def run_bench(filename: str, output_dir: Optional[str]) -> None:
 
     rtally_start = timer()
     rtally = ray_tally_everything(
-        cvrs, secret_key=keypair.secret_key, verbose=True, root_dir=output_dir
+        cvrs,
+        secret_key=keypair.secret_key,
+        verbose=True,
+        root_dir=output_dir,
+        use_progressbar=use_progressbar,
     )
     rtally_end = timer()
 
@@ -46,7 +50,9 @@ def run_bench(filename: str, output_dir: Optional[str]) -> None:
     if output_dir:
         print(f"\nSANITY CHECK")
         assert rtally.all_proofs_valid(
-            verbose=True, recheck_ballots_and_tallies=False
+            verbose=True,
+            recheck_ballots_and_tallies=False,
+            use_progressbar=use_progressbar,
         ), "proof failure!"
 
 
@@ -58,6 +64,11 @@ if __name__ == "__main__":
         "--local",
         action="store_true",
         help="uses Ray locally (Ray on a cluster by default)",
+    )
+    parser.add_argument(
+        "--progress",
+        action="store_true",
+        help="displays a progress-bar as the job runs (off by default)",
     )
     parser.add_argument(
         "--dir",
@@ -76,6 +87,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     files = args.cvr_file
     file_dir = args.dir[0] if args.dir else None
+    use_progressbar = args.progress
 
     if args.local:
         print("Using Ray locally")
@@ -85,7 +97,7 @@ if __name__ == "__main__":
         ray_init_cluster()
 
     for arg in files:
-        run_bench(arg, file_dir)
+        run_bench(arg, file_dir, use_progressbar)
 
     print("Writing Ray timelines to disk.")
     ray.timeline("ray-timeline.json")

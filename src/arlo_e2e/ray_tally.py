@@ -203,11 +203,12 @@ def r_partial_tally(
     """
     This is a front-end for `partial_tally`, that can be called remotely via Ray.
     """
-    return partial_tally(progressbar_actor, *ptallies)
+    result = partial_tally(progressbar_actor, *ptallies)
+    return result
 
 
 def ray_tally_ballots(
-    ptallies: Sequence[ObjectRef], bps: int, pb: Optional[ProgressBar] = None
+    ptallies: Sequence[ObjectRef], bps: int, progressbar: Optional[ProgressBar] = None
 ) -> ObjectRef:
     """
     Launches a parallel tally reduction tree, with a fanout based on `bps` ballots per shard. Returns
@@ -221,7 +222,7 @@ def ray_tally_ballots(
     iter_count = 1
     initial_tallies = ptallies
 
-    progressbar_actor = flatmap_optional(pb, lambda p: p.actor)
+    progressbar_actor = flatmap_optional(progressbar, lambda p: p.actor)
 
     # The shards used for encryption can be pretty small, since there's so much work
     # being done per shard. For tallying, it's a lot less work, so having a bigger
@@ -330,6 +331,7 @@ def _nonces_from_shard(
 def ray_tally_everything(
     cvrs: DominionCSV,
     verbose: bool = True,
+    use_progressbar: bool = True,
     date: Optional[datetime] = None,
     seed_hash: Optional[ElementModQ] = None,
     master_nonce: Optional[ElementModQ] = None,
@@ -422,7 +424,12 @@ def ray_tally_everything(
 
     start_time = timer()
 
-    pb = ProgressBar({"Ballots": num_ballots, "Tallies": num_ballots})
+    progressbar = (
+        ProgressBar({"Ballots": num_ballots, "Tallies": num_ballots})
+        if use_progressbar
+        else None
+    )
+    progressbar_actor = flatmap_optional(progressbar, lambda p: p.actor)
 
     partial_tally_refs = [
         r_encrypt_and_write.remote(
@@ -431,7 +438,7 @@ def ray_tally_everything(
             r_seed_hash,
             r_root_dir,
             r_manifest_aggregator,
-            pb.actor,
+            progressbar_actor,
             r_ballot_plaintext_factory,
             _nonces_from_shard(shard),
             *(_ballots_from_shard(shard)),
@@ -440,9 +447,10 @@ def ray_tally_everything(
     ]
 
     # log_and_print("Remote tallying.")
-    tally_ref = ray_tally_ballots(partial_tally_refs, bps, pb)
+    tally_ref = ray_tally_ballots(partial_tally_refs, bps, progressbar)
 
-    pb.print_until_done()
+    if progressbar is not None:
+        progressbar.print_until_done()
 
     tally: Optional[TALLY_TYPE] = ray.get(tally_ref)
     assert tally is not None, "tally failed!"
@@ -650,6 +658,7 @@ class RayTallyEverythingResults(NamedTuple):
         self,
         verbose: bool = False,
         recheck_ballots_and_tallies: bool = False,
+        use_progressbar: bool = True,
     ) -> bool:
         """
         Checks all the proofs used in this tally, returns True if everything is good.
@@ -703,12 +712,17 @@ class RayTallyEverythingResults(NamedTuple):
 
             r_manifest = ray.put(self.manifest)
 
-            pb = ProgressBar({"Ballots": num_ballots, "Tallies": num_ballots})
+            progressbar = (
+                ProgressBar({"Ballots": num_ballots, "Tallies": num_ballots})
+                if use_progressbar
+                else None
+            )
+            progressbar_actor = flatmap_optional(progressbar, lambda p: p.actor)
 
             ballot_start = timer()
             ballot_results: List[ObjectRef] = [
                 r_verify_ballot_proofs.remote(
-                    r_manifest, r_public_key, r_hash_header, pb.actor, *shard
+                    r_manifest, r_public_key, r_hash_header, progressbar_actor, *shard
                 )
                 for shard in cballot_manifest_name_shards
             ]
@@ -720,7 +734,7 @@ class RayTallyEverythingResults(NamedTuple):
             log_and_print("Recomputing tallies.", verbose)
 
             recomputed_tally: Optional[TALLY_TYPE] = ray.get(
-                ray_tally_ballots(ballot_results, bps, pb)
+                ray_tally_ballots(ballot_results, bps, progressbar)
             )
             if not recomputed_tally:
                 return False
