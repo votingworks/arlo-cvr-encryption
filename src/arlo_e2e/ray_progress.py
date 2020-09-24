@@ -60,7 +60,9 @@ class ProgressBarActor:
         were just completed.
         """
         self._check_deltas()
-        assert key in self.state, f"error: used key {key}, which isn't in ({list(self.state.keys())})"
+        assert (
+            key in self.state
+        ), f"error: used key {key}, which isn't in ({list(self.state.keys())})"
         self.state[key].update_completed(delta_num_items_completed)
         self.event.set()
 
@@ -70,7 +72,9 @@ class ProgressBarActor:
         represent work still to be done.
         """
         self._check_deltas()
-        assert key in self.state, f"error: used key {key}, which isn't in ({list(self.state.keys())})"
+        assert (
+            key in self.state
+        ), f"error: used key {key}, which isn't in ({list(self.state.keys())})"
         self.state[key].update_total(delta_total)
         self.event.set()
 
