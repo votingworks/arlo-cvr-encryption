@@ -15,7 +15,8 @@ pip install virtualenv==20.0.23 pipenv
 pip install boto3==1.4.8  # 1.4.8 adds InstanceMarketOptions
 pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
 pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
-pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-manylinux1_x86_64.whl
+#pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-manylinux1_x86_64.whl
+pip install ray==1.0.0rc2
 
 # we need *lots* of open files to make this work, for some reason (or, we need many more VMs with fewer cores)
 sysctl -w fs.file-max=500000
