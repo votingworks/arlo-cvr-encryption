@@ -11,7 +11,8 @@ from arlo_e2e.ray_progress import ProgressBar
 @ray.remote
 def sleep_then_increment(i: int, pba: ActorHandle) -> int:
     sleep(i / 2.0)
-    pba.update.remote(1)
+    pba.update_completed.remote("A", 1)
+    pba.update_completed.remote("B", 1)
     return i
 
 
@@ -21,7 +22,7 @@ class TestRayProgressBar(unittest.TestCase):
 
     def test_ray_progressbar(self) -> None:
         num_ticks = 6
-        pb = ProgressBar(num_ticks)
+        pb = ProgressBar({"A": num_ticks, "B": num_ticks})
         actor = pb.actor
         tasks_pre_launch = [
             sleep_then_increment.remote(i, actor) for i in range(0, num_ticks)
@@ -31,4 +32,3 @@ class TestRayProgressBar(unittest.TestCase):
         tasks = ray.get(tasks_pre_launch)
 
         self.assertEqual(tasks, list(range(0, num_ticks)))
-        self.assertEqual(num_ticks, ray.get(actor.get_counter.remote()))

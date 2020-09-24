@@ -1,10 +1,34 @@
 # Inspiration: https://github.com/honnibal/spacy-ray/pull/1/files#diff-7ede881ddc3e8456b320afb958362b2aR12-R45
 from asyncio import Event
-from typing import Tuple
+from dataclasses import dataclass
+from typing import Tuple, Dict
 
 import ray
 from ray.actor import ActorHandle
 from tqdm import tqdm
+
+from arlo_e2e.eg_helpers import log_and_print
+
+
+@dataclass
+class ProgressBarState:
+    """
+    Internal state of the ProgressBar.
+    """
+
+    counter: int
+    delta_counter: int
+    total: int
+
+    def update_completed(self, delta_num_items_completed: int) -> None:
+        self.counter += delta_num_items_completed
+        self.delta_counter += delta_num_items_completed
+
+    def update_total(self, delta_total: int) -> None:
+        self.total += delta_total
+
+    def clear_delta(self) -> None:
+        self.delta_counter = 0
 
 
 @ray.remote
@@ -15,65 +39,76 @@ class ProgressBarActor:
     it's something that you'll get from a `ProgressBar`.
     """
 
-    counter: int
-    delta: int
+    state: Dict[str, ProgressBarState]
     event: Event
+    clear_delta_on_update: bool
 
-    def __init__(self) -> None:
-        self.counter = 0
-        self.delta = 0
+    def __init__(self, totals: Dict[str, int]) -> None:
+        self.state = {key: ProgressBarState(0, 0, totals[key]) for key in totals.keys()}
         self.event = Event()
+        self.clear_delta_on_update = False
 
-    def update(self, num_items_completed: int) -> None:
+    def _check_deltas(self) -> None:
+        if self.clear_delta_on_update:
+            self.clear_delta_on_update = False
+            for key in self.state.keys():
+                self.state[key].clear_delta()
+
+    def update_completed(self, key: str, delta_num_items_completed: int) -> None:
         """
         Updates the ProgressBar with the incremental number of items that
         were just completed.
         """
-        self.counter += num_items_completed
-        self.delta += num_items_completed
+        self._check_deltas()
+        assert key in self.state, f"error: used key {key}, which isn't in ({list(self.state.keys())})"
+        self.state[key].update_completed(delta_num_items_completed)
         self.event.set()
 
-    async def wait_for_update(self) -> Tuple[int, int]:
+    def update_total(self, key: str, delta_total: int) -> None:
         """
-        Blocking call: waits until somebody calls `update`, then returns a tuple of
-        the number of updates since the last call to `wait_for_update`, and the total
-        number of completed items.
+        Updates the ProgressBar with the incremental number of items that
+        represent work still to be done.
+        """
+        self._check_deltas()
+        assert key in self.state, f"error: used key {key}, which isn't in ({list(self.state.keys())})"
+        self.state[key].update_total(delta_total)
+        self.event.set()
+
+    async def wait_for_update(self) -> Dict[str, ProgressBarState]:
+        """
+        Blocking call: waits until somebody calls `update_completed` or `update_total`,
+        then returns the progress bar state. Also clears the `delta_counter` fields.
         """
         await self.event.wait()
         self.event.clear()
-        saved_delta = self.delta
-        self.delta = 0
-        return saved_delta, self.counter
-
-    def get_counter(self) -> int:
-        """
-        Returns the total number of complete items.
-        """
-        return self.counter
+        self.clear_delta_on_update = True
+        return self.state
 
 
 class ProgressBar:
     """
     This is where the progress bar starts. You create one of these on the head node,
-    passing in the expected total number of items, and an optional string description.
-    Pass along the `actor` reference to any remote task, and if they complete ten
-    tasks, they'll call `actor.update.remote(10)`.
+    passing in the expected total number of items and a description key for each one.
+    This will then manage one `tqdm` counter for each, simultaneously. For example,
+    if you have 100 "Ballots" and 10 "Tallies", you might make
+    `ProgressBar({"Ballots": 100, "Tallies": 10})`.
 
-    Back on the local node, once you launch your remote Ray tasks, call `print_until_done`,
-    which will feed everything back into a `tqdm` counter.
+    Pass along the `actor` reference to any remote task. If, for example, the task just
+    completed three "Ballots", it would then call: `actor.update_total.remote("Ballots", 3)`.
+
+    Back on the local node, once you launch your remote Ray tasks, call `print_until_done()`,
+    which will then manage all the `tqdm` counters.
     """
 
     progress_actor: ActorHandle
-    total: int
-    description: str
+    totals: Dict[str, int]
     pbar: tqdm
 
-    def __init__(self, total: int, description: str = ""):
+    def __init__(self, totals: Dict[str, int]):
         # Ray actors don't seem to play nice with mypy, generating a spurious warning
         # for the following line, which we need to suppress. The code is fine.
-        self.progress_actor = ProgressBarActor.remote()  # type: ignore
-        self.total = total
-        self.description = description
+        self.progress_actor = ProgressBarActor.remote(totals)  # type: ignore
+        self.totals = totals
 
     @property
     def actor(self) -> ActorHandle:
@@ -86,13 +121,25 @@ class ProgressBar:
     def print_until_done(self) -> None:
         """
         Blocking call. Do this after starting a series of remote Ray tasks, to which you've
-        passed the actor handle. Each of them calls `update` on the actor. When the progress
-        meter reaches 100%, this method returns.
+        passed the actor handle. Each of them calls `update` methods on the actor. When
+        the progress meter reaches 100%, this method returns.
         """
-        pbar = tqdm(desc=self.description, total=self.total)
+        pbars = {
+            key: tqdm(desc=key, total=self.totals[key]) for key in self.totals.keys()
+        }
         while True:
-            delta, counter = ray.get(self.actor.wait_for_update.remote())
-            pbar.update(delta)
-            if counter >= self.total:
-                pbar.close()
+            state: Dict[str, ProgressBarState] = ray.get(
+                self.actor.wait_for_update.remote()
+            )
+            complete = True
+            for k in state.keys():
+                s: ProgressBarState = state[k]
+                p: tqdm = pbars[k]
+                p.update(s.delta_counter)
+                p.total = s.total
+                p.refresh()
+                complete = complete and s.counter >= s.total
+            if complete:
+                for pb in pbars.values():
+                    pb.close()
                 return

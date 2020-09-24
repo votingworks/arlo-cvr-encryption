@@ -52,62 +52,28 @@ auth:
 #    ssh_private_key: /path/to/your/key.pem
 
 available_node_types:
-#    intel_large:
-#        node_config:
-#            InstanceType: c5.large # two vCPUs, 4GB RAM
-#        resources: {"CPU": 2}
-#        max_workers: 2
-#    intel_large_spot:
-#        node_config:
-#            InstanceType: c5.large # two vCPUs, 4GB RAM
-#            InstanceMarketOptions:
-#                MarketType: spot
-#        resources: {"CPU": 2}
-#        max_workers: 2
-#    amd_large:
-#        node_config:
-#            InstanceType: c5a.large # two vCPUs, 4GB RAM
-#        resources: {"CPU": 2}
-#        max_workers: 2
-#    amd_2xlarge:
-#        node_config:
-#            InstanceType: c5a.2xlarge # eight vCPUs, 16GB RAM, restricting max_workers so we have more system RAM
-#        resources: {"CPU": 2}
-#        max_workers: 2
-#    amd_24xlarge:
-#        node_config:
-#            InstanceType: c5a.24xlarge # 96 vCPUs, 192GB RAM
-#        resources: {"CPU": 96}
-#        max_workers: 96
-#    amd_large_spot:
-#        node_config:
-#            InstanceType: c5a.large # two vCPUs, 4GB RAM
-#            InstanceMarketOptions:
-#                MarketType: spot
-#        resources: {"CPU": 2}
-#        max_workers: 2
     intel_12xlarge_spot:
         node_config:
             InstanceType: c5.12xlarge
-            InstanceMarketOptions:
-                MarketType: spot
+#            InstanceMarketOptions:
+#                MarketType: spot
         resources: {"CPU": 48}
         max_workers: 48
     amd_12xlarge_spot:
         node_config:
             InstanceType: c5a.12xlarge
-            InstanceMarketOptions:
-                MarketType: spot
+#            InstanceMarketOptions:
+#                MarketType: spot
         resources: {"CPU": 48}
         max_workers: 48
     amd_xlarge_head:
         node_config:
             InstanceType: m5a.xlarge
-        resources: {"CPU": 1}  # artificially limiting this to keep work off the head node
+        # Artificially limiting this to keep work off the head node, but doesn't seem to work.
+        resources: {"CPU": 1}
         max_workers: 1
 
-
-# Eventually, we'll be able to specify multiple node types here. But not yet>
+# Eventually, we'll be able to specify multiple node types here. But not yet.
 # https://github.com/ray-project/ray/issues/10929
 worker_default_node_type: amd_12xlarge_spot
 head_node_type: amd_xlarge_head
@@ -188,10 +154,13 @@ head_setup_commands: []
 # Custom commands that will be run on worker nodes after common setup.
 worker_setup_commands: []
 
-# Command to start ray on the head node. You don't need to change this.
+# Command to start ray on the head node.
+
+# Changed here to have --num-cpus 0, forcing no "worker" tasks to happen on the head node, which will free
+# up more RAM for coordination tasks.
 head_start_ray_commands:
     - ray stop
-    - ulimit -n 65536; ray start --head --port=6379 --object-manager-port=8076 --autoscaling-config=~/ray_bootstrap_config.yaml
+    - ulimit -n 65536; ray start --num-cpus 0 --head --port=6379 --object-manager-port=8076 --autoscaling-config=~/ray_bootstrap_config.yaml
 
 # Command to start ray on worker nodes. You don't need to change this.
 worker_start_ray_commands:

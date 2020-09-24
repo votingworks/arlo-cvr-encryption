@@ -4,11 +4,11 @@
 from datetime import datetime
 from math import sqrt, ceil
 from timeit import default_timer as timer
-from typing import Optional, List, Sequence, Dict, NamedTuple, cast, Tuple, Any
+from typing import Optional, List, Sequence, Dict, NamedTuple, Tuple, Any
 
 import pandas as pd
 import ray
-from electionguard.ballot import PlaintextBallot, CiphertextAcceptedBallot
+from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.decrypt_with_secrets import (
     decrypt_ciphertext_with_proof,
     ciphertext_ballot_to_dict,
@@ -149,19 +149,23 @@ def r_encrypt_and_write(
             manifest.write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
 
         if progressbar_actor is not None:
-            progressbar_actor.update.remote(1)
+            progressbar_actor.update_completed.remote("Ballots", 1)
 
         partial_tallies.append(ciphertext_ballot_to_dict(cballot))
 
     if manifest is not None and manifest_aggregator is not None:
         manifest_aggregator.add.remote(manifest)
 
-    partial_tally = sequential_tally(partial_tallies)
+    ptally = sequential_tally(partial_tallies)
+    if progressbar_actor is not None:
+        progressbar_actor.update_completed.remote("Tallies", num_ballots)
 
-    return partial_tally
+    return ptally
 
 
-def partial_tally(*ptallies: Optional[TALLY_TYPE]) -> Optional[TALLY_TYPE]:
+def partial_tally(
+    progressbar_actor: Optional[ActorHandle], *ptallies: Optional[TALLY_TYPE]
+) -> Optional[TALLY_TYPE]:
     """
     This is a front-end for `sequential_tally`, which can be called locally
     (for remote: see `r_partial_tally`).
@@ -178,26 +182,33 @@ def partial_tally(*ptallies: Optional[TALLY_TYPE]) -> Optional[TALLY_TYPE]:
     if None in ptallies:
         return None
 
-    if len(ptallies) > 0:
+    num_ptallies = len(ptallies)
+
+    if num_ptallies > 0:
         assert isinstance(
             ptallies[0], Dict
         ), "type failure: we were expecting a dict (TALLY_TYPE), not an objectref"
 
     result: TALLY_TYPE = sequential_tally(ptallies)
+    if progressbar_actor is not None:
+        progressbar_actor.update_completed.remote("Tallies", num_ptallies)
     return result
 
 
 @ray.remote
 def r_partial_tally(
+    progressbar_actor: Optional[ActorHandle],
     *ptallies: Optional[TALLY_TYPE],
 ) -> Optional[TALLY_TYPE]:  # pragma: no cover
     """
     This is a front-end for `partial_tally`, that can be called remotely via Ray.
     """
-    return partial_tally(*ptallies)
+    return partial_tally(progressbar_actor, *ptallies)
 
 
-def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> TALLY_TYPE:
+def ray_tally_ballots(
+    ptallies: Sequence[ObjectRef], bps: int, pb: Optional[ProgressBar] = None
+) -> ObjectRef:
     """
     Launches a parallel tally reduction tree, with a fanout based on `bps` ballots per shard. Returns
     a Ray ObjectRef reference to the future result, which the caller will then need to call
@@ -209,6 +220,8 @@ def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> TALLY_TYPE:
 
     iter_count = 1
     initial_tallies = ptallies
+
+    progressbar_actor = flatmap_optional(pb, lambda p: p.actor)
 
     # The shards used for encryption can be pretty small, since there's so much work
     # being done per shard. For tallying, it's a lot less work, so having a bigger
@@ -225,27 +238,28 @@ def ray_tally_ballots(ptallies: Sequence[ObjectRef], bps: int) -> TALLY_TYPE:
             initial_tallies, Dict
         ), "type error: got a dict when we were expecting a sequence"
         num_tallies = len(initial_tallies)
+
+        if progressbar_actor is not None:
+            progressbar_actor.update_total.remote("Tallies", num_tallies)
+
         if num_tallies <= bps:
             # Run locally; no need for remote dispatch when we're this close to done.
-            log_and_print(f"Tally iteration (FINAL): {num_tallies} partial tallies")
-            local_tally_copy: Sequence[TALLY_TYPE] = ray.get(initial_tallies)
-            result = partial_tally(*local_tally_copy)
-            assert result is not None, "unexpected failure in partial_tally"
-            return result
+            # log_and_print(f"Tally iteration (FINAL): {num_tallies} partial tallies")
+            return r_partial_tally.remote(progressbar_actor, *initial_tallies)
 
         shards: Sequence[Sequence[ObjectRef]] = shard_list(initial_tallies, bps)
 
-        log_and_print(
-            f"Tally iteration {iter_count:2d}: {num_tallies:6d} partial tallies --> {len(shards)} shards (bps = {bps})"
-        )
+        # log_and_print(
+        #     f"Tally iteration {iter_count:2d}: {num_tallies:6d} partial tallies --> {len(shards)} shards (bps = {bps})"
+        # )
         partial_tallies: Sequence[ObjectRef] = [
-            r_partial_tally.remote(*shard) for shard in shards
+            r_partial_tally.remote(progressbar_actor, *shard) for shard in shards
         ]
 
         # To avoid deeply nested tasks, we're going to wait for this to finish.
         # If you comment out the call to ray.wait(), everything still works, but
         # you can get warnings about too many tasks.
-        ray.wait(partial_tallies, num_returns=len(partial_tallies), timeout=None)
+        # ray.wait(partial_tallies, num_returns=len(partial_tallies), timeout=None)
 
         iter_count += 1
         initial_tallies = partial_tallies
@@ -399,15 +413,16 @@ def ray_tally_everything(
     inputs = list(zip(ballot_dicts, nonces))
     bps = ballots_per_shard(num_ballots)
     sharded_inputs = shard_list(inputs, bps)
+    num_shards = len(sharded_inputs)
     assert bps > 1, f"bps = {bps}, should be greater than 1"
 
     log_and_print(
-        f"Launching Ray.io remote encryption! (number of shards available: {len(sharded_inputs)})"
+        f"Launching Ray.io remote encryption! (number of shards available: {num_shards})"
     )
 
     start_time = timer()
 
-    pb = ProgressBar(num_ballots, "Ballots")
+    pb = ProgressBar({"Ballots": num_ballots, "Tallies": num_ballots})
 
     partial_tally_refs = [
         r_encrypt_and_write.remote(
@@ -424,10 +439,12 @@ def ray_tally_everything(
         for shard in sharded_inputs
     ]
 
+    # log_and_print("Remote tallying.")
+    tally_ref = ray_tally_ballots(partial_tally_refs, bps, pb)
+
     pb.print_until_done()
 
-    log_and_print("Remote tallying.")
-    tally: Optional[TALLY_TYPE] = ray_tally_ballots(partial_tally_refs, bps)
+    tally: Optional[TALLY_TYPE] = ray.get(tally_ref)
     assert tally is not None, "tally failed!"
 
     log_and_print("Tally decryption.")
@@ -513,6 +530,7 @@ def r_verify_ballot_proofs(
     manifest: Manifest,
     public_key: ElementModP,
     hash_header: ElementModQ,
+    progressbar_actor: Optional[ActorHandle],
     *cballot_filenames: str,
 ) -> Optional[TALLY_TYPE]:  # pragma: no cover
     """
@@ -526,27 +544,33 @@ def r_verify_ballot_proofs(
     # we're immediately done with them.  This puts a lot of pressure on the filesystem
     # but S3 buckets, Azure blob storage, etc. can handle it.
 
-    cballots: List[Optional[CiphertextAcceptedBallot]] = [
-        manifest.load_ciphertext_ballot(name) for name in cballot_filenames
-    ]
+    valid_count = 0
+    num_ballots = len(cballot_filenames)
+    ptallies: List[TALLY_TYPE] = []
 
-    if None in cballots:
+    for name in cballot_filenames:
+        cballot = manifest.load_ciphertext_ballot(name)
+
+        if cballot is None:
+            return None
+
+        is_valid = cballot.is_valid_encryption(
+            cballot.description_hash, public_key, hash_header
+        )
+        if is_valid:
+            valid_count = valid_count + 1
+        if progressbar_actor is not None:
+            progressbar_actor.update_completed.remote("Ballots", 1)
+
+        ptallies.append(ciphertext_ballot_to_dict(cballot))
+
+    if valid_count < num_ballots:
+        # log_and_print(f"Only {valid_count} of {num_ballots} ballots are valid.")
         return None
 
-    cballots_not_none: List[CiphertextAcceptedBallot] = cast(
-        List[CiphertextAcceptedBallot], cballots
-    )
-
-    results = [
-        b.is_valid_encryption(b.description_hash, public_key, hash_header)
-        for b in cballots_not_none
-    ]
-    encryptions_valid = all(results)
-
-    if not encryptions_valid:
-        return None
-
-    ptally = sequential_tally([ciphertext_ballot_to_dict(b) for b in cballots_not_none])
+    ptally = sequential_tally(ptallies)
+    if progressbar_actor is not None:
+        progressbar_actor.update_completed.remote("Tallies", num_ballots)
 
     return ptally
 
@@ -645,6 +669,7 @@ class RayTallyEverythingResults(NamedTuple):
         sharded_selections: Sequence[Sequence[SelectionInfo]] = shard_list(
             selections, ballots_per_shard(len(selections))
         )
+
         results: List[bool] = ray.get(
             [
                 r_verify_tally_selection_proofs.remote(r_public_key, r_hash_header, *s)
@@ -678,32 +703,34 @@ class RayTallyEverythingResults(NamedTuple):
 
             r_manifest = ray.put(self.manifest)
 
+            pb = ProgressBar({"Ballots": num_ballots, "Tallies": num_ballots})
+
             ballot_start = timer()
             ballot_results: List[ObjectRef] = [
                 r_verify_ballot_proofs.remote(
-                    r_manifest, r_public_key, r_hash_header, *shard
+                    r_manifest, r_public_key, r_hash_header, pb.actor, *shard
                 )
                 for shard in cballot_manifest_name_shards
             ]
-            ray.wait(
-                ballot_results,
-                num_returns=len(cballot_manifest_name_shards),
-                timeout=None,
+            # ray.wait(
+            #     ballot_results,
+            #     num_returns=len(cballot_manifest_name_shards),
+            #     timeout=None,
+            # )
+            log_and_print("Recomputing tallies.", verbose)
+
+            recomputed_tally: Optional[TALLY_TYPE] = ray.get(
+                ray_tally_ballots(ballot_results, bps, pb)
             )
+            if not recomputed_tally:
+                return False
+
             ballot_end = timer()
 
             log_and_print(
                 f"Ballot verification rate: {num_ballots / (ballot_end - ballot_start): .3f} ballot/sec",
                 verbose,
             )
-
-            log_and_print("Recomputing tallies.", verbose)
-
-            recomputed_tally: Optional[TALLY_TYPE] = ray_tally_ballots(
-                ballot_results, bps
-            )
-            if not recomputed_tally:
-                return False
 
             tally_success = tallies_match(self.tally.to_tally_map(), recomputed_tally)
 
