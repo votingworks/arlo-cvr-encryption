@@ -222,7 +222,9 @@ def ray_tally_ballots(
     iter_count = 1
     initial_tallies = ptallies
 
-    progressbar_actor = flatmap_optional(progressbar, lambda p: p.actor)
+    progressbar_actor: Optional[ActorHandle] = flatmap_optional(
+        progressbar, lambda p: p.actor
+    )
 
     # The shards used for encryption can be pretty small, since there's so much work
     # being done per shard. For tallying, it's a lot less work, so having a bigger
@@ -429,7 +431,9 @@ def ray_tally_everything(
         if use_progressbar
         else None
     )
-    progressbar_actor = flatmap_optional(progressbar, lambda p: p.actor)
+    progressbar_actor: Optional[ActorHandle] = flatmap_optional(
+        progressbar, lambda p: p.actor
+    )
 
     partial_tally_refs = [
         r_encrypt_and_write.remote(
@@ -717,7 +721,9 @@ class RayTallyEverythingResults(NamedTuple):
                 if use_progressbar
                 else None
             )
-            progressbar_actor = flatmap_optional(progressbar, lambda p: p.actor)
+            progressbar_actor: Optional[ActorHandle] = flatmap_optional(
+                progressbar, lambda p: p.actor
+            )
 
             ballot_start = timer()
             ballot_results: List[ObjectRef] = [
