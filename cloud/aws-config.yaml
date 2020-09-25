@@ -155,8 +155,10 @@ head_setup_commands: []
 # Custom commands that will be run on worker nodes after common setup.
 worker_setup_commands: []
 
-# Command to start ray on the head node.
+# To add additional Ray logging (if logs need to be captured to debug Ray), the magic text before "ray start" is:
+# RAY_BACKEND_LOG_LEVEL=debug
 
+# Command to start ray on the head node.
 # Changed here to have --num-cpus 0, forcing no "worker" tasks to happen on the head node, which will free
 # up more RAM for coordination tasks.
 head_start_ray_commands:
