@@ -49,7 +49,7 @@ from arlo_e2e.tally import (
     tallies_match,
     ballot_memos_from_metadata,
 )
-from arlo_e2e.utils import shard_list, mkdir_helper
+from arlo_e2e.utils import shard_list_uniform, mkdir_helper
 
 # Nomenclature in this file: methods starting with "ray_" are meant to be called from the
 # main node. Methods starting with "r_" are "Ray remote methods". Variables starting with
@@ -248,7 +248,7 @@ def ray_tally_ballots(
             # log_and_print(f"Tally iteration (FINAL): {num_tallies} partial tallies")
             return r_partial_tally.remote(progressbar_actor, *initial_tallies)
 
-        shards: Sequence[Sequence[ObjectRef]] = shard_list(initial_tallies, bps)
+        shards: Sequence[Sequence[ObjectRef]] = shard_list_uniform(initial_tallies, bps)
 
         # log_and_print(
         #     f"Tally iteration {iter_count:2d}: {num_tallies:6d} partial tallies --> {len(shards)} shards (bps = {bps})"
@@ -414,7 +414,7 @@ def ray_tally_everything(
 
     inputs = list(zip(ballot_dicts, nonces))
     bps = ballots_per_shard(num_ballots)
-    sharded_inputs = shard_list(inputs, bps)
+    sharded_inputs = shard_list_uniform(inputs, bps)
     num_shards = len(sharded_inputs)
     assert bps > 1, f"bps = {bps}, should be greater than 1"
 
@@ -675,7 +675,7 @@ class RayTallyEverythingResults(NamedTuple):
 
         start = timer()
         selections = self.tally.map.values()
-        sharded_selections: Sequence[Sequence[SelectionInfo]] = shard_list(
+        sharded_selections: Sequence[Sequence[SelectionInfo]] = shard_list_uniform(
             selections, ballots_per_shard(len(selections))
         )
 
@@ -706,7 +706,7 @@ class RayTallyEverythingResults(NamedTuple):
             num_ballots = self.num_ballots
             bps = ballots_per_shard(num_ballots)
 
-            cballot_manifest_name_shards: Sequence[Sequence[str]] = shard_list(
+            cballot_manifest_name_shards: Sequence[Sequence[str]] = shard_list_uniform(
                 self.cvr_metadata["BallotId"], bps
             )
 

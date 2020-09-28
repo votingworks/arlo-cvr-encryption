@@ -64,7 +64,7 @@ from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.manifest import Manifest
 from arlo_e2e.memo import Memo, make_memo_value, make_memo_lambda
 from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.utils import shard_list
+from arlo_e2e.utils import shard_list_uniform
 
 
 def encrypt_ballot_helper(
@@ -208,7 +208,7 @@ def fast_tally_ballots(
             )
             return sequential_tally(initial_tallies)
 
-        shards = shard_list(initial_tallies, BALLOTS_PER_SHARD)
+        shards = shard_list_uniform(initial_tallies, BALLOTS_PER_SHARD)
         log_and_print(
             f"tally iteration {iter_count}: {len(initial_tallies)} partial tallies --> {len(shards)} shards"
         )

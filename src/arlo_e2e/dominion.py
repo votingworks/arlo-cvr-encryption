@@ -34,7 +34,6 @@ from electionguard.election import (
     SelectionDescription,
 )
 from electionguard.encrypt import selection_from
-from ray import ObjectRef
 
 from arlo_e2e.eg_helpers import UidMaker
 from arlo_e2e.metadata import (
@@ -43,7 +42,7 @@ from arlo_e2e.metadata import (
     STYLE_MAP,
     SelectionMetadata,
 )
-from arlo_e2e.utils import flatmap, shard_list
+from arlo_e2e.utils import flatmap
 
 
 # Arlo-e2e support for CVR files from Dominion ballot scanners.
