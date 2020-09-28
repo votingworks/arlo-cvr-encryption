@@ -56,7 +56,7 @@ setup(
     install_requires=[
         "gmpy2==2.1.0b5",
         "numpy==1.18.2",
-        "pandas==1.0.4",
+        "pandas==1.0.5",
         "hypothesis==5.29.4",
         "typish==1.7.0",
         "jsons==1.1.2",

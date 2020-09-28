@@ -35,6 +35,8 @@ class ShardingTest(unittest.TestCase):
         max_length = max([len(x) for x in shards])
         self.assertTrue(min_length == max_length or min_length + 1 == max_length)
         self.assertTrue(max_length <= num_per_group)
+        if num_per_group > 2 and total_inputs > 1:
+            self.assertTrue(min_length >= 2)
         self.assertEqual(inputs, flatmap(lambda x: x, shards))
 
     # special case handling for zero-length inputs
