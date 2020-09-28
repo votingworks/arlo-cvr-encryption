@@ -164,7 +164,8 @@ def r_encrypt_and_write(
 
 
 def partial_tally(
-    progressbar_actor: Optional[ActorHandle], *ptallies: Optional[TALLY_TYPE]
+    progressbar_actor: Optional[ActorHandle],
+    *ptallies: Optional[TALLY_TYPE],
 ) -> Optional[TALLY_TYPE]:
     """
     This is a front-end for `sequential_tally`, which can be called locally
@@ -208,15 +209,14 @@ def r_partial_tally(
 
 
 def ray_tally_ballots(
-    ptallies: Sequence[ObjectRef], bps: int, progressbar: Optional[ProgressBar] = None
-) -> ObjectRef:
+    ptallies: Sequence[ObjectRef],  # Sequence[ObjectRef[Optional[TALLY_TYPE]]]
+    bps: int,
+    progressbar: Optional[ProgressBar] = None,
+) -> ObjectRef:  # ObjectRef[Optional[TALLY_TYPE]]
     """
     Launches a parallel tally reduction tree, with a fanout based on `bps` ballots per shard. Returns
     a Ray ObjectRef reference to the future result, which the caller will then need to call
     `ray.get()` to retrieve. The input is expected to be a sequence of references to ballots.
-
-    If Ray supported type parameters, the actual type of the input would be
-    `Sequence[ObjectRef[TALLY_TYPE]]]]`.
     """
 
     iter_count = 1
@@ -248,11 +248,14 @@ def ray_tally_ballots(
             # log_and_print(f"Tally iteration (FINAL): {num_tallies} partial tallies")
             return r_partial_tally.remote(progressbar_actor, *initial_tallies)
 
+        # Sequence[Sequence[ObjectRef[Optional[TALLY_TYPE]]]]
         shards: Sequence[Sequence[ObjectRef]] = shard_list_uniform(initial_tallies, bps)
 
         # log_and_print(
         #     f"Tally iteration {iter_count:2d}: {num_tallies:6d} partial tallies --> {len(shards)} shards (bps = {bps})"
         # )
+
+        # Sequence[ObjectRef[Optional[TALLY_TYPE]]]
         partial_tallies: Sequence[ObjectRef] = [
             r_partial_tally.remote(progressbar_actor, *shard) for shard in shards
         ]
@@ -285,8 +288,8 @@ def r_decrypt(
 
 def ray_decrypt_tally(
     tally: TALLY_TYPE,
-    cec: ObjectRef,
-    keypair: ObjectRef,
+    cec: ObjectRef,  # ObjectRef[CiphertextElectionContext]
+    keypair: ObjectRef,  # ObjectRef[ElGamalKeyPair]
     proof_seed: ElementModQ,
 ) -> DECRYPT_TALLY_OUTPUT_TYPE:
     """
@@ -720,6 +723,8 @@ class RayTallyEverythingResults(NamedTuple):
             progressbar_actor = progressbar.actor if progressbar is not None else None
 
             ballot_start = timer()
+
+            # List[ObjectRef[Optional[TALLY_TYPE]]]
             ballot_results: List[ObjectRef] = [
                 r_verify_ballot_proofs.remote(
                     r_manifest, r_public_key, r_hash_header, progressbar_actor, *shard

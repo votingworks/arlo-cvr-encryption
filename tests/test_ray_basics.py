@@ -10,6 +10,7 @@ from electionguard.elgamal import (
 )
 from electionguard.group import ElementModP, ElementModQ, int_to_q
 from electionguard.nonces import Nonces
+from ray import ObjectRef
 
 from arlo_e2e.ray_helpers import ray_init_localhost
 
@@ -53,7 +54,8 @@ class TestRayBasics(unittest.TestCase):
         ]
         serial_time = timer()
 
-        parallel_ciphertext_objects: List[ray.ObjectRef] = [
+        # List[ObjectRef[ElGamalCiphertext]
+        parallel_ciphertext_objects: List[ObjectRef] = [
             r_encrypt.remote(p, n, r_public_key) for p, n in zip(plaintexts, nonces)
         ]
         parallel_ciphertexts: List[ElGamalCiphertext] = ray.get(
