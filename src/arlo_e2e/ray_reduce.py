@@ -1,25 +1,27 @@
-from typing import TypeVar, Iterable, Callable, Optional
+from typing import TypeVar, Iterable, Callable, Optional, List, Tuple
 
 import ray
-from progressbar import ProgressBar
+from mypy_extensions import VarArg
 from ray import ObjectRef
 
 from arlo_e2e.eg_helpers import log_and_print
+from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.utils import shard_list_uniform
 
 T = TypeVar("T")
+RFA = TypeVar("RFA")
 
 
 def ray_reduce(
-    inputs: Iterable[ObjectRef],
+    inputs: Iterable[ObjectRef[T]],
     shard_size: int,
-    reducer_first_arg: T,
-    reducer: Callable[[T, ..., ObjectRef], ObjectRef],
+    reducer_first_arg: RFA,
+    reducer: Callable[[RFA, VarArg(ObjectRef[T])], ObjectRef[T]],
     progressbar: Optional[ProgressBar] = None,
     progressbar_key: Optional[str] = None,
     timeout: float = None,
     verbose: bool = False,
-) -> ObjectRef:
+) -> ObjectRef[T]:
     """
     Given a list of inputs and a Ray remote reducer, manages the Ray cluster to wait for the values
     when they're ready, and call the reducer to ultimately get down to a single value.
@@ -75,18 +77,25 @@ def ray_reduce(
     # TODO: generalize this code so the `reducer_first_arg` is wrapped up in the reducer.
     #   This seems like a job for `kwargs`. Deal with that after everything else works.
 
-    assert (progressbar_key and progressbar) or not progressbar, "progress bar requires a key string"
+    assert (
+        progressbar_key and progressbar
+    ) or not progressbar, "progress bar requires a key string"
 
     assert shard_size > 1, "shard_size must be greater than one"
 
     iteration_count = 0
 
+    inputs = list(inputs)
+
+    result: Optional[ObjectRef[T]] = None
+
     while inputs:
         iteration_count += 1
         num_inputs = len(inputs)
-        ready_refs, pending_refs = ray.wait(
+        tmp: Tuple[List[ObjectRef[T]], List[ObjectRef[T]]] = ray.wait(
             inputs, num_returns=shard_size * shard_size, timeout=timeout
         )
+        ready_refs, pending_refs = tmp
         num_ready_refs = len(ready_refs)
         num_pending_refs = len(pending_refs)
         assert (
@@ -100,24 +109,33 @@ def ray_reduce(
 
         if num_ready_refs == 1 and num_pending_refs == 0:
             # terminal case: we have one result ready and nothing pending; we're done!
-            return ready_refs[0]
-        if num_ready_refs < 2:
-            # annoying case: we don't have enough data to launch another reduction, so we can only wait again
-            continue
+            result = ready_refs[0]
+            break
+        if num_ready_refs >= 2:
+            # general case: we have at least two results ready
 
-        # general case: we have at least two results ready
+            shards = shard_list_uniform(ready_refs, shard_size)
+            size_one_shards = [s for s in shards if len(s) == 1]
+            usable_shards = [s for s in shards if len(s) > 1]
+            total_usable = sum(len(s) for s in usable_shards)
 
-        shards = shard_list_uniform(ready_refs, shard_size)
-        size_one_shards = [s for s in shards if len(s) == 1]
-        usable_shards = [s for s in shards if len(s) > 1]
-        total_usable = sum(len(s) for s in usable_shards)
+            if progressbar:
+                progressbar.actor.remote.update_total(progressbar_key, total_usable)
 
-        if progressbar:
-            progressbar.actor.update_total.remote(progressbar_key, total_usable)
+            # dispatches jobs to remote workers, returns immediately with ObjectRefs
+            partial_results = [reducer(reducer_first_arg, *s) for s in shards]
 
-        # dispatches jobs to remote workers, returns immediately with ObjectRefs
-        partial_results = [reducer(reducer_first_arg, *s) for s in shards]
+            if progressbar:
+                progressbar.print_update()
 
-        inputs = partial_results + pending_refs + [x[0] for x in size_one_shards]
+            inputs = list(
+                partial_results + pending_refs + [x[0] for x in size_one_shards]
+            )
 
-        assert len(inputs) < num_inputs, "reducer fail: we didn't shrink the inputs"
+            assert len(inputs) < num_inputs, "reducer fail: we didn't shrink the inputs"
+        else:
+            # annoying case: we have exactly one result and nothing useful to do with it
+            pass
+
+    assert result is not None, "reducer fail: somehow exited the loop with no result"
+    return result

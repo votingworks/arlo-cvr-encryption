@@ -1,13 +1,11 @@
 # Inspiration: https://github.com/honnibal/spacy-ray/pull/1/files#diff-7ede881ddc3e8456b320afb958362b2aR12-R45
 from asyncio import Event
 from dataclasses import dataclass
-from typing import Tuple, Dict
+from typing import Dict
 
 import ray
 from ray.actor import ActorHandle
 from tqdm import tqdm
-
-from arlo_e2e.eg_helpers import log_and_print
 
 
 @dataclass
@@ -117,12 +115,16 @@ class ProgressBar:
 
     progress_actor: ActorHandle
     totals: Dict[str, int]
+    progress_bars: Dict[str, tqdm]
 
     def __init__(self, totals: Dict[str, int]):
         # Ray actors don't seem to play nice with mypy, generating a spurious warning
         # for the following line, which we need to suppress. The code is fine.
         self.progress_actor = ProgressBarActor.remote(totals)  # type: ignore
         self.totals = totals
+        self.progress_bars = {
+            key: tqdm(desc=key, total=self.totals[key]) for key in self.totals.keys()
+        }
 
     @property
     def actor(self) -> ActorHandle:
@@ -132,28 +134,34 @@ class ProgressBar:
         """
         return self.progress_actor
 
+    def print_update(self) -> bool:
+        """
+        Blocking call, but returns quickly. This will wait until there's any update in the
+        state of the job, then update the progress bars and return. If the job is done, this
+        will return True and close the progress bars. If not, it returns False.
+        """
+
+        state: Dict[str, ProgressBarState] = ray.get(
+            self.actor.wait_for_update.remote()
+        )
+        complete = True
+        for k in state.keys():
+            s: ProgressBarState = state[k]
+            p: tqdm = self.progress_bars[k]
+            p.update(s.delta_counter)
+            p.total = s.total
+            p.refresh()
+            complete = complete and s.counter >= s.total
+        if complete:
+            for pb in self.progress_bars.values():
+                pb.close()
+        return complete
+
     def print_until_done(self) -> None:
         """
-        Blocking call. Do this after starting a series of remote Ray tasks, to which you've
-        passed the actor handle. Your remote workers might then call the `update` methods
+        Blocking call, runs for a while. Do this after starting a series of remote Ray tasks,
+        to which you've passed the actor handle. Your remote workers might then call the `update` methods
         on the actor. When the progress meter reaches 100%, this method returns.
         """
-        pbars = {
-            key: tqdm(desc=key, total=self.totals[key]) for key in self.totals.keys()
-        }
-        while True:
-            state: Dict[str, ProgressBarState] = ray.get(
-                self.actor.wait_for_update.remote()
-            )
-            complete = True
-            for k in state.keys():
-                s: ProgressBarState = state[k]
-                p: tqdm = pbars[k]
-                p.update(s.delta_counter)
-                p.total = s.total
-                p.refresh()
-                complete = complete and s.counter >= s.total
-            if complete:
-                for pb in pbars.values():
-                    pb.close()
-                return
+        while not self.print_update():
+            pass
