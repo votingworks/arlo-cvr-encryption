@@ -31,13 +31,12 @@ from electionguard.utils import get_optional
 from ray import ObjectRef
 from ray.actor import ActorHandle
 
-from arlo_e2e import ray_reduce
 from arlo_e2e.dominion import DominionCSV, BallotPlaintextFactory
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.manifest import Manifest, make_fresh_manifest, manifest_name_to_filename
 from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.ray_progress import ProgressBar
-from arlo_e2e.ray_reduce import ray_reduce_with_rounds, ray_reduce_with_ray_wait
+from arlo_e2e.ray_reduce import ray_reduce_with_ray_wait
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
     TALLY_TYPE,
@@ -66,6 +65,7 @@ from arlo_e2e.utils import shard_list_uniform, mkdir_helper
 # shaped a lot of how the code here works.
 
 NUM_WRITE_RETRIES = 10
+BATCH_SIZE = 5000
 """
 When we're writing files to s3fs, we'll rarely see failures, but with enough files, it's a certainty.
 This is how many times we'll retry each write until it works.
@@ -118,7 +118,7 @@ def r_encrypt_and_write(
     bpf: BallotPlaintextFactory,
     nonces: List[ElementModQ],
     *plaintext_ballot_dicts: Dict[str, Any],
-) -> TALLY_TYPE:  # pragma: no cover
+) -> Optional[TALLY_TYPE]:  # pragma: no cover
     """
     Remotely encrypts a list of ballots and their associated nonces. If a `root_dir`
     is specified, the encrypted ballots are written to disk, otherwise no disk activity.
@@ -131,9 +131,10 @@ def r_encrypt_and_write(
 
     num_ballots = len(plaintext_ballot_dicts)
     assert len(nonces) == num_ballots, "mismatching numbers of nonces and ballots!"
+    assert num_ballots > 0, "need at least one ballot"
 
-    partial_tallies: List[TALLY_TYPE] = []
-    for i in range(0, len(nonces)):
+    ptally_final: Optional[TALLY_TYPE] = None
+    for i in range(0, num_ballots):
         pballot = bpf.row_to_plaintext_ballot(plaintext_ballot_dicts[i])
         cballot = ciphertext_ballot_to_accepted(
             get_optional(
@@ -153,16 +154,18 @@ def r_encrypt_and_write(
         if progressbar_actor is not None:
             progressbar_actor.update_completed.remote("Ballots", 1)
 
-        partial_tallies.append(ciphertext_ballot_to_dict(cballot))
+        ptally = ciphertext_ballot_to_dict(cballot)
+        ptally_final = (
+            sequential_tally([ptally_final, ptally]) if ptally_final else ptally
+        )
+
+        if progressbar_actor is not None:
+            progressbar_actor.update_completed.remote("Tallies", 1)
 
     if manifest is not None and manifest_aggregator is not None:
         manifest_aggregator.add.remote(manifest)
 
-    ptally = sequential_tally(partial_tallies)
-    if progressbar_actor is not None:
-        progressbar_actor.update_completed.remote("Tallies", num_ballots)
-
-    return ptally
+    return ptally_final
 
 
 def partial_tally(
@@ -219,7 +222,7 @@ def ray_tally_ballots(
     ptallies: Sequence[ObjectRef],  # Sequence[ObjectRef[Optional[TALLY_TYPE]]]
     bps: int,
     progressbar: Optional[ProgressBar] = None,
-) -> Optional[TALLY_TYPE]:
+) -> ObjectRef:
     """
     Launches a parallel tally reduction tree, with a fanout based on `bps` ballots per shard. Returns
     a Ray ObjectRef reference to the future result, which the caller will then need to call
@@ -242,7 +245,7 @@ def ray_tally_ballots(
 
     # Potential scalability issues in ray.wait if it's called with 100k objects, but seem to work.
 
-    result: Optional[TALLY_TYPE] = ray_reduce_with_ray_wait(
+    result = ray_reduce_with_ray_wait(
         ptallies,
         bps,
         progressbar_actor,
@@ -408,44 +411,66 @@ def ray_tally_everything(
     nonces: List[ElementModQ] = Nonces(master_nonce)[0:num_ballots]
 
     inputs = list(zip(ballot_dicts, nonces))
-    bps = ballots_per_shard(num_ballots)
-    sharded_inputs = shard_list_uniform(inputs, bps)
-    num_shards = len(sharded_inputs)
-    assert bps > 1, f"bps = {bps}, should be greater than 1"
 
+    batches = shard_list_uniform(inputs, BATCH_SIZE)
+    num_batches = len(batches)
     log_and_print(
-        f"Launching Ray.io remote encryption! (number of shards available: {num_shards})"
+        f"Launching Ray.io remote encryption! (number of batches: {num_batches})"
     )
 
     start_time = timer()
 
     progressbar = (
-        ProgressBar({"Ballots": num_ballots, "Tallies": num_ballots, "Iterations": 0})
+        ProgressBar(
+            {
+                "Ballots": num_ballots,
+                "Tallies": num_ballots,
+                "Iterations": 0,
+                "Batch": 0,
+            }
+        )
         if use_progressbar
         else None
     )
     progressbar_actor = progressbar.actor if progressbar is not None else None
 
-    partial_tally_refs = [
-        r_encrypt_and_write.remote(
-            r_ied,
-            r_cec,
-            r_seed_hash,
-            r_root_dir,
-            r_manifest_aggregator,
-            progressbar_actor,
-            r_ballot_plaintext_factory,
-            _nonces_from_shard(shard),
-            *(_ballots_from_shard(shard)),
-        )
-        for shard in sharded_inputs
-    ]
+    batch_tallies: List[ObjectRef] = []
+    for batch in batches:
+        if progressbar_actor:
+            progressbar_actor.update_completed.remote("Batch", 1)
 
-    # log_and_print("Remote tallying.")
-    tally = ray_tally_ballots(partial_tally_refs, bps, progressbar)
+        num_ballots_in_batch = len(batch)
+        bps = ballots_per_shard(num_ballots_in_batch)
+        sharded_inputs = shard_list_uniform(batch, bps)
+        num_shards = len(sharded_inputs)
+        assert bps > 1, f"bps = {bps}, should be greater than 1"
 
-    # if progressbar is not None:
-    #     progressbar.print_until_done()
+        partial_tally_refs = [
+            r_encrypt_and_write.remote(
+                r_ied,
+                r_cec,
+                r_seed_hash,
+                r_root_dir,
+                r_manifest_aggregator,
+                progressbar_actor,
+                r_ballot_plaintext_factory,
+                _nonces_from_shard(shard),
+                *(_ballots_from_shard(shard)),
+            )
+            for shard in sharded_inputs
+        ]
+
+        # log_and_print("Remote tallying.")
+        btally = ray_tally_ballots(partial_tally_refs, bps, progressbar)
+        batch_tallies.append(btally)
+
+    if len(batch_tallies) > 1:
+        tally = ray.get(ray_tally_ballots(batch_tallies, 10, progressbar))
+    else:
+        tally = ray.get(batch_tallies[0])
+
+    if progressbar:
+        progressbar.close()
 
     assert tally is not None, "tally failed!"
 
@@ -731,7 +756,9 @@ class RayTallyEverythingResults(NamedTuple):
             # )
             log_and_print("Recomputing tallies.", verbose)
 
-            recomputed_tally = ray_tally_ballots(ballot_results, bps, progressbar)
+            recomputed_tally = ray.get(
+                ray_tally_ballots(ballot_results, bps, progressbar)
+            )
             if not recomputed_tally:
                 return False
 

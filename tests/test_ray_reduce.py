@@ -39,7 +39,7 @@ def r_encrypt(
 
 
 @ray.remote
-def r_tally(
+def r_elgamal_add(
     progressbar_actor: Optional[ActorHandle], *counters: ElGamalCiphertext
 ) -> ElGamalCiphertext:
     num_counters = len(counters)
@@ -73,15 +73,17 @@ class TestRayReduce(unittest.TestCase):
         ]
 
         # compute in parallel
-        ptotal = ray_reduce_with_ray_wait(
-            inputs=ciphertexts,
-            shard_size=3,
-            reducer_first_arg=None,
-            reducer=r_tally.remote,
-            progressbar=None,
-            progressbar_key="Tallies",
-            timeout=None,
-            verbose=True,
+        ptotal = ray.get(
+            ray_reduce_with_ray_wait(
+                inputs=ciphertexts,
+                shard_size=3,
+                reducer_first_arg=None,
+                reducer=r_elgamal_add.remote,
+                progressbar=None,
+                progressbar_key="Tallies",
+                timeout=None,
+                verbose=True,
+            )
         )
 
         # recompute serially
@@ -112,15 +114,17 @@ class TestRayReduce(unittest.TestCase):
         ]
 
         # compute in parallel
-        ptotal = ray_reduce_with_ray_wait(
-            inputs=ciphertexts,
-            shard_size=3,
-            reducer_first_arg=pbar.actor,
-            reducer=r_tally.remote,
-            progressbar=pbar,
-            progressbar_key="Tallies",
-            timeout=None,
-            verbose=False,
+        ptotal = ray.get(
+            ray_reduce_with_ray_wait(
+                inputs=ciphertexts,
+                shard_size=3,
+                reducer_first_arg=pbar.actor,
+                reducer=r_elgamal_add.remote,
+                progressbar=pbar,
+                progressbar_key="Tallies",
+                timeout=None,
+                verbose=False,
+            )
         )
 
         # recompute serially
@@ -148,13 +152,15 @@ class TestRayReduce(unittest.TestCase):
         ]
 
         # compute in parallel
-        ptotal = ray_reduce_with_rounds(
-            inputs=ciphertexts,
-            shard_size=3,
-            reducer_first_arg=None,
-            reducer=r_tally.remote,
-            progressbar=None,
-            verbose=True,
+        ptotal = ray.get(
+            ray_reduce_with_rounds(
+                inputs=ciphertexts,
+                shard_size=3,
+                reducer_first_arg=None,
+                reducer=r_elgamal_add.remote,
+                progressbar=None,
+                verbose=True,
+            )
         )
 
         # recompute serially
@@ -186,14 +192,16 @@ class TestRayReduce(unittest.TestCase):
         ]
 
         # compute in parallel
-        ptotal = ray_reduce_with_rounds(
-            inputs=ciphertexts,
-            shard_size=3,
-            reducer_first_arg=pbar.actor,
-            reducer=r_tally.remote,
-            progressbar=pbar,
-            progressbar_key="Tallies",
-            verbose=False,
+        ptotal = ray.get(
+            ray_reduce_with_rounds(
+                inputs=ciphertexts,
+                shard_size=3,
+                reducer_first_arg=pbar.actor,
+                reducer=r_elgamal_add.remote,
+                progressbar=pbar,
+                progressbar_key="Tallies",
+                verbose=False,
+            )
         )
 
         # recompute serially

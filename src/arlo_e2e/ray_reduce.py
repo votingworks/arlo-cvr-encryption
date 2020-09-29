@@ -26,11 +26,11 @@ def ray_reduce_with_ray_wait(
     progressbar_key: Optional[str] = None,
     timeout: float = None,
     verbose: bool = False,
-) -> Any:
+) -> ObjectRef:
     """
     Given a list of inputs and a Ray remote reducer, manages the Ray cluster to wait for the values
-    when they're ready, and call the reducer to ultimately get down to a single value. That result
-    (not an objectref to it, but the result itself) is returned.
+    when they're ready, and call the reducer to ultimately get down to a single value. An ObjectRef
+    to that result is returned.
 
     The `shard_size` parameter specifies how many inputs should be fed to each call to the reducer.
     Since the available data will vary, the actual number fed to the reducer will be at least two
@@ -156,10 +156,8 @@ def ray_reduce_with_ray_wait(
             if progressbar:
                 progressbar.print_update()
 
-    if progressbar:
-        progressbar.close()
     assert result is not None, "reducer fail: somehow exited the loop with no result"
-    return ray.get(result)
+    return result
 
 
 def ray_reduce_with_rounds(
@@ -170,7 +168,7 @@ def ray_reduce_with_rounds(
     progressbar: Optional[ProgressBar] = None,
     progressbar_key: Optional[str] = None,
     verbose: bool = False,
-) -> Any:
+) -> ObjectRef:
     """
     Given a list of inputs and a Ray remote reducer, manages the Ray cluster to wait for the values
     when they're ready, and call the reducer to ultimately get down to a single value. Unlike
@@ -268,4 +266,4 @@ def ray_reduce_with_rounds(
     if progressbar:
         progressbar.print_until_done()
     assert result is not None, "while loop shouldn't have broken without setting result"
-    return ray.get(result)
+    return result
