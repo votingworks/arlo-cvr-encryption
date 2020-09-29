@@ -165,17 +165,18 @@ def sequential_tally(ptallies: Sequence[Optional[TALLY_INPUT_TYPE]]) -> TALLY_TY
         if isinstance(ptally, CiphertextBallot):
             ptally = ciphertext_ballot_to_dict(ptally)
 
-        if (
-            ptally is not None
-        ):  # should always be true, but paranoia to keep the type system happy
-            for k in ptally.keys():
-                if k not in result:
-                    result[k] = ptally[k]
-                else:
-                    counter_sum = result[k]
-                    counter_partial = ptally[k]
-                    counter_sum = elgamal_add(counter_sum, counter_partial)
-                    result[k] = counter_sum
+        if ptally is None:
+            # should never happen, but paranoia to keep the type system happy
+            return {}
+
+        for k in ptally.keys():
+            if k not in result:
+                result[k] = ptally[k]
+            else:
+                counter_sum = result[k]
+                counter_partial = ptally[k]
+                counter_sum = elgamal_add(counter_sum, counter_partial)
+                result[k] = counter_sum
     return result
 
 

@@ -206,7 +206,12 @@ def r_partial_tally(
     """
     This is a front-end for `partial_tally`, that can be called remotely via Ray.
     """
-    result = partial_tally(progressbar_actor, *ptallies)
+    try:
+        result = partial_tally(progressbar_actor, *ptallies)
+    except Exception:
+        # this should never, ever happen, but if it does, we're going to
+        # convert the local exception into shipping back an empty tally
+        return None
     return result
 
 
