@@ -1,4 +1,4 @@
-from typing import TypeVar, Iterable, Callable, Optional, List, Tuple
+from typing import Iterable, Callable, Optional, List, Tuple, Any
 
 import ray
 from mypy_extensions import VarArg
@@ -8,20 +8,17 @@ from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.utils import shard_list_uniform
 
-T = TypeVar("T")
-RFA = TypeVar("RFA")
-
 
 def ray_reduce(
-    inputs: Iterable[ObjectRef[T]],
+    inputs: Iterable[ObjectRef],
     shard_size: int,
-    reducer_first_arg: RFA,
-    reducer: Callable[[RFA, VarArg(ObjectRef[T])], ObjectRef[T]],
+    reducer_first_arg: Any,
+    reducer: Callable,  # Callable[[Any, VarArg(ObjectRef)], ObjectRef]
     progressbar: Optional[ProgressBar] = None,
     progressbar_key: Optional[str] = None,
     timeout: float = None,
     verbose: bool = False,
-) -> ObjectRef[T]:
+) -> ObjectRef:  # type: ignore
     """
     Given a list of inputs and a Ray remote reducer, manages the Ray cluster to wait for the values
     when they're ready, and call the reducer to ultimately get down to a single value.
@@ -87,13 +84,19 @@ def ray_reduce(
 
     inputs = list(inputs)
 
-    result: Optional[ObjectRef[T]] = None
+    result: Optional[ObjectRef] = None
 
     while inputs:
         iteration_count += 1
+        log_and_print(
+            f"REDUCER ITERATION {iteration_count}: starting with {len(inputs)}",
+            verbose=verbose,
+        )
         num_inputs = len(inputs)
-        tmp: Tuple[List[ObjectRef[T]], List[ObjectRef[T]]] = ray.wait(
-            inputs, num_returns=shard_size * shard_size, timeout=timeout
+        max_returns = shard_size * shard_size
+        num_returns = max_returns if num_inputs >= max_returns else num_inputs
+        tmp: Tuple[List[ObjectRef], List[ObjectRef]] = ray.wait(
+            inputs, num_returns=num_returns, timeout=timeout
         )
         ready_refs, pending_refs = tmp
         num_ready_refs = len(ready_refs)
@@ -103,12 +106,13 @@ def ray_reduce(
         ), "ray.wait fail: we lost some inputs!"
 
         log_and_print(
-            f"Reducer iteration {iteration_count}: ready({num_ready_refs}), pending({num_pending_refs})",
+            f"ray.wait() returned: ready({num_ready_refs}), pending({num_pending_refs})",
             verbose=verbose,
         )
 
         if num_ready_refs == 1 and num_pending_refs == 0:
             # terminal case: we have one result ready and nothing pending; we're done!
+            log_and_print("Complete!", verbose=verbose)
             result = ready_refs[0]
             break
         if num_ready_refs >= 2:
@@ -118,9 +122,13 @@ def ray_reduce(
             size_one_shards = [s for s in shards if len(s) == 1]
             usable_shards = [s for s in shards if len(s) > 1]
             total_usable = sum(len(s) for s in usable_shards)
+            log_and_print(
+                f"launching reduction: {total_usable} total usable values in {len(usable_shards)} shards, {len(size_one_shards)} size-one shards",
+                verbose=verbose,
+            )
 
             if progressbar:
-                progressbar.actor.remote.update_total(progressbar_key, total_usable)
+                progressbar.actor.update_total.remote(progressbar_key, total_usable)
 
             # dispatches jobs to remote workers, returns immediately with ObjectRefs
             partial_results = [reducer(reducer_first_arg, *s) for s in shards]
