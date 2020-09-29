@@ -7,16 +7,17 @@
 # 100%.) And it's deeply unclear that this code scales to huge clusters. ray.wait() may or may not
 # be able to handle that many ObjectRefs.
 
-from typing import Iterable, Callable, Optional, List, Tuple, Any
+from typing import Iterable, Callable, Optional, List, Tuple, Any, Sequence
 
 import ray
 from ray import ObjectRef
 
+from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.utils import shard_list_uniform
 
 
-def ray_reduce(
+def ray_reduce_with_ray_wait(
     inputs: Iterable[ObjectRef],
     shard_size: int,
     reducer_first_arg: Any,
@@ -61,7 +62,7 @@ def ray_reduce(
 
     def run_everything(config: Config, inputs: Iterable[SomethingElse]) -> MyDataType:
         map_refs = [my_mapper.remote(i) for i in inputs]
-        return ray.get(ray_reduce(map_refs, 10, config, my_reducer.remote))
+        return ray.get(ray_reduce_with_ray_wait(map_refs, 10, config, my_reducer.remote))
     ```
 
     If your `reducer_first_arg` corresponds to some large object that you don't want to serialize
@@ -135,10 +136,12 @@ def ray_reduce(
             # )
 
             if progressbar:
-                progressbar.actor.update_total.remote(progressbar_key, total_usable)
+                progressbar.actor.update_total.remote(
+                    progressbar_key, len(usable_shards)
+                )
 
             # dispatches jobs to remote workers, returns immediately with ObjectRefs
-            partial_results = [reducer(reducer_first_arg, *s) for s in shards]
+            partial_results = [reducer(reducer_first_arg, *s) for s in usable_shards]
 
             if progressbar:
                 progressbar.print_update()
@@ -153,4 +156,113 @@ def ray_reduce(
             pass
 
     assert result is not None, "reducer fail: somehow exited the loop with no result"
+    return result
+
+
+def ray_reduce_with_rounds(
+    inputs: Iterable[ObjectRef],
+    shard_size: int,
+    reducer_first_arg: Any,
+    reducer: Callable,  # Callable[[Any, VarArg(ObjectRef)], ObjectRef]
+    progressbar: Optional[ProgressBar] = None,
+    progressbar_key: Optional[str] = None,
+    verbose: bool = False,
+) -> ObjectRef:  # type: ignore
+    """
+    Given a list of inputs and a Ray remote reducer, manages the Ray cluster to wait for the values
+    when they're ready, and call the reducer to ultimately get down to a single value. Unlike
+    `ray_reduce_with_ray_wait`, this version builds a reduction tree. It depends on an associative
+    property for the reducer, but not a commutative property.
+
+    The `shard_size` parameter specifies how many inputs should be fed to each call to the reducer.
+    Since the available data will vary, the actual number fed to the reducer will be at least two
+    and at most `shard_size`.
+
+    The `reducer` is a Ray remote method reference that takes a given first argument of whatever
+    type and then a varargs sequence of objectrefs, and returns an objectref. So, if you had
+    code that looked like:
+
+    ```
+    @ray.remote
+    def my_reducer(config: Config, *inputs: MyDataType) -> MyDataType:
+        ...
+    ```
+
+    And let's say you're mapping some remote function to generate those values and later want
+    to reduce them. That code might look like this:
+    ```
+    @ray.remote
+    def my_mapper(input: SomethingElse) -> MyDataType:
+        ...
+
+    def run_everything(config: Config, inputs: Iterable[SomethingElse]) -> MyDataType:
+        map_refs = [my_mapper.remote(i) for i in inputs]
+        return ray.get(ray_reduce_with_rounds(map_refs, 10, config, my_reducer.remote))
+    ```
+
+    If your `reducer_first_arg` corresponds to some large object that you don't want to serialize
+    over and over, you could of course call `ray_put` on it first and pass that along.
+
+    Optional feature: integration with the progressbar in `ray_progress`. Just pass in the
+    ProgressBar as well as the `key` string that you want to use. Whenever more work
+    is being dispatched, the progressbar's total amount of work is updated by the dispatcher here.
+    The work completion notification is *not* handled here. That needs to be done by the remote
+    reducer. (Why? Because it might want to update the progressbar for each element in the shard
+    while here we could only see when the whole shard is completed.)
+    """
+
+    # TODO: generalize this code so the `reducer_first_arg` is wrapped up in the reducer.
+    #   This seems like a job for `kwargs`. Deal with that after everything else works.
+
+    assert (
+        progressbar_key and progressbar
+    ) or not progressbar, "progress bar requires a key string"
+
+    assert shard_size > 1, "shard_size must be greater than one"
+
+    progressbar_actor = progressbar.actor if progressbar is not None else None
+    iter_count = 1
+
+    result: Optional[ObjectRef] = None
+
+    inputs = list(inputs)
+
+    while True:
+        num_inputs = len(inputs)
+
+        if progressbar_actor is not None:
+            progressbar_actor.update_total.remote(progressbar_key, num_inputs)
+
+        if num_inputs <= shard_size:
+            log_and_print(
+                f"Reduction (FINAL): {num_inputs} partial results", verbose=verbose
+            )
+            result = reducer(reducer_first_arg, *inputs)
+            break
+
+        # Sequence[Sequence[ObjectRef[Optional[TALLY_TYPE]]]]
+        shards: Sequence[Sequence[ObjectRef]] = shard_list_uniform(inputs, shard_size)
+
+        log_and_print(
+            f"Reduction {iter_count:2d}: {num_inputs:6d} partial results --> {len(shards)} shards (bps = {shard_size})",
+            verbose=verbose,
+        )
+
+        # Sequence[ObjectRef[Optional[TALLY_TYPE]]]
+        partial_results: List[ObjectRef] = [
+            reducer(reducer_first_arg, *shard) for shard in shards
+        ]
+
+        # To avoid deeply nested tasks, we're going to wait for this to finish.
+        # If you comment out the call to ray.wait(), everything still works, but
+        # you can get warnings about too many tasks.
+        # ray.wait(partial_results, num_returns=len(partial_results), timeout=None)
+
+        iter_count += 1
+        inputs = partial_results
+
+    if progressbar:
+        progressbar.print_until_done()
+
+    assert result is not None, "while loop shouldn't have broken without setting result"
     return result

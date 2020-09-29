@@ -17,10 +17,9 @@ from hypothesis.strategies import lists, integers
 from ray import ObjectRef
 from ray.actor import ActorHandle
 
-from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.ray_progress import ProgressBar
-from arlo_e2e.ray_reduce import ray_reduce
+from arlo_e2e.ray_reduce import ray_reduce_with_ray_wait, ray_reduce_with_rounds
 
 
 @ray.remote
@@ -35,7 +34,7 @@ def r_encrypt(
         print(f"expected ElementModP, got {str(type(public_key))}")
 
     if progressbar_actor:
-        progressbar_actor.update_completed.remote("Encrypt", 1)
+        progressbar_actor.update_completed.remote("Ballots", 1)
     return elgamal_encrypt(plaintext, nonce, public_key)
 
 
@@ -46,7 +45,7 @@ def r_tally(
     num_counters = len(counters)
     result = elgamal_add(*counters)
     if progressbar_actor:
-        progressbar_actor.update_completed.remote("Tally", num_counters)
+        progressbar_actor.update_completed.remote("Tallies", num_counters)
     return result
 
 
@@ -63,7 +62,7 @@ class TestRayReduce(unittest.TestCase):
         lists(integers(min_value=0, max_value=1), min_size=20, max_size=200),
         elgamal_keypairs(),
     )
-    def test_encrypt_tally_no_progress(
+    def test_reduce_with_ray_wait_no_progress(
         self, counters: List[int], keypair: ElGamalKeyPair
     ) -> None:
         nonces = Nonces(int_to_q(3))[0 : len(counters)]
@@ -75,13 +74,13 @@ class TestRayReduce(unittest.TestCase):
 
         # compute in parallel
         ptotal = ray.get(
-            ray_reduce(
+            ray_reduce_with_ray_wait(
                 inputs=ciphertexts,
                 shard_size=3,
                 reducer_first_arg=None,
                 reducer=r_tally.remote,
                 progressbar=None,
-                progressbar_key="Tally",
+                progressbar_key="Tallies",
                 timeout=None,
                 verbose=True,
             )
@@ -101,11 +100,11 @@ class TestRayReduce(unittest.TestCase):
         lists(integers(min_value=0, max_value=1), min_size=20, max_size=200),
         elgamal_keypairs(),
     )
-    def test_encrypt_tally_with_progress(
+    def test_reduce_with_ray_wait_with_progress(
         self, counters: List[int], keypair: ElGamalKeyPair
     ) -> None:
         nonces = Nonces(int_to_q(3))[0 : len(counters)]
-        pbar = ProgressBar({"Encrypt": len(counters), "Tally": len(counters)})
+        pbar = ProgressBar({"Ballots": len(counters), "Tallies": len(counters)})
 
         ciphertexts: List[ObjectRef] = [
             r_encrypt.remote(pbar.actor, p, n, keypair.public_key)
@@ -114,14 +113,89 @@ class TestRayReduce(unittest.TestCase):
 
         # compute in parallel
         ptotal = ray.get(
-            ray_reduce(
+            ray_reduce_with_ray_wait(
                 inputs=ciphertexts,
                 shard_size=3,
                 reducer_first_arg=pbar.actor,
                 reducer=r_tally.remote,
                 progressbar=pbar,
-                progressbar_key="Tally",
+                progressbar_key="Tallies",
                 timeout=None,
+                verbose=False,
+            )
+        )
+
+        # recompute serially
+        stotal = elgamal_add(*ray.get(ciphertexts))
+
+        self.assertEqual(stotal, ptotal)
+
+    @settings(
+        deadline=timedelta(milliseconds=50000),
+        suppress_health_check=[HealthCheck.too_slow],
+        max_examples=10,
+    )
+    @given(
+        lists(integers(min_value=0, max_value=1), min_size=20, max_size=200),
+        elgamal_keypairs(),
+    )
+    def test_reduce_with_rounds_without_progress(
+        self, counters: List[int], keypair: ElGamalKeyPair
+    ) -> None:
+        nonces = Nonces(int_to_q(3))[0 : len(counters)]
+
+        ciphertexts: List[ObjectRef] = [
+            r_encrypt.remote(None, p, n, keypair.public_key)
+            for p, n in zip(counters, nonces)
+        ]
+
+        # compute in parallel
+        ptotal = ray.get(
+            ray_reduce_with_rounds(
+                inputs=ciphertexts,
+                shard_size=3,
+                reducer_first_arg=None,
+                reducer=r_tally.remote,
+                progressbar=None,
+                verbose=True,
+            )
+        )
+
+        # recompute serially
+        stotal = elgamal_add(*ray.get(ciphertexts))
+
+        self.assertEqual(stotal, ptotal)
+
+    @unittest.skip("doesn't complete here, but works fine elsewhere; weird")
+    @settings(
+        deadline=timedelta(milliseconds=50000),
+        suppress_health_check=[HealthCheck.too_slow],
+        max_examples=10,
+    )
+    @given(
+        lists(integers(min_value=0, max_value=1), min_size=20, max_size=200),
+        elgamal_keypairs(),
+    )
+    def test_reduce_with_rounds_with_progress(
+        self, counters: List[int], keypair: ElGamalKeyPair
+    ) -> None:
+        nonces = Nonces(int_to_q(3))[0 : len(counters)]
+        pbar = ProgressBar({"Ballots": len(counters), "Tallies": len(counters)})
+
+        ciphertexts: List[ObjectRef] = [
+            r_encrypt.remote(pbar.actor, p, n, keypair.public_key)
+            for p, n in zip(counters, nonces)
+        ]
+
+        # compute in parallel
+        ptotal = ray.get(
+            ray_reduce_with_rounds(
+                inputs=ciphertexts,
+                shard_size=3,
+                reducer_first_arg=pbar.actor,
+                reducer=r_tally.remote,
+                progressbar=pbar,
+                progressbar_key="Tallies",
                 verbose=False,
             )
         )

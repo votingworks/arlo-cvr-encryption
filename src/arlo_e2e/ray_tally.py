@@ -31,11 +31,13 @@ from electionguard.utils import get_optional
 from ray import ObjectRef
 from ray.actor import ActorHandle
 
+from arlo_e2e import ray_reduce
 from arlo_e2e.dominion import DominionCSV, BallotPlaintextFactory
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.manifest import Manifest, make_fresh_manifest, manifest_name_to_filename
 from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.ray_progress import ProgressBar
+from arlo_e2e.ray_reduce import ray_reduce_with_rounds, ray_reduce_with_ray_wait
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
     TALLY_TYPE,
@@ -234,11 +236,14 @@ def ray_tally_ballots(
     ), "type failure: got a dict when we should have gotten a sequence"
     assert bps > 1, f"bps = {bps}, should be greater than 1"
 
+    bps = max(10, bps)
+
     progressbar_actor = progressbar.actor if progressbar else None
 
-    # Gets the right answer, but the progressbar doesn't really work yet.
+    # Gets the right answer, but the progressbar doesn't work properly (yet). Also, potential
+    # scalability issues in ray.wait if it's called with 100k objects.
 
-    # return ray_reduce(
+    # return ray_reduce_with_ray_wait(
     #     ptallies,
     #     bps,
     #     progressbar_actor,
@@ -249,49 +254,13 @@ def ray_tally_ballots(
     #     verbose=True,
     # )
 
-    # The shards used for encryption can be pretty small, since there's so much work
-    # being done per shard. For tallying, it's a lot less work, so having a bigger
-    # number here speeds things up by having fewer rounds of tally reduction.
-    bps = max(10, bps)
+    # Original algorithm. Doesn't use ray.wait explicitly, but instead creates a reduction
+    # tree. Doesn't launch reduction jobs as quickly, so it's slightly less efficient,
+    # but the progressbar works, and scalability seems to be fine.
 
-    assert not isinstance(
-        ptallies, Dict
-    ), "type failure: got a dict when we should have gotten a sequence"
-    assert bps > 1, f"bps = {bps}, should be greater than 1"
-
-    while True:
-        assert not isinstance(
-            initial_tallies, Dict
-        ), "type error: got a dict when we were expecting a sequence"
-        num_tallies = len(initial_tallies)
-
-        if progressbar_actor is not None:
-            progressbar_actor.update_total.remote("Tallies", num_tallies)
-
-        if num_tallies <= bps:
-            # Run locally; no need for remote dispatch when we're this close to done.
-            # log_and_print(f"Tally iteration (FINAL): {num_tallies} partial tallies")
-            return r_partial_tally.remote(progressbar_actor, *initial_tallies)
-
-        # Sequence[Sequence[ObjectRef[Optional[TALLY_TYPE]]]]
-        shards: Sequence[Sequence[ObjectRef]] = shard_list_uniform(initial_tallies, bps)
-
-        # log_and_print(
-        #     f"Tally iteration {iter_count:2d}: {num_tallies:6d} partial tallies --> {len(shards)} shards (bps = {bps})"
-        # )
-
-        # Sequence[ObjectRef[Optional[TALLY_TYPE]]]
-        partial_tallies: Sequence[ObjectRef] = [
-            r_partial_tally.remote(progressbar_actor, *shard) for shard in shards
-        ]
-
-        # To avoid deeply nested tasks, we're going to wait for this to finish.
-        # If you comment out the call to ray.wait(), everything still works, but
-        # you can get warnings about too many tasks.
-        # ray.wait(partial_tallies, num_returns=len(partial_tallies), timeout=None)
-
-        iter_count += 1
-        initial_tallies = partial_tallies
+    return ray_reduce_with_rounds(
+        ptallies, bps, progressbar_actor, r_partial_tally.remote, progressbar, "Tallies"
+    )
 
 
 @ray.remote
@@ -477,8 +446,8 @@ def ray_tally_everything(
     # log_and_print("Remote tallying.")
     tally_ref = ray_tally_ballots(partial_tally_refs, bps, progressbar)
 
-    if progressbar is not None:
-        progressbar.print_until_done()
+    # if progressbar is not None:
+    #     progressbar.print_until_done()
 
     tally: Optional[TALLY_TYPE] = ray.get(tally_ref)
     assert tally is not None, "tally failed!"
