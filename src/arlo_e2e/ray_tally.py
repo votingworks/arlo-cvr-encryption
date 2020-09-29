@@ -76,7 +76,7 @@ def ballots_per_shard(num_ballots: int) -> int:
     to the square root of the number of ballots. The result will never be less
     than 2 or greater than 30.
     """
-    return min(30, max(10, int(ceil(sqrt(num_ballots) / 30))))
+    return min(30, max(4, int(ceil(sqrt(num_ballots) / 30))))
 
 
 @ray.remote
@@ -223,6 +223,31 @@ def ray_tally_ballots(
     initial_tallies = ptallies
 
     progressbar_actor = progressbar.actor if progressbar is not None else None
+
+    # The shards used for encryption can be pretty small, since there's so much work
+    # being done per shard. For tallying, it's a lot less work, so having a bigger
+    # number here speeds things up by having fewer rounds of tally reduction.
+    bps = max(10, bps)
+
+    assert not isinstance(
+        ptallies, Dict
+    ), "type failure: got a dict when we should have gotten a sequence"
+    assert bps > 1, f"bps = {bps}, should be greater than 1"
+
+    progressbar_actor = progressbar.actor if progressbar else None
+
+    # Gets the right answer, but the progressbar doesn't really work yet.
+
+    # return ray_reduce(
+    #     ptallies,
+    #     bps,
+    #     progressbar_actor,
+    #     r_partial_tally.remote,
+    #     progressbar,
+    #     "Tallies",
+    #     timeout=0.1,
+    #     verbose=True,
+    # )
 
     # The shards used for encryption can be pretty small, since there's so much work
     # being done per shard. For tallying, it's a lot less work, so having a bigger
