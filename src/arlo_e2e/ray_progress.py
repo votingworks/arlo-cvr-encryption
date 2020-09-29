@@ -153,8 +153,7 @@ class ProgressBar:
             p.refresh()
             complete = complete and s.counter >= s.total
         if complete:
-            for pb in self.progress_bars.values():
-                pb.close()
+            self.close()
         return complete
 
     def print_until_done(self) -> None:
@@ -165,3 +164,11 @@ class ProgressBar:
         """
         while not self.print_update():
             pass
+
+    def close(self) -> None:
+        """
+        If you know the work is done, this calls `close` on the progressbars within.
+        """
+        for pb in self.progress_bars.values():
+            pb.close()
+            self.progress_bars = {}

@@ -26,10 +26,11 @@ def ray_reduce_with_ray_wait(
     progressbar_key: Optional[str] = None,
     timeout: float = None,
     verbose: bool = False,
-) -> ObjectRef:  # type: ignore
+) -> Any:
     """
     Given a list of inputs and a Ray remote reducer, manages the Ray cluster to wait for the values
-    when they're ready, and call the reducer to ultimately get down to a single value.
+    when they're ready, and call the reducer to ultimately get down to a single value. That result
+    (not an objectref to it, but the result itself) is returned.
 
     The `shard_size` parameter specifies how many inputs should be fed to each call to the reducer.
     Since the available data will vary, the actual number fed to the reducer will be at least two
@@ -62,7 +63,7 @@ def ray_reduce_with_ray_wait(
 
     def run_everything(config: Config, inputs: Iterable[SomethingElse]) -> MyDataType:
         map_refs = [my_mapper.remote(i) for i in inputs]
-        return ray.get(ray_reduce_with_ray_wait(map_refs, 10, config, my_reducer.remote))
+        return ray_reduce_with_ray_wait(map_refs, 10, config, my_reducer.remote)
     ```
 
     If your `reducer_first_arg` corresponds to some large object that you don't want to serialize
@@ -85,16 +86,17 @@ def ray_reduce_with_ray_wait(
     assert (
         progressbar_key and progressbar
     ) or not progressbar, "progress bar requires a key string"
-
     assert shard_size > 1, "shard_size must be greater than one"
+    assert timeout is None or timeout > 0, "negative timeouts aren't allowed"
 
     iteration_count = 0
-
     inputs = list(inputs)
-
     result: Optional[ObjectRef] = None
 
     while inputs:
+        if progressbar:
+            progressbar.actor.update_completed.remote("Iterations", 1)
+
         iteration_count += 1
         # log_and_print(
         #     f"REDUCER ITERATION {iteration_count}: starting with {len(inputs)}",
@@ -136,9 +138,7 @@ def ray_reduce_with_ray_wait(
             # )
 
             if progressbar:
-                progressbar.actor.update_total.remote(
-                    progressbar_key, len(usable_shards)
-                )
+                progressbar.actor.update_total.remote(progressbar_key, total_usable)
 
             # dispatches jobs to remote workers, returns immediately with ObjectRefs
             partial_results = [reducer(reducer_first_arg, *s) for s in usable_shards]
@@ -153,10 +153,13 @@ def ray_reduce_with_ray_wait(
             assert len(inputs) < num_inputs, "reducer fail: we didn't shrink the inputs"
         else:
             # annoying case: we have exactly one result and nothing useful to do with it
-            pass
+            if progressbar:
+                progressbar.print_update()
 
+    if progressbar:
+        progressbar.close()
     assert result is not None, "reducer fail: somehow exited the loop with no result"
-    return result
+    return ray.get(result)
 
 
 def ray_reduce_with_rounds(
@@ -167,7 +170,7 @@ def ray_reduce_with_rounds(
     progressbar: Optional[ProgressBar] = None,
     progressbar_key: Optional[str] = None,
     verbose: bool = False,
-) -> ObjectRef:  # type: ignore
+) -> Any:
     """
     Given a list of inputs and a Ray remote reducer, manages the Ray cluster to wait for the values
     when they're ready, and call the reducer to ultimately get down to a single value. Unlike
@@ -197,7 +200,7 @@ def ray_reduce_with_rounds(
 
     def run_everything(config: Config, inputs: Iterable[SomethingElse]) -> MyDataType:
         map_refs = [my_mapper.remote(i) for i in inputs]
-        return ray.get(ray_reduce_with_rounds(map_refs, 10, config, my_reducer.remote))
+        return ray_reduce_with_rounds(map_refs, 10, config, my_reducer.remote)
     ```
 
     If your `reducer_first_arg` corresponds to some large object that you don't want to serialize
@@ -231,6 +234,7 @@ def ray_reduce_with_rounds(
         num_inputs = len(inputs)
 
         if progressbar_actor is not None:
+            progressbar_actor.update_completed.remote("Iterations", 1)
             progressbar_actor.update_total.remote(progressbar_key, num_inputs)
 
         if num_inputs <= shard_size:
@@ -263,6 +267,5 @@ def ray_reduce_with_rounds(
 
     if progressbar:
         progressbar.print_until_done()
-
     assert result is not None, "while loop shouldn't have broken without setting result"
-    return result
+    return ray.get(result)

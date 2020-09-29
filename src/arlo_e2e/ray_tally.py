@@ -214,17 +214,12 @@ def ray_tally_ballots(
     ptallies: Sequence[ObjectRef],  # Sequence[ObjectRef[Optional[TALLY_TYPE]]]
     bps: int,
     progressbar: Optional[ProgressBar] = None,
-) -> ObjectRef:  # ObjectRef[Optional[TALLY_TYPE]]
+) -> Optional[TALLY_TYPE]:
     """
     Launches a parallel tally reduction tree, with a fanout based on `bps` ballots per shard. Returns
     a Ray ObjectRef reference to the future result, which the caller will then need to call
     `ray.get()` to retrieve. The input is expected to be a sequence of references to ballots.
     """
-
-    iter_count = 1
-    initial_tallies = ptallies
-
-    progressbar_actor = progressbar.actor if progressbar is not None else None
 
     # The shards used for encryption can be pretty small, since there's so much work
     # being done per shard. For tallying, it's a lot less work, so having a bigger
@@ -240,27 +235,25 @@ def ray_tally_ballots(
 
     progressbar_actor = progressbar.actor if progressbar else None
 
-    # Gets the right answer, but the progressbar doesn't work properly (yet). Also, potential
-    # scalability issues in ray.wait if it's called with 100k objects.
+    # Potential scalability issues in ray.wait if it's called with 100k objects, but seem to work.
 
-    # return ray_reduce_with_ray_wait(
-    #     ptallies,
-    #     bps,
-    #     progressbar_actor,
-    #     r_partial_tally.remote,
-    #     progressbar,
-    #     "Tallies",
-    #     timeout=0.1,
-    #     verbose=True,
-    # )
+    result: Optional[TALLY_TYPE] = ray_reduce_with_ray_wait(
+        ptallies,
+        bps,
+        progressbar_actor,
+        r_partial_tally.remote,
+        progressbar,
+        "Tallies",
+        timeout=0.5,
+    )
 
     # Original algorithm. Doesn't use ray.wait explicitly, but instead creates a reduction
-    # tree. Doesn't launch reduction jobs as quickly, so it's slightly less efficient,
-    # but the progressbar works, and scalability seems to be fine.
+    # tree. Doesn't launch reduction jobs as quickly, so it's slightly less efficient.
 
-    return ray_reduce_with_rounds(
-        ptallies, bps, progressbar_actor, r_partial_tally.remote, progressbar, "Tallies"
-    )
+    # result: Optional[TALLY_TYPE] = ray_reduce_with_rounds(
+    #     ptallies, bps, progressbar_actor, r_partial_tally.remote, progressbar, "Tallies"
+    # )
+    return result
 
 
 @ray.remote
@@ -422,7 +415,7 @@ def ray_tally_everything(
     start_time = timer()
 
     progressbar = (
-        ProgressBar({"Ballots": num_ballots, "Tallies": num_ballots})
+        ProgressBar({"Ballots": num_ballots, "Tallies": num_ballots, "Iterations": 0})
         if use_progressbar
         else None
     )
@@ -444,12 +437,11 @@ def ray_tally_everything(
     ]
 
     # log_and_print("Remote tallying.")
-    tally_ref = ray_tally_ballots(partial_tally_refs, bps, progressbar)
+    tally = ray_tally_ballots(partial_tally_refs, bps, progressbar)
 
     # if progressbar is not None:
     #     progressbar.print_until_done()
 
-    tally: Optional[TALLY_TYPE] = ray.get(tally_ref)
     assert tally is not None, "tally failed!"
 
     log_and_print("Tally decryption.")
@@ -710,7 +702,9 @@ class RayTallyEverythingResults(NamedTuple):
             r_manifest = ray.put(self.manifest)
 
             progressbar = (
-                ProgressBar({"Ballots": num_ballots, "Tallies": num_ballots})
+                ProgressBar(
+                    {"Ballots": num_ballots, "Tallies": num_ballots, "Iterations": 0}
+                )
                 if use_progressbar
                 else None
             )
@@ -732,9 +726,7 @@ class RayTallyEverythingResults(NamedTuple):
             # )
             log_and_print("Recomputing tallies.", verbose)
 
-            recomputed_tally: Optional[TALLY_TYPE] = ray.get(
-                ray_tally_ballots(ballot_results, bps, progressbar)
-            )
+            recomputed_tally = ray_tally_ballots(ballot_results, bps, progressbar)
             if not recomputed_tally:
                 return False
 
