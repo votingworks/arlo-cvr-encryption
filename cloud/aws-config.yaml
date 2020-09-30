@@ -145,9 +145,9 @@ setup_commands:
     # this command does everything from scratch
     # - sudo -H ubuntu-setup.sh
     # while this command just updates arlo-e2e plus Ray
-    - sudo -H pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-manylinux1_x86_64.whl
+#    - sudo -H pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-manylinux1_x86_64.whl
     - sudo -H pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
-#    - sudo -H pip install 'ray==1.0.0rc2'
+    - sudo -H pip install -U 'ray==1.0.0'
     # we keep getting messages about hitting some maximum number of files... why?
     - sudo -H sysctl -w fs.file-max=5000000
     # this mounts the S3 storage bucket on /mnt/arlo-data; note that we can specify the storage class here as well
