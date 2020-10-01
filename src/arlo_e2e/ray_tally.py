@@ -40,8 +40,6 @@ from arlo_e2e.ray_reduce import ray_reduce_with_ray_wait
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
     TALLY_TYPE,
-    DECRYPT_INPUT_TYPE,
-    DECRYPT_OUTPUT_TYPE,
     DECRYPT_TALLY_OUTPUT_TYPE,
     SelectionInfo,
     ciphertext_ballot_to_accepted,
@@ -49,6 +47,8 @@ from arlo_e2e.tally import (
     sequential_tally,
     tallies_match,
     ballot_memos_from_metadata,
+    DecryptOutput,
+    DecryptInput,
 )
 from arlo_e2e.utils import shard_list_uniform, mkdir_helper
 
@@ -65,7 +65,7 @@ from arlo_e2e.utils import shard_list_uniform, mkdir_helper
 # shaped a lot of how the code here works.
 
 NUM_WRITE_RETRIES = 10
-BATCH_SIZE = 5000
+BATCH_SIZE = 10000
 """
 When we're writing files to s3fs, we'll rarely see failures, but with enough files, it's a certainty.
 This is how many times we'll retry each write until it works.
@@ -127,45 +127,49 @@ def r_encrypt_and_write(
     encrypted ballots is returned.
     """
 
-    manifest = make_fresh_manifest(root_dir) if root_dir is not None else None
+    try:
+        manifest = make_fresh_manifest(root_dir) if root_dir is not None else None
 
-    num_ballots = len(plaintext_ballot_dicts)
-    assert len(nonces) == num_ballots, "mismatching numbers of nonces and ballots!"
-    assert num_ballots > 0, "need at least one ballot"
+        num_ballots = len(plaintext_ballot_dicts)
+        assert len(nonces) == num_ballots, "mismatching numbers of nonces and ballots!"
+        assert num_ballots > 0, "need at least one ballot"
 
-    ptally_final: Optional[TALLY_TYPE] = None
-    for i in range(0, num_ballots):
-        pballot = bpf.row_to_plaintext_ballot(plaintext_ballot_dicts[i])
-        cballot = ciphertext_ballot_to_accepted(
-            get_optional(
-                encrypt_ballot(
-                    pballot,
-                    ied,
-                    cec,
-                    seed_hash,
-                    nonces[i],
-                    should_verify_proofs=False,
+        ptally_final: Optional[TALLY_TYPE] = None
+        for i in range(0, num_ballots):
+            pballot = bpf.row_to_plaintext_ballot(plaintext_ballot_dicts[i])
+            cballot = ciphertext_ballot_to_accepted(
+                get_optional(
+                    encrypt_ballot(
+                        pballot,
+                        ied,
+                        cec,
+                        seed_hash,
+                        nonces[i],
+                        should_verify_proofs=False,
+                    )
                 )
             )
-        )
-        if manifest is not None:
-            manifest.write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
+            if manifest is not None:
+                manifest.write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
 
-        if progressbar_actor is not None:
-            progressbar_actor.update_completed.remote("Ballots", 1)
+            if progressbar_actor is not None:
+                progressbar_actor.update_completed.remote("Ballots", 1)
 
-        ptally = ciphertext_ballot_to_dict(cballot)
-        ptally_final = (
-            sequential_tally([ptally_final, ptally]) if ptally_final else ptally
-        )
+            ptally = ciphertext_ballot_to_dict(cballot)
+            ptally_final = (
+                sequential_tally([ptally_final, ptally]) if ptally_final else ptally
+            )
 
-        if progressbar_actor is not None:
-            progressbar_actor.update_completed.remote("Tallies", 1)
+            if progressbar_actor is not None:
+                progressbar_actor.update_completed.remote("Tallies", 1)
 
-    if manifest is not None and manifest_aggregator is not None:
-        manifest_aggregator.add.remote(manifest)
+        if manifest is not None and manifest_aggregator is not None:
+            manifest_aggregator.add.remote(manifest)
 
-    return ptally_final
+        return ptally_final
+    except Exception as e:
+        log_and_print(f"Unexpected exception in r_encrypt_and_write: {e}", True)
+        return None
 
 
 def partial_tally(
@@ -211,11 +215,10 @@ def r_partial_tally(
     """
     try:
         result = partial_tally(progressbar_actor, *ptallies)
-    except Exception:
-        # this should never, ever happen, but if it does, we're going to
-        # convert the local exception into shipping back an empty tally
+        return result
+    except Exception as e:
+        log_and_print(f"Unexpected exception in r_partial_tally: {e}", True)
         return None
-    return result
 
 
 def ray_tally_ballots(
@@ -266,19 +269,20 @@ def ray_tally_ballots(
 
 @ray.remote
 def r_decrypt(
-    cec: CiphertextElectionContext,
-    keypair: ElGamalKeyPair,
-    decrypt_input: DECRYPT_INPUT_TYPE,
-) -> DECRYPT_OUTPUT_TYPE:  # pragma: no cover
+    cec: CiphertextElectionContext, keypair: ElGamalKeyPair, di: DecryptInput
+) -> Optional[DecryptOutput]:  # pragma: no cover
     """
-    Remotely decrypts an ElGamalCiphertext (and its related data -- see DECRYPT_INPUT_TYPE)
-    and returns the plaintext along with a Chaum-Pedersen proof (see DECRYPT_OUTPUT_TYPE).
+    Remotely decrypts an ElGamalCiphertext (and its related data -- see DecryptInput)
+    and returns the plaintext along with a Chaum-Pedersen proof (see DecryptOutput).
     """
-    object_id, seed, c = decrypt_input
-    plaintext, proof = decrypt_ciphertext_with_proof(
-        c, keypair, seed, cec.crypto_extended_base_hash
-    )
-    return object_id, plaintext, proof
+    try:
+        plaintext, proof = decrypt_ciphertext_with_proof(
+            di.ciphertext, keypair, di.seed, cec.crypto_extended_base_hash
+        )
+        return DecryptOutput(di.object_id, plaintext, proof)
+    except Exception as e:
+        log_and_print(f"Unexpected exception in r_decrypt: {e}", True)
+        return None
 
 
 def ray_decrypt_tally(
@@ -299,18 +303,28 @@ def ray_decrypt_tally(
     """
     tkeys = tally.keys()
     proof_seeds: List[ElementModQ] = Nonces(proof_seed)[0 : len(tkeys)]
-    inputs: List[DECRYPT_INPUT_TYPE] = [
-        (object_id, seed, tally[object_id])
+    inputs: List[DecryptInput] = [
+        DecryptInput(object_id, seed, tally[object_id])
         for seed, object_id in zip(proof_seeds, tkeys)
     ]
 
     # We can't be lazy here: we need to have all this data in hand so we can
     # rearrange it into a dictionary and return it.
-    result: List[DECRYPT_OUTPUT_TYPE] = ray.get(
+    result: List[Optional[DecryptOutput]] = ray.get(
         [r_decrypt.remote(cec, keypair, x) for x in inputs]
     )
 
-    return {k: (p, proof) for k, p, proof in result}
+    if None in result:
+        log_and_print(
+            f"Unexpected failure from in ray_decrypt_tally, returning an empty dict",
+            True,
+        )
+        return {}
+
+    # mypy can't figure this that None isn't here any more, so we need to check for None again
+    return {
+        r.object_id: (r.plaintext, r.decryption_proof) for r in result if r is not None
+    }
 
 
 def _ballots_from_shard(
@@ -483,8 +497,14 @@ def ray_tally_everything(
 
     # Sanity-checking logic: make sure we don't have any unexpected keys, and that the decrypted totals
     # match up with the columns in the original plaintext data.
+    tally_keys = set(decrypted_tally.keys())
+    expected_keys = set(id_map.keys())
+
+    assert tally_keys.issubset(
+        expected_keys
+    ), f"bad tally keys (actual keys: {sorted(tally_keys)}, expected keys: {sorted(expected_keys)})"
+
     for obj_id in decrypted_tally.keys():
-        assert obj_id in id_map, "object_id in results that we don't know about!"
         cvr_sum = int(cvrs.data[id_map[obj_id]].sum())
         decryption, proof = decrypted_tally[obj_id]
         assert cvr_sum == decryption, f"decryption failed for {obj_id}"
@@ -537,8 +557,14 @@ def r_verify_tally_selection_proofs(
     """
     Given a list of tally selections, verifies that every one's internal proof is correct.
     """
-    results = [s.is_valid_proof(public_key, hash_header) for s in selections]
-    return all(results)
+    try:
+        results = [s.is_valid_proof(public_key, hash_header) for s in selections]
+        return all(results)
+    except Exception as e:
+        log_and_print(
+            f"Unexpected exception in r_verify_tally_selection_proofs: {e}", True
+        )
+        return False
 
 
 def manifest_ballot_name_to_cballot(
@@ -571,35 +597,39 @@ def r_verify_ballot_proofs(
     # we're immediately done with them.  This puts a lot of pressure on the filesystem
     # but S3 buckets, Azure blob storage, etc. can handle it.
 
-    valid_count = 0
-    num_ballots = len(cballot_filenames)
-    ptallies: List[TALLY_TYPE] = []
+    try:
+        valid_count = 0
+        num_ballots = len(cballot_filenames)
+        ptallies: List[TALLY_TYPE] = []
 
-    for name in cballot_filenames:
-        cballot = manifest.load_ciphertext_ballot(name)
+        for name in cballot_filenames:
+            cballot = manifest.load_ciphertext_ballot(name)
 
-        if cballot is None:
+            if cballot is None:
+                return None
+
+            is_valid = cballot.is_valid_encryption(
+                cballot.description_hash, public_key, hash_header
+            )
+            if is_valid:
+                valid_count = valid_count + 1
+            if progressbar_actor is not None:
+                progressbar_actor.update_completed.remote("Ballots", 1)
+
+            ptallies.append(ciphertext_ballot_to_dict(cballot))
+
+        if valid_count < num_ballots:
+            # log_and_print(f"Only {valid_count} of {num_ballots} ballots are valid.")
             return None
 
-        is_valid = cballot.is_valid_encryption(
-            cballot.description_hash, public_key, hash_header
-        )
-        if is_valid:
-            valid_count = valid_count + 1
+        ptally = sequential_tally(ptallies)
         if progressbar_actor is not None:
-            progressbar_actor.update_completed.remote("Ballots", 1)
+            progressbar_actor.update_completed.remote("Tallies", num_ballots)
 
-        ptallies.append(ciphertext_ballot_to_dict(cballot))
-
-    if valid_count < num_ballots:
-        # log_and_print(f"Only {valid_count} of {num_ballots} ballots are valid.")
+        return ptally
+    except Exception as e:
+        log_and_print(f"Unexpected exception in r_verify_ballot_proofs: {e}", True)
         return None
-
-    ptally = sequential_tally(ptallies)
-    if progressbar_actor is not None:
-        progressbar_actor.update_completed.remote("Tallies", num_ballots)
-
-    return ptally
 
 
 class RayTallyEverythingResults(NamedTuple):

@@ -221,23 +221,28 @@ def fast_tally_ballots(
         initial_tallies = partial_tallies
 
 
-# object_id, seed, ciphertext
-DECRYPT_INPUT_TYPE = Tuple[str, ElementModQ, ElGamalCiphertext]
+@dataclass(eq=True, unsafe_hash=True)
+class DecryptOutput:
+    object_id: str
+    plaintext: int
+    decryption_proof: ChaumPedersenDecryptionProof
 
-# object_id, plaintext, proof
-DECRYPT_OUTPUT_TYPE = Tuple[str, int, ChaumPedersenDecryptionProof]
 
+@dataclass(eq=True, unsafe_hash=True)
+class DecryptInput:
+    object_id: str
+    seed: ElementModQ
+    ciphertext: ElGamalCiphertext
 
-def _decrypt(
-    cec: CiphertextElectionContext,
-    keypair: ElGamalKeyPair,
-    decrypt_input: DECRYPT_INPUT_TYPE,
-) -> DECRYPT_OUTPUT_TYPE:  # pragma: no cover
-    object_id, seed, c = decrypt_input
-    plaintext, proof = decrypt_ciphertext_with_proof(
-        c, keypair, seed, cec.crypto_extended_base_hash
-    )
-    return object_id, plaintext, proof
+    def decrypt(
+        self,
+        cec: CiphertextElectionContext,
+        keypair: ElGamalKeyPair,
+    ) -> DecryptOutput:
+        plaintext, proof = decrypt_ciphertext_with_proof(
+            self.ciphertext, keypair, self.seed, cec.crypto_extended_base_hash
+        )
+        return DecryptOutput(self.object_id, plaintext, proof)
 
 
 # object_id -> plaintext, proof
@@ -258,6 +263,13 @@ def _equivalent_decrypt_helper(
     )
 
 
+# needed for functools.partial, below
+def _decrypt(
+    cec: CiphertextElectionContext, keypair: ElGamalKeyPair, di: DecryptInput
+) -> DecryptOutput:
+    return di.decrypt(cec, keypair)
+
+
 def fast_decrypt_tally(
     tally: TALLY_TYPE,
     cec: CiphertextElectionContext,
@@ -274,25 +286,25 @@ def fast_decrypt_tally(
     tkeys = tally.keys()
     proof_seeds: List[ElementModQ] = Nonces(proof_seed)[0 : len(tkeys)]
     inputs = [
-        (object_id, seed, tally[object_id])
+        DecryptInput(object_id, seed, tally[object_id])
         for seed, object_id in zip(proof_seeds, tkeys)
     ]
-
-    if show_progress:  # pragma: no cover
-        inputs = tqdm(list(inputs), "Decrypting")
 
     # Performance note: at this point, the tallies have been computed, so we
     # don't actually have all that much data left to process. There's almost
     # certainly no benefit to distributing this on a cluster.
 
+    if show_progress:  # pragma: no cover
+        inputs = tqdm(list(inputs), "Decrypting")
+
     wrapped_func = functools.partial(_decrypt, cec, keypair)
-    result: List[DECRYPT_OUTPUT_TYPE] = (
+    result: List[DecryptOutput] = (
         [wrapped_func(x) for x in inputs]
         if pool is None
         else pool.map(func=wrapped_func, iterable=inputs)
     )
 
-    return {k: (p, proof) for k, p, proof in result}
+    return {r.object_id: (r.plaintext, r.decryption_proof) for r in result}
 
 
 @dataclass(eq=True)

@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "38e75fdbbf6ec13343116a99c4f5bf9c63fbb92ffbfe89ebd427e3ae6f028e9d"
+            "sha256": "0ca849f47636b32fab7a6f4aa47b896662866cadb03752cf8ad5a6e9002ff89b"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -656,18 +656,18 @@
         },
         "ray": {
             "hashes": [
-                "sha256:0980987239e86bbadd657250423b3c7e1ea74166a78fed5976d44de7f4331683",
-                "sha256:15bc3e3c0261d2722c72e63293591ea37fded51f7bf882274ff7cfcca9e135fd",
-                "sha256:250ab7926d0b7899cbc6b0d184385243109316588858d8a6f2c5a9293cecebf2",
-                "sha256:2b2e0ee5e655c554fe64e46e1d74b542a1146941dddebb1f6c92a69124c3acb9",
-                "sha256:5ab4b2b09cc008664ca019e08ab4855ca4e4fcab9db1db43f83d0820d757ba76",
-                "sha256:7561b3109aaecf11d4c32c1ebbc8f5a496e596851eb37ebea81cabadc3d84758",
-                "sha256:920cc9f548bb027f9b63653ea7383f415cbc0f421e4c0da5d98d88e74740ecb5",
-                "sha256:9dd1362a3b1d6585420f2d9ad42914603c82ba98dc545170584d1d81f0524f67",
-                "sha256:9dfae047d6943020117b1f7334ea1ac3deeefcbf2e1223e3052565caddd3022a"
+                "sha256:4b591972de31438c78ca16675db889bb8cad2c927ee96f32f6d924996e94be9a"
             ],
-            "index": "pypi",
-            "version": "==1.0.0"
+            "markers": "sys_platform == 'linux'",
+            "version": "==1.1.0.dev0"
+        },
+        "ray-linux": {
+            "file": "https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-manylinux1_x86_64.whl",
+            "markers": "sys_platform == 'linux'"
+        },
+        "ray-mac": {
+            "file": "https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-macosx_10_13_x86_64.whl",
+            "markers": "sys_platform == 'darwin'"
         },
         "redis": {
             "hashes": [
