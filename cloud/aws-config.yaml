@@ -109,7 +109,7 @@ head_node:
 worker_nodes:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
 #    ImageId: ami-048d11da5dca6e6f0  # customized version of above, with pre-installed libraries
-  ImageId: ami-0c56ef48fe96056ba # customized Ubuntu 18.04, pre-installed libraries
+    ImageId: ami-0c56ef48fe96056ba # customized Ubuntu 18.04, pre-installed libraries
 
     IamInstanceProfile:
       Arn: arn:aws:iam::339914263940:instance-profile/ray-worker-arlo-v1
