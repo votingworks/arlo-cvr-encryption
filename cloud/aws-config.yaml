@@ -88,7 +88,8 @@ head_node_type: intel_xlarge_head
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 head_node:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-    ImageId: ami-048d11da5dca6e6f0  # customized version of above, with pre-installed libraries
+#    ImageId: ami-048d11da5dca6e6f0  # customized version of above, with pre-installed libraries
+    ImageId: ami-0c56ef48fe96056ba # customized Ubuntu 18.04, pre-installed libraries
 
     IamInstanceProfile:
       Arn: arn:aws:iam::339914263940:instance-profile/ray-head-arlo-v1
@@ -107,7 +108,8 @@ head_node:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 worker_nodes:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-    ImageId: ami-048d11da5dca6e6f0  # customized version of above, with pre-installed libraries
+#    ImageId: ami-048d11da5dca6e6f0  # customized version of above, with pre-installed libraries
+  ImageId: ami-0c56ef48fe96056ba # customized Ubuntu 18.04, pre-installed libraries
 
     IamInstanceProfile:
       Arn: arn:aws:iam::339914263940:instance-profile/ray-worker-arlo-v1
@@ -149,7 +151,7 @@ setup_commands:
     - sudo -H pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
 #    - sudo -H pip install -U 'ray==1.0.0'
     # we keep getting messages about hitting some maximum number of files... why?
-    - sudo -H sysctl -w fs.file-max=5000000
+#    - sudo -H sysctl -w fs.file-max=5000000
     # this mounts the S3 storage bucket on /mnt/arlo-data; note that we can specify the storage class here as well
     - sudo s3fs arlo-e2e-denver-demo /mnt/arlo-data -o endpoint=us-east-2 -o iam_role=auto -o allow_other -o storage_class=standard_ia
 
