@@ -12,7 +12,8 @@ rm -f /bin/python
 ln -s /usr/bin/python3.8 /bin/python
 python -m pip install --upgrade pip
 pip install virtualenv==20.0.23 pipenv
-pip install boto3==1.4.8  # 1.4.8 adds InstanceMarketOptions
+# pip install boto3==1.4.8  # 1.4.8 adds InstanceMarketOptions
+pip install boto3==1.15.12
 pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
 pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
 pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-manylinux1_x86_64.whl
