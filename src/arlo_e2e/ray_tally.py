@@ -3,6 +3,7 @@
 
 from datetime import datetime
 from math import sqrt, ceil
+from time import sleep
 from timeit import default_timer as timer
 from typing import Optional, List, Sequence, Dict, NamedTuple, Tuple, Any
 
@@ -135,33 +136,36 @@ def r_encrypt_and_write(
         assert num_ballots > 0, "need at least one ballot"
 
         ptally_final: Optional[TALLY_TYPE] = None
-        for i in range(0, num_ballots):
-            pballot = bpf.row_to_plaintext_ballot(plaintext_ballot_dicts[i])
-            cballot = ciphertext_ballot_to_accepted(
-                get_optional(
-                    encrypt_ballot(
-                        pballot,
-                        ied,
-                        cec,
-                        seed_hash,
-                        nonces[i],
-                        should_verify_proofs=False,
-                    )
+
+        # CRAZY NO-OP CODE
+        pballot0 = bpf.row_to_plaintext_ballot(plaintext_ballot_dicts[0])
+        cballot0 = ciphertext_ballot_to_accepted(
+            get_optional(
+                encrypt_ballot(
+                    pballot0,
+                    ied,
+                    cec,
+                    seed_hash,
+                    nonces[0],
+                    should_verify_proofs=False,
                 )
             )
+        )
+        ptally0 = ciphertext_ballot_to_dict(cballot0)
+        for i in range(0, num_ballots):
+            cballot = cballot0  # no actual encryption happening here!
             if manifest is not None:
                 manifest.write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
 
             if progressbar_actor is not None:
                 progressbar_actor.update_completed.remote("Ballots", 1)
 
-            ptally = ciphertext_ballot_to_dict(cballot)
-            ptally_final = (
-                sequential_tally([ptally_final, ptally]) if ptally_final else ptally
-            )
+            ptally_final = ptally0
 
             if progressbar_actor is not None:
                 progressbar_actor.update_completed.remote("Tallies", 1)
+
+            sleep(0.5)
 
         if manifest is not None and manifest_aggregator is not None:
             manifest_aggregator.add.remote(manifest)
