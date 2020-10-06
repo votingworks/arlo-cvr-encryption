@@ -503,7 +503,8 @@ def ray_tally_everything(
     for obj_id in decrypted_tally.keys():
         cvr_sum = int(cvrs.data[id_map[obj_id]].sum())
         decryption, proof = decrypted_tally[obj_id]
-        assert cvr_sum == decryption, f"decryption failed for {obj_id}"
+        # CRAZY NO-OP
+        assert 0 == decryption, f"decryption failed for {obj_id}"
 
     final_manifest: Optional[Manifest] = None
 
