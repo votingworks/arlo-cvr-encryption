@@ -9,10 +9,15 @@ from typing import Optional, List, Sequence, Dict, NamedTuple, Tuple, Any
 
 import pandas as pd
 import ray
-from electionguard.ballot import CiphertextAcceptedBallot
+from electionguard.ballot import (
+    CiphertextAcceptedBallot,
+    PlaintextBallot,
+    PlaintextBallotSelection,
+)
 from electionguard.decrypt_with_secrets import (
     decrypt_ciphertext_with_proof,
     ciphertext_ballot_to_dict,
+    plaintext_ballot_to_dict,
 )
 from electionguard.election import (
     CiphertextElectionContext,
@@ -24,9 +29,11 @@ from electionguard.elgamal import (
     elgamal_keypair_random,
     elgamal_keypair_from_secret,
     ElGamalKeyPair,
+    ElGamalCiphertext,
+    elgamal_encrypt,
 )
 from electionguard.encrypt import encrypt_ballot
-from electionguard.group import ElementModQ, rand_q, ElementModP
+from electionguard.group import ElementModQ, rand_q, ElementModP, ZERO_MOD_Q
 from electionguard.nonces import Nonces
 from electionguard.utils import get_optional
 from ray import ObjectRef
@@ -129,48 +136,29 @@ def r_encrypt_and_write(
     """
 
     try:
-        manifest = make_fresh_manifest(root_dir) if root_dir is not None else None
-
         num_ballots = len(plaintext_ballot_dicts)
         assert len(nonces) == num_ballots, "mismatching numbers of nonces and ballots!"
         assert num_ballots > 0, "need at least one ballot"
 
-        ptally_final: Optional[TALLY_TYPE] = None
-
         # CRAZY NO-OP CODE
-        pballot0 = bpf.row_to_plaintext_ballot(plaintext_ballot_dicts[0])
-        cballot0 = ciphertext_ballot_to_accepted(
-            get_optional(
-                encrypt_ballot(
-                    pballot0,
-                    ied,
-                    cec,
-                    seed_hash,
-                    nonces[0],
-                    should_verify_proofs=False,
-                )
-            )
+        pballot0: PlaintextBallot = bpf.row_to_plaintext_ballot(
+            plaintext_ballot_dicts[0]
         )
-        ptally0 = ciphertext_ballot_to_dict(cballot0)
+        pb_dict0: Dict[str, PlaintextBallotSelection] = plaintext_ballot_to_dict(
+            pballot0
+        )
+        eg_zero = get_optional(elgamal_encrypt(0, ZERO_MOD_Q, cec.elgamal_public_key))
+        ptally0: Dict[str, ElGamalCiphertext] = {k: eg_zero for k in pb_dict0.keys()}
         for i in range(0, num_ballots):
-            cballot = cballot0  # no actual encryption happening here!
-            if manifest is not None:
-                manifest.write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
-
             if progressbar_actor is not None:
                 progressbar_actor.update_completed.remote("Ballots", 1)
-
-            ptally_final = ptally0
 
             if progressbar_actor is not None:
                 progressbar_actor.update_completed.remote("Tallies", 1)
 
             sleep(0.5)
 
-        if manifest is not None and manifest_aggregator is not None:
-            manifest_aggregator.add.remote(manifest)
-
-        return ptally_final
+        return ptally0
     except Exception as e:
         log_and_print(f"Unexpected exception in r_encrypt_and_write: {e}", True)
         return None
@@ -218,7 +206,11 @@ def r_partial_tally(
     This is a front-end for `partial_tally`, that can be called remotely via Ray.
     """
     try:
-        result = partial_tally(progressbar_actor, *ptallies)
+        # CRAZY NO-OP CODE
+        result = ptallies[0]
+        sleep(1)
+        if progressbar_actor is not None:
+            progressbar_actor.update_completed.remote("Tallies", len(ptallies))
         return result
     except Exception as e:
         log_and_print(f"Unexpected exception in r_partial_tally: {e}", True)
