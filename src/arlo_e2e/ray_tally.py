@@ -32,8 +32,7 @@ from electionguard.elgamal import (
     ElGamalCiphertext,
     elgamal_encrypt,
 )
-from electionguard.encrypt import encrypt_ballot
-from electionguard.group import ElementModQ, rand_q, ElementModP, ZERO_MOD_Q
+from electionguard.group import ElementModQ, rand_q, ElementModP, ONE_MOD_Q
 from electionguard.nonces import Nonces
 from electionguard.utils import get_optional
 from ray import ObjectRef
@@ -50,7 +49,6 @@ from arlo_e2e.tally import (
     TALLY_TYPE,
     DECRYPT_TALLY_OUTPUT_TYPE,
     SelectionInfo,
-    ciphertext_ballot_to_accepted,
     SelectionTally,
     sequential_tally,
     tallies_match,
@@ -147,7 +145,7 @@ def r_encrypt_and_write(
         pb_dict0: Dict[str, PlaintextBallotSelection] = plaintext_ballot_to_dict(
             pballot0
         )
-        eg_zero = get_optional(elgamal_encrypt(0, ZERO_MOD_Q, cec.elgamal_public_key))
+        eg_zero = get_optional(elgamal_encrypt(0, ONE_MOD_Q, cec.elgamal_public_key))
         ptally0: Dict[str, ElGamalCiphertext] = {k: eg_zero for k in pb_dict0.keys()}
         for i in range(0, num_ballots):
             if progressbar_actor is not None:
@@ -156,7 +154,7 @@ def r_encrypt_and_write(
             if progressbar_actor is not None:
                 progressbar_actor.update_completed.remote("Tallies", 1)
 
-            sleep(0.5)
+            sleep(6)
 
         return ptally0
     except Exception as e:
