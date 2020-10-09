@@ -15,18 +15,13 @@ class ProgressBarState:
     """
 
     counter: int
-    delta_counter: int
     total: int
 
     def update_completed(self, delta_num_items_completed: int) -> None:
         self.counter += delta_num_items_completed
-        self.delta_counter += delta_num_items_completed
 
     def update_total(self, delta_total: int) -> None:
         self.total += delta_total
-
-    def clear_delta(self) -> None:
-        self.delta_counter = 0
 
 
 @ray.remote
@@ -39,25 +34,16 @@ class ProgressBarActor:
 
     state: Dict[str, ProgressBarState]
     event: Event
-    clear_delta_on_update: bool
 
     def __init__(self, totals: Dict[str, int]) -> None:
-        self.state = {key: ProgressBarState(0, 0, totals[key]) for key in totals.keys()}
+        self.state = {key: ProgressBarState(0, totals[key]) for key in totals.keys()}
         self.event = Event()
-        self.clear_delta_on_update = False
-
-    def _check_deltas(self) -> None:
-        if self.clear_delta_on_update:
-            self.clear_delta_on_update = False
-            for key in self.state.keys():
-                self.state[key].clear_delta()
 
     def update_completed(self, key: str, delta_num_items_completed: int) -> None:
         """
         Updates the ProgressBar with the incremental number of items that
         were just completed.
         """
-        self._check_deltas()
         assert (
             key in self.state
         ), f"error: used key {key}, which isn't in ({list(self.state.keys())})"
@@ -69,7 +55,6 @@ class ProgressBarActor:
         Updates the ProgressBar with the incremental number of items that
         represent new work, still to be done.
         """
-        self._check_deltas()
         assert (
             key in self.state
         ), f"error: used key {key}, which isn't in ({list(self.state.keys())})"
@@ -79,18 +64,16 @@ class ProgressBarActor:
     async def wait_for_update(self) -> Dict[str, ProgressBarState]:
         """
         Blocking call: waits until somebody calls `update_completed` or `update_total`,
-        then returns the progress bar state. Also clears the `delta_counter` fields
-        for next time.
+        then returns the progress bar state.
         """
         await self.event.wait()
         self.event.clear()
+        return self.state
 
-        # Rather than copying the state, then mutating it, and returning the copy,
-        # we're just setting a flag to deal with it next time. Because the state
-        # we're returning is serialized on the way out, we don't have to worry about
-        # maintaining the original state after this method returns.
-
-        self.clear_delta_on_update = True
+    def get_state(self) -> Dict[str, ProgressBarState]:
+        """
+        Non-blocking call: fetches the state immediately.
+        """
         return self.state
 
 
@@ -134,27 +117,33 @@ class ProgressBar:
         """
         return self.progress_actor
 
-    def print_update(self) -> bool:
+    def print_update(self, wait_for_update: bool = False) -> bool:
         """
-        Blocking call, but returns quickly. This will wait until there's any update in the
-        state of the job, then update the progress bars and return. If the job is done, this
+        If requested via the `wait_for_update` flag, this will wait until there's any update in the
+        state of the job. Then, either way, it updates the progress bars and return. If the job is done, this
         will return True and close the progress bars. If not, it returns False.
         """
 
-        state: Dict[str, ProgressBarState] = ray.get(
-            self.actor.wait_for_update.remote()
-        )
-        complete = True
-        for k in state.keys():
-            s: ProgressBarState = state[k]
-            p: tqdm = self.progress_bars[k]
-            p.update(s.delta_counter)
-            p.total = s.total
-            p.refresh()
-            complete = complete and s.counter >= s.total
-        if complete:
-            self.close()
-        return complete
+        if not self.progress_bars:
+            # somebody already called close(), so we're done
+            return True
+        else:
+            if wait_for_update:
+                state = ray.get(self.actor.wait_for_update.remote())
+            else:
+                state = ray.get(self.actor.get_state.remote())
+
+            complete = True
+            for k in state.keys():
+                s: ProgressBarState = state[k]
+                p: tqdm = self.progress_bars[k]
+                p.n = s.counter
+                p.total = s.total
+                p.refresh()
+                complete = complete and s.counter >= s.total
+            if complete:
+                self.close()
+            return complete
 
     def print_until_done(self) -> None:
         """
@@ -162,7 +151,7 @@ class ProgressBar:
         to which you've passed the actor handle. Your remote workers might then call the `update` methods
         on the actor. When the progress meter reaches 100%, this method returns.
         """
-        while not self.print_update():
+        while not self.print_update(wait_for_update=True):
             pass
 
     def close(self) -> None:
@@ -170,5 +159,16 @@ class ProgressBar:
         If you know the work is done, this calls `close` on the progressbars within.
         """
         for pb in self.progress_bars.values():
+            # sometimes, the computation is done, but the updates haven't arrived at
+            # the actor in time to get here. We're just going to set the counters to
+            # match the totals, so everything ends up looking good.
+            if pb.total > 0:
+                pb.n = pb.total
+            else:
+                pb.total = pb.n
+            pb.refresh()
+
+        for pb in self.progress_bars.values():
             pb.close()
-            self.progress_bars = {}
+
+        self.progress_bars = {}
