@@ -2,9 +2,18 @@
 # code in tally.py, and should yield identical results, just much faster on big cluster computers.
 
 from datetime import datetime
-from math import sqrt, ceil
 from timeit import default_timer as timer
-from typing import Optional, List, Sequence, Dict, NamedTuple, Tuple, Any
+from typing import (
+    Optional,
+    List,
+    Sequence,
+    Dict,
+    NamedTuple,
+    Tuple,
+    Any,
+    Final,
+    TypeVar,
+)
 
 import pandas as pd
 import ray
@@ -52,6 +61,15 @@ from arlo_e2e.tally import (
 )
 from arlo_e2e.utils import shard_list_uniform, mkdir_helper
 
+# When we're writing files to s3fs, we'll rarely see failures, but with enough files, it's a certainty.
+# This is how many times we'll retry each write until it works.
+NUM_WRITE_RETRIES: Final = 10
+
+# These constants define how we shard up the ballot processing
+BATCH_SIZE: Final = 10000
+BALLOTS_PER_SHARD: Final = 3
+PARTIAL_TALLIES_PER_SHARD: Final = 10
+
 # Nomenclature in this file: methods starting with "ray_" are meant to be called from the
 # main node. Methods starting with "r_" are "Ray remote methods". Variables starting with
 # "r_" are ObjectRefs to remote values.
@@ -63,22 +81,6 @@ from arlo_e2e.utils import shard_list_uniform, mkdir_helper
 # Even though these will work and do exactly what you want when the problem sizes are small, you
 # end up in a world of hurt once the problem size scales up. Dealing with these problems ultimately
 # shaped a lot of how the code here works.
-
-NUM_WRITE_RETRIES = 10
-BATCH_SIZE = 10000
-"""
-When we're writing files to s3fs, we'll rarely see failures, but with enough files, it's a certainty.
-This is how many times we'll retry each write until it works.
-"""
-
-
-def ballots_per_shard(num_ballots: int) -> int:
-    """
-    Computes the number of ballots per shard that we'll use. Scales in proportion
-    to the square root of the number of ballots. The result will never be less
-    than 2 or greater than 30.
-    """
-    return min(30, max(4, int(ceil(sqrt(num_ballots) / 30))))
 
 
 @ray.remote
@@ -116,7 +118,8 @@ def r_encrypt_and_write(
     manifest_aggregator: Optional[ActorHandle],
     progressbar_actor: Optional[ActorHandle],
     bpf: BallotPlaintextFactory,
-    nonces: List[ElementModQ],
+    nonces: Nonces,
+    nonce_indices: List[int],
     *plaintext_ballot_dicts: Dict[str, Any],
 ) -> Optional[TALLY_TYPE]:  # pragma: no cover
     """
@@ -131,7 +134,7 @@ def r_encrypt_and_write(
         manifest = make_fresh_manifest(root_dir) if root_dir is not None else None
 
         num_ballots = len(plaintext_ballot_dicts)
-        assert len(nonces) == num_ballots, "mismatching numbers of nonces and ballots!"
+        assert len(nonce_indices) == num_ballots, "mismatching numbers of nonces and ballots!"
         assert num_ballots > 0, "need at least one ballot"
 
         ptally_final: Optional[TALLY_TYPE] = None
@@ -144,7 +147,7 @@ def r_encrypt_and_write(
                         ied,
                         cec,
                         seed_hash,
-                        nonces[i],
+                        nonces[nonce_indices[i]],
                         should_verify_proofs=False,
                     )
                 )
@@ -327,19 +330,24 @@ def ray_decrypt_tally(
     }
 
 
-def _ballots_from_shard(
-    input: Sequence[Tuple[Dict[str, Any], ElementModQ]]
-) -> List[Dict[str, Any]]:
-    return [b for b, n in input]
+T = TypeVar("T")
+U = TypeVar("U")
 
 
-def _nonces_from_shard(
-    input: Sequence[Tuple[Dict[str, Any], ElementModQ]]
-) -> List[ElementModQ]:
-    return [n for b, n in input]
+def left_tuple_list(input: Sequence[Tuple[T, U]]) -> List[T]:
+    """
+    Given a sequence or list of tuples, returns a list of just the left elements.
+    """
+    return [t for t, u in input]
 
 
-# TODO: add code here to deal with the manifest and writing files out; borrow from publish.py
+def right_tuple_list(input: Sequence[Tuple[T, U]]) -> List[U]:
+    """
+    Given a sequence or list of tuples, returns a list of just the right elements.
+    """
+    return [u for t, u in input]
+
+
 def ray_tally_everything(
     cvrs: DominionCSV,
     verbose: bool = True,
@@ -422,9 +430,12 @@ def ray_tally_everything(
 
     if master_nonce is None:
         master_nonce = rand_q()
-    nonces: List[ElementModQ] = Nonces(master_nonce)[0:num_ballots]
 
-    inputs = list(zip(ballot_dicts, nonces))
+    nonces = Nonces(master_nonce)
+    r_nonces = ray.put(nonces)
+    nonce_indices = range(num_ballots)
+
+    inputs = list(zip(ballot_dicts, nonce_indices))
 
     batches = shard_list_uniform(inputs, BATCH_SIZE)
     num_batches = len(batches)
@@ -454,10 +465,8 @@ def ray_tally_everything(
             progressbar_actor.update_completed.remote("Batch", 1)
 
         num_ballots_in_batch = len(batch)
-        bps = ballots_per_shard(num_ballots_in_batch)
-        sharded_inputs = shard_list_uniform(batch, bps)
+        sharded_inputs = shard_list_uniform(batch, BALLOTS_PER_SHARD)
         num_shards = len(sharded_inputs)
-        assert bps > 1, f"bps = {bps}, should be greater than 1"
 
         partial_tally_refs = [
             r_encrypt_and_write.remote(
@@ -468,14 +477,15 @@ def ray_tally_everything(
                 r_manifest_aggregator,
                 progressbar_actor,
                 r_ballot_plaintext_factory,
-                _nonces_from_shard(shard),
-                *(_ballots_from_shard(shard)),
+                r_nonces,
+                right_tuple_list(shard),
+                *(left_tuple_list(shard)),
             )
             for shard in sharded_inputs
         ]
 
         # log_and_print("Remote tallying.")
-        btally = ray_tally_ballots(partial_tally_refs, bps, progressbar)
+        btally = ray_tally_ballots(partial_tally_refs, BALLOTS_PER_SHARD, progressbar)
         batch_tallies.append(btally)
 
     if len(batch_tallies) > 1:
@@ -725,9 +735,10 @@ class RayTallyEverythingResults(NamedTuple):
         start = timer()
         selections = self.tally.map.values()
         sharded_selections: Sequence[Sequence[SelectionInfo]] = shard_list_uniform(
-            selections, ballots_per_shard(len(selections))
+            selections, 2
         )
 
+        # parallelizing this is overkill, but why not?
         results: List[bool] = ray.get(
             [
                 r_verify_tally_selection_proofs.remote(r_public_key, r_hash_header, *s)
@@ -753,10 +764,9 @@ class RayTallyEverythingResults(NamedTuple):
             # next, check each individual ballot's proofs; in this case, we're going to always
             # show the progress bar, even if verbose is false
             num_ballots = self.num_ballots
-            bps = ballots_per_shard(num_ballots)
 
             cballot_manifest_name_shards: Sequence[Sequence[str]] = shard_list_uniform(
-                self.cvr_metadata["BallotId"], bps
+                self.cvr_metadata["BallotId"], BALLOTS_PER_SHARD
             )
 
             r_manifest = ray.put(self.manifest)
@@ -787,7 +797,9 @@ class RayTallyEverythingResults(NamedTuple):
             log_and_print("Recomputing tallies.", verbose)
 
             recomputed_tally = ray.get(
-                ray_tally_ballots(ballot_results, bps, progressbar)
+                ray_tally_ballots(
+                    ballot_results, PARTIAL_TALLIES_PER_SHARD, progressbar
+                )
             )
             if not recomputed_tally:
                 return False
