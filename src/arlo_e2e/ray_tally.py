@@ -66,7 +66,7 @@ from arlo_e2e.utils import shard_list_uniform, mkdir_helper
 NUM_WRITE_RETRIES: Final = 10
 
 # These constants define how we shard up the ballot processing
-BATCH_SIZE: Final = 60000
+BATCH_SIZE: Final = 6000
 BALLOTS_PER_SHARD: Final = 3
 PARTIAL_TALLIES_PER_SHARD: Final = 10
 
