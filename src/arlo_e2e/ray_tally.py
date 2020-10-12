@@ -66,7 +66,7 @@ from arlo_e2e.utils import shard_list_uniform, mkdir_helper
 NUM_WRITE_RETRIES: Final = 10
 
 # These constants define how we shard up the ballot processing
-BATCH_SIZE: Final = 10000
+BATCH_SIZE: Final = 60000
 BALLOTS_PER_SHARD: Final = 3
 PARTIAL_TALLIES_PER_SHARD: Final = 10
 
@@ -134,7 +134,9 @@ def r_encrypt_and_write(
         manifest = make_fresh_manifest(root_dir) if root_dir is not None else None
 
         num_ballots = len(plaintext_ballot_dicts)
-        assert len(nonce_indices) == num_ballots, "mismatching numbers of nonces and ballots!"
+        assert (
+            len(nonce_indices) == num_ballots
+        ), "mismatching numbers of nonces and ballots!"
         assert num_ballots > 0, "need at least one ballot"
 
         ptally_final: Optional[TALLY_TYPE] = None
