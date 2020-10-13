@@ -44,6 +44,7 @@ from arlo_e2e.dominion import DominionCSV, BallotPlaintextFactory
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.manifest import Manifest, make_fresh_manifest, manifest_name_to_filename
 from arlo_e2e.metadata import ElectionMetadata
+from arlo_e2e.ray_helpers import ray_wait_for_workers
 from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.ray_reduce import ray_reduce_with_ray_wait
 from arlo_e2e.tally import (
@@ -378,6 +379,8 @@ def ray_tally_everything(
 
     rows, cols = cvrs.data.shape
 
+    ray_wait_for_workers(min_workers=2)
+
     if date is None:
         date = datetime.now()
 
@@ -392,9 +395,10 @@ def ray_tally_everything(
     start_time = timer()
 
     # Performance note: by using to_election_description_ray rather than to_election_description, we're
-    # launching the creation of the PlaintextBallot objects all over the Ray cluster. The payoff is that
-    # we're not pushing all this data out of the head node when we start the encryption. It's already
-    # out there.
+    # only getting back a list of dictionaries rather than a list of PlaintextBallots. We're pushing that
+    # work out into the nodes, where it will run in parallel. The BallotPlaintextFactory wraps up all
+    # the (immutable) state necessary to convert from these dicts to PlaintextBallots and is meant to
+    # be sent to every node in the cluster.
 
     ed, bpf, ballot_dicts, id_map = cvrs.to_election_description_ray(date=date)
     setup_time = timer()
