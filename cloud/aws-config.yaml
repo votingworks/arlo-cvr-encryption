@@ -59,7 +59,7 @@ available_node_types:
 #                MarketType: spot
 #        resources: {"CPU": 48}
 #        max_workers: 48
-    amd_24xlarge_spot:
+    amd_24xlarge:
         node_config:
             InstanceType: c5a.24xlarge
 #            InstanceMarketOptions:
@@ -86,7 +86,7 @@ available_node_types:
 
 # Eventually, we'll be able to specify multiple node types here. But not yet.
 # https://github.com/ray-project/ray/issues/10929
-worker_default_node_type: intel_12xlarge_spot
+worker_default_node_type: amd_24xlarge
 head_node_type: intel_xlarge_head
 
 # Provider-specific config for the head node, e.g. instance type. By default
