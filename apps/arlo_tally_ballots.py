@@ -26,16 +26,14 @@ if __name__ == "__main__":
         "-k",
         "--keys",
         type=str,
-        nargs=1,
-        default=["secret_election_keys.json"],
+        default="secret_election_keys.json",
         help="file name for the election official's key materials (default: secret_election_keys.json)",
     )
     parser.add_argument(
         "-t",
         "--tallies",
         type=str,
-        nargs=1,
-        default=["tally_output"],
+        default="tally_output",
         help="directory name for where the tally is written (default: tally_output)",
     )
     parser.add_argument(
@@ -51,9 +49,9 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    keyfile = args.keys[0]
+    keyfile = args.keys
     cvrfile = args.cvr_file[0]
-    tallydir = args.tallies[0]
+    tallydir = args.tallies
     use_cluster = args.cluster
 
     if path.exists(tallydir):

@@ -734,6 +734,8 @@ class RayTallyEverythingResults(NamedTuple):
         `recheck_ballots_and_tallies` to True.
         """
 
+        ray_wait_for_workers(min_workers=2)
+
         log_and_print("Verifying proofs.", verbose)
 
         r_public_key = ray.put(self.context.elgamal_public_key)
