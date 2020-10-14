@@ -13,6 +13,7 @@ from electionguard.election import (
 from electionguard.logs import log_error, log_info
 from electionguard.serializable import set_deserializers, Serializable, set_serializers
 
+from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.html_index import generate_index_html_files
 from arlo_e2e.manifest import (
     make_fresh_manifest,
@@ -126,6 +127,7 @@ def write_ray_tally(
     If any ballots have been previously written out, perhaps using the Ray tally, the `prior_manifest`
     is merged into the final manifest that's returned.
     """
+    log_and_print("Writing final tally and metadata to storage.")
     manifest = _write_tally_shared(
         results_dir,
         results.election_description,
@@ -146,7 +148,7 @@ def write_ray_tally(
 
     # ballots were written during the encryption process, so we don't write them here
 
-    log_info("write_ray_tally: writing MANIFEST.json")
+    log_and_print("Writing manifest to storage.")
     manifest.write_manifest(num_retries=NUM_WRITE_RETRIES)
     generate_index_html_files(
         results.metadata.election_name, results_dir, num_retries=NUM_WRITE_RETRIES

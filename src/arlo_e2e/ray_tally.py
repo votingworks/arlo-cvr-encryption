@@ -535,6 +535,7 @@ def ray_tally_everything(
 
     # Assemble the data structure that we're returning. Having nonces in the ciphertext makes these
     # structures sensitive for writing out to disk, but otherwise they're ready to go.
+    log_and_print("Constructing results.")
     reported_tally: Dict[str, SelectionInfo] = {
         k: SelectionInfo(
             object_id=k,

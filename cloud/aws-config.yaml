@@ -55,6 +55,13 @@ available_node_types:
     worker_x64:
         node_config:
             InstanceType: c5a.16xlarge
+        #            InstanceMarketOptions:
+        #                MarketType: spot
+        resources: {"CPU": 64}
+        max_workers: 64
+    worker_x64_alt:
+        node_config:
+            InstanceType: c5.16xlarge
 #            InstanceMarketOptions:
 #                MarketType: spot
         resources: {"CPU": 64}
@@ -62,8 +69,8 @@ available_node_types:
     head_x64:
         node_config:
             InstanceType: m5a.xlarge
-        resources: {"CPU": 4}
-        max_workers: 4
+        resources: {"CPU": 0}  # zero because we don't want workers on the head node
+        max_workers: 0
 
 # Eventually, we'll be able to specify multiple node types here. But not yet.
 # https://github.com/ray-project/ray/issues/10929
