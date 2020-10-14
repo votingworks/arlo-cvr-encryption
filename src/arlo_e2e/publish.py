@@ -21,6 +21,7 @@ from arlo_e2e.manifest import (
     Manifest,
 )
 from arlo_e2e.metadata import ElectionMetadata
+from arlo_e2e.ray_helpers import ray_wait_for_workers
 from arlo_e2e.ray_tally import RayTallyEverythingResults, NUM_WRITE_RETRIES
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
@@ -250,6 +251,8 @@ def load_ray_tally(
     in significant speedups, as well as having the ballot ciphertexts, themselves, spread across the
     cluster, for improved concurrency later on.
     """
+
+    ray_wait_for_workers(min_workers=2)
 
     result = _load_tally_shared(results_dir)
     if result is None:
