@@ -1,13 +1,13 @@
 import shutil
 import unittest
 from datetime import timedelta
-from os import path
+from os import path, getcwd
 from pathlib import PurePath
 from typing import List
 
 from electionguard.logs import log_warning
 from hypothesis import given, assume, settings
-from hypothesis.strategies import lists, integers
+from hypothesis.strategies import lists, integers, booleans
 
 from arlo_e2e.manifest import (
     make_fresh_manifest,
@@ -39,21 +39,32 @@ class TestManifestPublishing(unittest.TestCase):
         log_warning("EXPECT MANY ERRORS TO BE LOGGED. THIS IS NORMAL.")
         self.removeTree()
 
-    @given(integers(2, 10).flatmap(lambda length: list_file_names_contents(length)))
+    @given(
+        integers(2, 10).flatmap(lambda length: list_file_names_contents(length)),
+        booleans(),
+    )
     @settings(
         deadline=timedelta(milliseconds=50000),
     )
-    def test_manifest(self, files: List[FileNameAndContents]) -> None:
+    def test_manifest(
+        self, files: List[FileNameAndContents], use_absolute_paths: bool
+    ) -> None:
         self.removeTree()
-        mkdir_helper(MANIFEST_TESTING_DIR)
 
-        manifest = make_fresh_manifest(MANIFEST_TESTING_DIR)
+        manifest_testing_dir = (
+            path.join(getcwd(), MANIFEST_TESTING_DIR)
+            if use_absolute_paths
+            else MANIFEST_TESTING_DIR
+        )
+        mkdir_helper(manifest_testing_dir)
+
+        manifest = make_fresh_manifest(manifest_testing_dir)
         for file_name, file_path, file_contents in files:
             manifest.write_file(file_name, file_contents, file_path)
         manifest.write_manifest()
         self.assertTrue(manifest.all_hashes_unique())
 
-        manifest2 = make_existing_manifest(MANIFEST_TESTING_DIR)
+        manifest2 = make_existing_manifest(manifest_testing_dir)
         self.assertTrue(manifest.equivalent(manifest2))
 
         file_contents2 = [
@@ -65,10 +76,10 @@ class TestManifestPublishing(unittest.TestCase):
 
         manifest_names = [
             path_to_manifest_name(
-                MANIFEST_TESTING_DIR,
+                manifest_testing_dir,
                 PurePath(
                     path.join(
-                        path.join(MANIFEST_TESTING_DIR, *f.file_path), f.file_name
+                        path.join(manifest_testing_dir, *f.file_path), f.file_name
                     )
                 ),
             )

@@ -426,6 +426,23 @@ def path_to_manifest_name(root_dir: str, path: PurePath) -> str:
     Helper function: given the name of a file (or a Path to that file), return the name as
     it would appear in MANIFEST.json.
     """
-    elems = list(path.parts)  # need to convert from tuple to list
-    assert elems[0] == root_dir, f"unexpected missing root directory in path: {path}"
-    return compose_manifest_name(elems[-1], elems[1:-1])
+
+    # If we can figure out the path "relative to" the root_dir, that means we
+    # can find just the names of the subdirectories. This will raise an exception
+    # if it can't figure out the answer, thus the try block.
+
+    # If there's no relationship between the root_dir and the path, then we
+    # can't really do anything useful with the root_dir at all, so we'll
+    # ignore it and instead do something totally hacky and just strip off
+    # the leading element of the path (which is probably the name of the
+    # tally directory) and use the rest.
+
+    # Python 3.9 adds a new "is_relative_to" method that would let us avoid
+    # the try block, but we're coding for 3.8.x, so we can't count on that.
+
+    try:
+        elems = list(path.relative_to(root_dir).parts)
+        return compose_manifest_name(elems[-1], elems[0:-1])
+    except ValueError:
+        elems = list(path.parts)
+        return compose_manifest_name(elems[-1], elems[1:-1])
