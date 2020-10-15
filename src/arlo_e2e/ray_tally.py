@@ -774,15 +774,16 @@ class RayTallyEverythingResults(NamedTuple):
             # show the progress bar, even if verbose is false
             num_ballots = self.num_ballots
 
-            cballot_manifest_name_shards: Sequence[Sequence[str]] = shard_list_uniform(
-                self.cvr_metadata["BallotId"], BALLOTS_PER_SHARD
-            )
-
             r_manifest = ray.put(self.manifest)
 
             progressbar = (
                 ProgressBar(
-                    {"Ballots": num_ballots, "Tallies": num_ballots, "Iterations": 0}
+                    {
+                        "Ballots": num_ballots,
+                        "Tallies": num_ballots,
+                        "Iterations": 0,
+                        "Batch": 0,
+                    }
                 )
                 if use_progressbar
                 else None
@@ -791,25 +792,56 @@ class RayTallyEverythingResults(NamedTuple):
 
             ballot_start = timer()
 
-            # List[ObjectRef[Optional[TALLY_TYPE]]]
-            ballot_results: List[ObjectRef] = [
-                r_verify_ballot_proofs.remote(
-                    r_manifest, r_public_key, r_hash_header, progressbar_actor, *shard
-                )
-                for shard in cballot_manifest_name_shards
-            ]
-            # ray.wait(
-            #     ballot_results,
-            #     num_returns=len(cballot_manifest_name_shards),
-            #     timeout=None,
-            # )
-            log_and_print("Recomputing tallies.", verbose)
+            batches: Sequence[Sequence[str]] = shard_list_uniform(
+                self.cvr_metadata["BallotId"], BATCH_SIZE
+            )
 
-            recomputed_tally = ray.get(
-                ray_tally_ballots(
+            # List[ObjectRef[Optional[TALLY_TYPE]]]
+            recomputed_tallies: List[ObjectRef] = []
+
+            for batch in batches:
+                if progressbar_actor:
+                    progressbar_actor.update_completed.remote("Batch", 1)
+
+                cballot_manifest_name_shards: Sequence[
+                    Sequence[str]
+                ] = shard_list_uniform(batch, BALLOTS_PER_SHARD)
+
+                # List[ObjectRef[Optional[TALLY_TYPE]]]
+                ballot_results: List[ObjectRef] = [
+                    r_verify_ballot_proofs.remote(
+                        r_manifest,
+                        r_public_key,
+                        r_hash_header,
+                        progressbar_actor,
+                        *shard,
+                    )
+                    for shard in cballot_manifest_name_shards
+                ]
+                # ray.wait(
+                #     ballot_results,
+                #     num_returns=len(cballot_manifest_name_shards),
+                #     timeout=None,
+                # )
+                # log_and_print("Recomputing tallies.", verbose)
+
+                ptally = ray_tally_ballots(
                     ballot_results, PARTIAL_TALLIES_PER_SHARD, progressbar
                 )
-            )
+                recomputed_tallies.append(ptally)
+
+            if len(recomputed_tallies) > 1:
+                recomputed_tally = ray.get(
+                    ray_tally_ballots(
+                        recomputed_tallies, PARTIAL_TALLIES_PER_SHARD, progressbar
+                    )
+                )
+            else:
+                recomputed_tally = ray.get(recomputed_tallies[0])
+
+            if progressbar:
+                progressbar.close()
+
             if not recomputed_tally:
                 return False
 
