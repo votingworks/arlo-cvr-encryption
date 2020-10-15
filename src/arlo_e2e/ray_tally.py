@@ -849,7 +849,7 @@ class RayTallyEverythingResults(NamedTuple):
 
             log_and_print(
                 f"Ballot verification rate: {num_ballots / (ballot_end - ballot_start): .3f} ballot/sec",
-                verbose,
+                True,
             )
 
             tally_success = tallies_match(self.tally.to_tally_map(), recomputed_tally)
