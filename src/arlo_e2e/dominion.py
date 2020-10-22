@@ -17,7 +17,6 @@ from typing import (
 )
 
 import pandas as pd
-import ray
 from electionguard.ballot import PlaintextBallot, PlaintextBallotContest
 from electionguard.election import (
     ElectionDescription,
@@ -151,6 +150,12 @@ def _str_to_internationalized_text_en(s: str) -> InternationalizedText:
 
 @dataclass
 class BallotPlaintextFactory:
+    """
+    This dataclass is a factory that knows how to convert a row of CSV data
+    into an ElectionGuard `PlaintextBallot`. See `DominionCSV.to_election_description_ray`
+    for how it fits into the bigger picture.
+    """
+
     style_map: STYLE_MAP
     contest_map: Dict[str, ContestDescription]
     ballotstyle_map: Dict[str, BallotStyle]
@@ -194,13 +199,6 @@ class BallotPlaintextFactory:
             ballot_style=self.ballotstyle_map[ballot_type].object_id,
             contests=pbcontests,
         )
-
-
-@ray.remote
-def r_get_plaintext_ballot_for_row(
-    bpf: BallotPlaintextFactory, row: Dict[str, Any]
-) -> PlaintextBallot:
-    return bpf.row_to_plaintext_ballot(row)
 
 
 class DominionCSV(NamedTuple):

@@ -113,7 +113,7 @@ class ProgressBar:
     def actor(self) -> ActorHandle:
         """
         Returns a reference to the remote `ProgressBarActor`. When you complete tasks,
-        call `update` on the actor.
+        call `update_completed` on the actor.
         """
         return self.progress_actor
 
