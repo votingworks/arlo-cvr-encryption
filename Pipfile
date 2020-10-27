@@ -20,7 +20,7 @@ hypothesis = "==5.29.4"
 typish = '==1.7.0'
 jsons = '==1.1.2'
 tqdm = "==4.47.0"
-cryptography = "==2.9.2"
+cryptography = "==3.2"
 modin = '==0.8.0'
 
 # relevant description and useful links on how to do platform-specific includes for nightly builds:
