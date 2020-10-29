@@ -5,12 +5,11 @@ apt update
 dpkg --configure -a
 add-apt-repository ppa:deadsnakes/ppa -y
 apt update
-apt upgrade
+# apt upgrade
 apt install --assume-yes make python3-pip python3.8 libgmp-dev libmpfr-dev libmpc-dev python3.8-dev
-apt install python3.8-distutils
-apt install s3fs
-apt install htop
+apt install --assume-yes python3.8-distutils s3fs htop
 # apt update libcurl4
+
 wget https://bootstrap.pypa.io/get-pip.py
 sudo python3.8 get-pip.py
 sudo pip install --upgrade setuptools
@@ -20,6 +19,7 @@ ln -s /usr/bin/python3.8 /usr/bin/python3
 ln -s /usr/bin/python3.8 /usr/bin/python
 
 pip install boto3==1.15.12  # newer than what's in the AMI
+pip install six==1.13.0 requests==2.18.0  # solves some dependency issues
 pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-manylinux1_x86_64.whl
 pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
 pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'

@@ -87,7 +87,11 @@ class SimpleResponse:
             with_categories=True
         )
 
-        return_me = {"success": self.success, "body": self.body, "messages": flashed_messages}
+        return_me = {
+            "success": self.success,
+            "body": self.body,
+            "messages": flashed_messages,
+        }
         return str(flask.json.jsonify(return_me))
 
 
@@ -121,7 +125,10 @@ def w_initialize_keys(
     return SimpleResponse(True)
 
 
-def w_get_admin_state(keyfile_name: str = DEFAULT_ADMIN_STATE_FILENAME) -> SimpleResponse:
+def w_get_admin_state(
+    keyfile_name: str = DEFAULT_ADMIN_STATE_FILENAME,
+) -> SimpleResponse:
+    pass
 
 
 def w_upload_cvrs(stream: BinaryIO, filename: str) -> SimpleResponse:
