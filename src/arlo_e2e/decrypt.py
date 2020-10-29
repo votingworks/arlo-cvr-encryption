@@ -107,7 +107,9 @@ def decrypt_ballots(
     return decryptions
 
 
-def write_proven_ballot(pballot: ProvenPlaintextBallot, decrypted_dir: str, num_retries: int = 1) -> None:
+def write_proven_ballot(
+    pballot: ProvenPlaintextBallot, decrypted_dir: str, num_retries: int = 1
+) -> None:
     """
     Writes out a `ProvenPlaintextBallot` in the desired directory.
     """
@@ -116,7 +118,11 @@ def write_proven_ballot(pballot: ProvenPlaintextBallot, decrypted_dir: str, num_
         0:BALLOT_FILENAME_PREFIX_DIGITS
     ]  # letter b plus first few digits
     write_json_helper(
-        decrypted_dir, ballot_object_id + ".json", pballot, [ballot_name_prefix], num_retries=num_retries
+        decrypted_dir,
+        ballot_object_id + ".json",
+        pballot,
+        [ballot_name_prefix],
+        num_retries=num_retries,
     )
 
 
