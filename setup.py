@@ -61,7 +61,7 @@ setup(
         "typish==1.7.0",
         "jsons==1.1.2",
         "tqdm==4.47.0",
-        "cryptography==2.9.2",
+        "cryptography==3.2",
         "flask==1.1.2",
     ],
     # electionguard is also a requirement, but we're assuming that's being installed elsewhere, since
