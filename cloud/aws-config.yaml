@@ -146,8 +146,8 @@ setup_commands:
 
     # get any updates that might be newer than what's in the AMI
     - sudo -H pip install boto3==1.15.12
+    - sudo pip install ray==1.0.0
     - sudo pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
-    - sudo pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-manylinux1_x86_64.whl
     - sudo pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
 #    - sudo mkdir /mnt/arlo-data
     - sudo s3fs arlo-e2e-denver-demo /mnt/arlo-data -o endpoint=us-east-2 -o iam_role=auto -o allow_other -o storage_class=standard_ia
