@@ -11,8 +11,8 @@ apt install --assume-yes python3.8-distutils s3fs htop
 # apt update libcurl4
 
 wget https://bootstrap.pypa.io/get-pip.py
-sudo python3.8 get-pip.py
-sudo pip install --upgrade setuptools
+python3.8 get-pip.py
+pip install --upgrade setuptools
 
 rm -f /usr/bin/python /usr/bin/python3
 ln -s /usr/bin/python3.8 /usr/bin/python3
