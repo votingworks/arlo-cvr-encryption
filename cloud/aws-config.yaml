@@ -85,7 +85,7 @@ head_node:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
 #    ImageId: ami-048d11da5dca6e6f0  # customized version of above, with pre-installed libraries
 #    ImageId: ami-0c56ef48fe96056ba # customized Ubuntu 18.04, pre-installed libraries
-    ImageId: ami-05dc9c52a3f17019d  # customized Ubuntu 16.04
+    ImageId: ami-01c9d90481fce9f46  # customized Ubuntu 16.04
 
     IamInstanceProfile:
       Arn: arn:aws:iam::339914263940:instance-profile/ray-head-arlo-v1
@@ -106,7 +106,7 @@ worker_nodes:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
 #    ImageId: ami-048d11da5dca6e6f0  # customized version of above, with pre-installed libraries
 #    ImageId: ami-0c56ef48fe96056ba # customized Ubuntu 18.04, pre-installed libraries
-    ImageId: ami-05dc9c52a3f17019d  # customized Ubuntu 16.04
+    ImageId: ami-01c9d90481fce9f46  # customized Ubuntu 16.04
 
     IamInstanceProfile:
       Arn: arn:aws:iam::339914263940:instance-profile/ray-worker-arlo-v1
@@ -143,9 +143,8 @@ initialization_commands: []
 setup_commands:
     # this command does everything from scratch
     # - sudo -H ubuntu-setup.sh
-    - pip install boto3==1.15.12  # newer than what's in the AMI
-    # we need these dependencies to make electionguard work
-    - sudo apt-get -y install libmpfr-dev libmpc-dev libgmp-dev
+
+    # get any updates that might be newer than what's in the AMI
     - pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
     - pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-manylinux1_x86_64.whl
     - pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
