@@ -143,7 +143,6 @@ initialization_commands: []
 setup_commands:
     # this command does everything from scratch
     # - sudo -H ubuntu-setup.sh
-  -
     - pip install boto3==1.15.12  # newer than what's in the AMI
     # we need these dependencies to make electionguard work
     - sudo apt-get install libmpfr-dev libmpc-dev libgmp-dev
