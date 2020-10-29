@@ -103,8 +103,8 @@ head_node:
 # For more documentation on available fields, see:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 worker_nodes:
-    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-#    ImageId: ami-048d11da5dca6e6f0  # customized version of above, with pre-installed libraries
+#    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
+    ImageId: ami-048d11da5dca6e6f0  # customized version of above, with pre-installed libraries
 #    ImageId: ami-0c56ef48fe96056ba # customized Ubuntu 18.04, pre-installed libraries
 #    ImageId: ami-0483bcef1b4f0e5d8 # customized Ubuntu 16.04
 
@@ -167,10 +167,10 @@ worker_setup_commands: []
 head_start_ray_commands:
     - ray stop
 #    - ulimit -n 65536; RAY_ENABLE_MULTI_TENANCY=0 RAY_BACKEND_LOG_LEVEL=debug ray start --num-cpus 0 --head --port=6379 --object-manager-port=8076 --autoscaling-config=~/ray_bootstrap_config.yaml
-    - ulimit -n 65536; RAY_ENABLE_MULTI_TENANCY=0 ray start --num-cpus 0 --head --port=6379 --object-manager-port=8076 --min-worker-port=10000 --max-worker-port=15000 --autoscaling-config=~/ray_bootstrap_config.yaml
+    - ulimit -n 65536; ray start --num-cpus 0 --head --port=6379 --object-manager-port=8076 --min-worker-port=10000 --max-worker-port=15000 --autoscaling-config=~/ray_bootstrap_config.yaml
 
 # Command to start ray on worker nodes. You don't need to change this.
 worker_start_ray_commands:
     - ray stop
 #    - ulimit -n 65536; RAY_ENABLE_MULTI_TENANCY=0 RAY_BACKEND_LOG_LEVEL=debug ray start --address=$RAY_HEAD_IP:6379 --object-manager-port=8076
-    - ulimit -n 65536; RAY_ENABLE_MULTI_TENANCY=0 ray start --address=$RAY_HEAD_IP:6379 --object-manager-port=8076 --min-worker-port=10000 --max-worker-port=15000
+    - ulimit -n 65536; ray start --address=$RAY_HEAD_IP:6379 --object-manager-port=8076 --min-worker-port=10000 --max-worker-port=15000
