@@ -494,6 +494,13 @@ def ray_tally_everything(
         btally = ray_tally_ballots(partial_tally_refs, BALLOTS_PER_SHARD, progressbar)
         batch_tallies.append(btally)
 
+    # Each batch ultimately yields one partial tally; we add these up here at the
+    # very end. If we have a million ballots and have batches of 10k ballots, this
+    # would mean we'd have only 100 partial tallies. So, what's here works just fine.
+    # If we wanted, we could certainly burn some scalar time and keep a running,
+    # singular, partial tally. It's probably more important to push onward to the
+    # next batch, so we can do as much work in parallel as possible.
+
     if len(batch_tallies) > 1:
         tally = ray.get(ray_tally_ballots(batch_tallies, 10, progressbar))
     else:

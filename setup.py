@@ -57,13 +57,13 @@ setup(
         "gmpy2==2.1.0b5",
         "numpy==1.18.2",
         "pandas==1.0.5",
-        "hypothesis==5.29.4",
+        "hypothesis==5.41.2",
         "typish==1.7.0",
         "jsons==1.1.2",
         "tqdm==4.47.0",
         "cryptography==3.2",
         "flask==1.1.2",
-        "ray==1.0.0",
+        "ray==1.0.1",
     ],
     # electionguard is also a requirement, but we're assuming that's being installed elsewhere, since
     # we're hanging on a dev branch, etc. Ray is also a bit weird, so we're leaving that out here.
