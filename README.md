@@ -55,7 +55,7 @@ for ballots having the desired contest.  Demonstrates how to work with the metad
 in a tally directory.
 
 `arlo_decrypt_ballots`: Input is one or more ballot identifiers (same as the ballot file names, but without the `.json` suffix), 
-the *private* key of the election, and the identifier(s) for the ballot(s) to be decrypted. Output ballots are written
+and the *private* key of the election. Output ballots are written
 to a separate directory, including both the plaintext and proofs of the plaintext's correctness. These are the ballots
 that a "ballot-level comparison audit" would be considering.
 
