@@ -10,7 +10,7 @@ from electionguard.serializable import set_serializers, set_deserializers
 from arlo_e2e.admin import ElectionAdmin
 from arlo_e2e.dominion import read_dominion_csv
 from arlo_e2e.publish import write_fast_tally, write_ray_tally
-from arlo_e2e.ray_helpers import ray_init_cluster
+from arlo_e2e.ray_helpers import ray_init_cluster, ray_init_localhost, ray_wait_for_workers
 from arlo_e2e.ray_tally import ray_tally_everything
 from arlo_e2e.tally import fast_tally_everything
 from arlo_e2e.utils import load_json_helper
@@ -78,28 +78,18 @@ if __name__ == "__main__":
 
     if use_cluster:
         ray_init_cluster()
-        tally_start = timer()
-        rtally = ray_tally_everything(
-            cvrs,
-            verbose=False,
-            secret_key=admin_state.keypair.secret_key,
-            root_dir=tallydir,
-        )
-        tally_end = timer()
-        print(f"Tally rate:    {rows / (tally_end - tally_start): .3f} ballots/sec")
-        write_ray_tally(rtally, tallydir)
-        print(f"Tally written to {tallydir}")
-
+        ray_wait_for_workers()
     else:
-        pool = Pool(cpu_count())
+        ray_init_localhost()
 
-        tally_start = timer()
-        ftally = fast_tally_everything(
-            cvrs, verbose=False, secret_key=admin_state.keypair.secret_key, pool=pool
-        )
-        tally_end = timer()
-        print(f"Tally rate:    {rows / (tally_end - tally_start): .3f} ballots/sec")
-        write_fast_tally(ftally, tallydir)
-        print(f"Tally written to {tallydir}")
-
-        pool.close()
+    tally_start = timer()
+    rtally = ray_tally_everything(
+        cvrs,
+        verbose=False,
+        secret_key=admin_state.keypair.secret_key,
+        root_dir=tallydir,
+    )
+    tally_end = timer()
+    print(f"Tally rate:    {rows / (tally_end - tally_start): .3f} ballots/sec")
+    write_ray_tally(rtally, tallydir)
+    print(f"Tally written to {tallydir}")
