@@ -34,7 +34,7 @@ from electionguard.election import (
 )
 from electionguard.encrypt import selection_from
 
-from arlo_e2e.eg_helpers import UidMaker
+from arlo_e2e.eg_helpers import UidMaker, log_and_print
 from arlo_e2e.metadata import (
     ElectionMetadata,
     CONTEST_MAP,
@@ -560,8 +560,26 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     contests = []
     selection_uid_iter = UidMaker("s")
 
+    # We might have a case where we have two candidates in the same contest which
+    # are identical. This particularly occurs when we have "pick k of n" contests
+    # where we might have k write-in slots. Our solution, since we want candidate
+    # names within a contest to be unique, so we can use them as dictionary keys,
+    # elsewhere in our code, is to append "(2)", "(3)", etc.
+
+    # Since write-ins or other repeats (e.g., "FOR" / "AGAINST" in referenda) might
+    # happen in multiple races, we only need the names to be unique within a specific
+    # contest. Thus, we've got the dictionary below to track everything.
+
+    # Meanwhile, we're also learning the "k" in "k of n" by parsing it straight
+    # out of the contest name.
+
+    # Yes, this code is complex, but then so is the file format we're parsing.
+
+    seen_candidate: Dict[Tuple[str, str], int] = {}
+
     for column in column_names:
         vote_for_n = 1  # until proven otherwise
+        column = [str(x) for x in column]  # force everything to be a string
         title = column[0]
         vote_for_n_match: Optional[re.Match] = vote_for_n_pattern.search(title)
 
@@ -572,12 +590,25 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
 
         max_votes_for_map[title] = vote_for_n
         new_column = [title] + column[1:]
-        new_column_names.append(" | ".join(new_column))
 
-        # Now we're going to extract a mapping from contest titles to all the choices.
         if len(column) > 1:
+            candidate = column[1]
+
+            if (title, candidate) in seen_candidate:
+                seen_candidate[(title, candidate)] += 1
+                new_column = (
+                    [title]
+                    + [f"{candidate} ({seen_candidate[(title, candidate)]})"]
+                    + column[2:]
+                )
+            else:
+                seen_candidate[(title, candidate)] = 1
+
             contests.append(new_column)
 
+        new_column_names.append(" | ".join(new_column))
+
+    # Now we're going to extract a mapping from contest titles to all the choices.
     contest_keys = set()
 
     all_parties: Set[str] = set()
@@ -585,8 +616,8 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     contest_key_to_title: Dict[str, str] = {}
     contest_titles: List[str] = []
     for contest in contests:
-        title = str(contest[0])
-        candidate = str(contest[1])
+        title = contest[0]
+        candidate = contest[1]
         party = fix_party_string(contest[2]) if len(contest) > 2 else ""
 
         if party not in all_parties and party != "":
@@ -624,6 +655,13 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
         axis=1,
     )
 
+    # If there are any duplicated metadata rows, something is really wrong with the data.
+    # The "Guid" concatenates all the metadata, so it's perfect for this sanity check.
+    num_duplicates = df["Guid"].duplicated().sum()
+    if num_duplicates > 0:
+        log_and_print(f"Error: {num_duplicates} duplicated metadata rows found")
+        return None
+
     # If the election official put numbers in as their ballot types, that's going to cause type
     # errors, because we really want to deal with them as strings.
     df["BallotType"] = df["BallotType"].apply(lambda s: str(s))
@@ -648,9 +686,9 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     style_map: STYLE_MAP = {}
 
     # extract a list of dictionaries that have two keys: BallotType and BallotId
-    ballot_id_and_types: List[Dict[str, str]] = df.filter(
-        items=["BallotType", "BallotId"]
-    ).to_dict(orient="records")
+    ballot_id_and_types: List[Dict[str, str]] = df[["BallotType", "BallotId"]].to_dict(
+        orient="records"
+    )
 
     # boil this down to a dictionary from BallotId to BallotType
     ballot_id_to_ballot_type: Dict[str, str] = {

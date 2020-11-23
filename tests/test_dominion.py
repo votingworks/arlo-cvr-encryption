@@ -190,6 +190,41 @@ class TestDominionBasics(unittest.TestCase):
 
             self.assertSetEqual({"Referendum"}, result.metadata.style_map["T2"])
 
+    def test_repeating_candidate_names(self) -> None:
+        input_str = """
+"2018 Test Election","5.2.16.1","","","","","","","","","","","","","",""
+"","","","","","","","","District X (Vote For=3)","District X (Vote For=3)","District X (Vote For=3)","District X (Vote For=3)","Referendum 1","Referendum 1","Referendum 2","Referendum 2"
+"","","","","","","","","Alice","Write-in","Write-in","Write-in","For","Against","For","Against"
+"CvrNumber","TabulatorNum","BatchId","RecordId","ImprintedId","CountingGroup","PrecinctPortion","BallotType","DEM","","","","","","",""
+="1",="1",="1",="1",="1-1-1","Mail","Thing1","T1","1","0","0","0","1","0","1","0"
+                """
+        result: Optional[DominionCSV] = read_dominion_csv(StringIO(input_str))
+        if result is None:
+            self.fail("Expected not none")
+        else:
+            self.assertNotEqual(result, None)
+            self.assertIsNotNone(result.metadata.contest_map["District X"])
+            self.assertIsNotNone(result.metadata.contest_map["Referendum 1"])
+            self.assertIsNotNone(result.metadata.contest_map["Referendum 2"])
+
+            # make sure there are no "(2)" things going on in the referenda
+            ref1_choice_names = {
+                x.choice_name for x in result.metadata.contest_map["Referendum 1"]
+            }
+            ref2_choice_names = {
+                x.choice_name for x in result.metadata.contest_map["Referendum 2"]
+            }
+            self.assertEqual({"For", "Against"}, ref1_choice_names)
+            self.assertEqual({"For", "Against"}, ref2_choice_names)
+
+            # and now make sure we have what we expect for our write-in race
+            choice_names = {
+                x.choice_name for x in result.metadata.contest_map["District X"]
+            }
+            self.assertEqual(
+                choice_names, {"Alice", "Write-in", "Write-in (2)", "Write-in (3)"}
+            )
+
 
 class TestDominionHypotheses(unittest.TestCase):
     @given(
