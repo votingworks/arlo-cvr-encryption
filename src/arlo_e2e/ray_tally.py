@@ -2,6 +2,7 @@
 # code in tally.py, and should yield identical results, just much faster on big cluster computers.
 
 from datetime import datetime
+from multiprocessing.pool import Pool
 from timeit import default_timer as timer
 from typing import (
     Optional,
@@ -718,14 +719,17 @@ class RayTallyEverythingResults(NamedTuple):
         return [b for b in result if b is not None]
 
     def equivalent(
-        self, other: "RayTallyEverythingResults", keys: ElGamalKeyPair
+        self,
+        other: "RayTallyEverythingResults",
+        keys: ElGamalKeyPair,
+        pool: Optional[Pool] = None,
     ) -> bool:
         """
         Returns whether the two tallies are "equivalent". This might be very
         slow for large numbers of ballots. Currently does not take any advantage
-        of Ray for speed.
+        of Ray for speed, although does support `multiprocessing` pools.
         """
-        return self.to_fast_tally().equivalent(other.to_fast_tally(), keys)
+        return self.to_fast_tally().equivalent(other.to_fast_tally(), keys, pool)
 
     def all_proofs_valid(
         self,
@@ -873,6 +877,7 @@ class RayTallyEverythingResults(NamedTuple):
         take a while to run. Great for tests and for small numbers of ballots. If you've got a million
         ballots, this could explode the memory of the node where it's running.
         """
+
         assert (
             self.manifest is not None
         ), "cannot convert to fast tally without a manifest"

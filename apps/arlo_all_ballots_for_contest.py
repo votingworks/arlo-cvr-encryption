@@ -1,6 +1,6 @@
 import argparse
-from typing import Optional, Set
 from sys import exit
+from typing import Optional
 
 from electionguard.serializable import set_serializers, set_deserializers
 
@@ -49,11 +49,9 @@ if __name__ == "__main__":
         matching_contest_titles
     )
 
-    matching_ballots = results.get_ballots_matching_ballot_styles(
+    matching_ballot_ids = results.get_ballot_ids_matching_ballot_styles(
         matching_ballot_styles
     )
-
-    matching_ballot_ids: Set[str] = {b.object_id for b in matching_ballots}
 
     print("Matching contest titles:")
     print("  " + "\n  ".join(sorted(matching_contest_titles)))

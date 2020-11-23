@@ -1,11 +1,11 @@
 import argparse
 from sys import exit
-from typing import Optional, Dict
+from typing import Optional
 
 from electionguard.serializable import set_serializers, set_deserializers
 
-from arlo_e2e.publish import load_ray_tally
-from arlo_e2e.ray_tally import RayTallyEverythingResults
+from arlo_e2e.publish import load_fast_tally
+from arlo_e2e.tally import FastTallyEverythingResults
 
 if __name__ == "__main__":
     set_serializers()
@@ -24,37 +24,33 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-
     tallydir = args.directory[0]
 
-    # ray_init_localhost()
-    rresults: Optional[RayTallyEverythingResults] = load_ray_tally(
+    results: Optional[FastTallyEverythingResults] = load_fast_tally(
         tallydir, check_proofs=False
     )
 
-    if rresults is None:
+    if results is None:
         print(f"Failed to load results from {tallydir}")
         exit(1)
 
-    print(f"Loading complete: {rresults.num_ballots} ballots found.")
+    print(f"Loading complete: {results.num_ballots} ballots found.")
 
     print("Ballot styles:")
-    style_count: Dict[str, int] = {}
-    for bid in rresults.metadata.ballot_id_to_ballot_type.keys():
-        ballot_type = rresults.metadata.ballot_id_to_ballot_type[bid]
-        if ballot_type not in style_count:
-            style_count[ballot_type] = 1
-        else:
-            style_count[ballot_type] += 1
+    all_ballot_styles = results.metadata.ballot_types.keys()
+    style_count = {
+        style: len(results.get_ballot_ids_matching_ballot_styles([style]))
+        for style in all_ballot_styles
+    }
     for style in sorted(style_count.keys()):
         print(f"  {style}: {style_count[style]} ballot(s)")
 
     print("\nContests:")
-    for contest_title in sorted(rresults.metadata.contest_map.keys()):
+    for contest_title in sorted(results.metadata.contest_map.keys()):
         matching_ballot_types = [
             x
-            for x in rresults.metadata.style_map.keys()
-            if contest_title in rresults.metadata.style_map[x]
+            for x in results.metadata.style_map.keys()
+            if contest_title in results.metadata.style_map[x]
         ]
         total = sum([style_count[x] for x in matching_ballot_types])
         print(

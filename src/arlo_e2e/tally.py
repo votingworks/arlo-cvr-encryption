@@ -1,5 +1,4 @@
 import functools
-from dataclasses import dataclass
 from datetime import datetime
 from multiprocessing.pool import Pool
 from timeit import default_timer as timer
@@ -18,6 +17,7 @@ from typing import (
 )
 
 import pandas as pd
+from dataclasses import dataclass
 from electionguard.ballot import (
     PlaintextBallot,
     CiphertextAcceptedBallot,
@@ -624,8 +624,27 @@ class FastTallyEverythingResults(NamedTuple):
     ) -> List[CiphertextAcceptedBallot]:
         """
         Returns a list of `CiphertextAcceptedBallot` objects having any of the listed ballot styles.
+        Warning: can be slow, will load all of the files from disk if necessary.
         """
 
+        matching_ballot_ids = self.get_ballot_ids_matching_ballot_styles(ballot_styles)
+
+        matching_ballots = [
+            self.get_encrypted_ballot(bid) for bid in matching_ballot_ids
+        ]
+        matching_ballots_not_none = [x for x in matching_ballots if x is not None]
+
+        # we're going to ignore missing ballots, for now, and march onward; an error will have been logged
+
+        return matching_ballots_not_none
+
+    def get_ballot_ids_matching_ballot_styles(
+        self, ballot_styles: Iterable[str]
+    ) -> List[str]:
+        """
+        Returns a list of ballot-id strings having any of the listed ballot styles.
+        This will run quickly, as it doesn't need to look at any ballots on disk.
+        """
         assert not isinstance(
             ballot_styles, str
         ), "passed a string where a list or set of string was expected"
@@ -635,14 +654,8 @@ class FastTallyEverythingResults(NamedTuple):
             for bid in self.metadata.ballot_id_to_ballot_type.keys()
             if self.metadata.ballot_id_to_ballot_type[bid] in ballot_styles
         ]
-        matching_ballots = [
-            self.get_encrypted_ballot(bid) for bid in matching_ballot_ids
-        ]
-        matching_ballots_not_none = [x for x in matching_ballots if x is not None]
 
-        # we're going to ignore missing ballots, for now, and march onward; an error will have been logged
-
-        return matching_ballots_not_none
+        return matching_ballot_ids
 
     def equivalent(
         self,
