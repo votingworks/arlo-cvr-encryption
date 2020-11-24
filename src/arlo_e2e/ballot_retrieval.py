@@ -1,10 +1,10 @@
 from io import StringIO
 from typing import List, Union
 
+import pandas as pd
+
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.tally import FastTallyEverythingResults
-import pandas as pd
-import csv
 
 _dominion_iid_str = "ImprintedId"
 _audit_iid_str = "Imprinted ID"
