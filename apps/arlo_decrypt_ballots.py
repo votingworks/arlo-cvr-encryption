@@ -12,6 +12,7 @@ from tqdm import tqdm
 from arlo_e2e.admin import ElectionAdmin
 from arlo_e2e.decrypt import decrypt_ballots, write_proven_ballot
 from arlo_e2e.eg_helpers import log_nothing_to_stdout
+from arlo_e2e.html_index import generate_index_html_files
 from arlo_e2e.publish import load_fast_tally
 from arlo_e2e.tally import FastTallyEverythingResults
 from arlo_e2e.utils import load_json_helper, mkdir_helper
@@ -93,9 +94,9 @@ if __name__ == "__main__":
 
     pool.close()
 
-    num_successful_decryptions = {len([d for d in decryptions if d is not None])}
+    num_successful_decryptions = len([d for d in decryptions if d is not None])
 
-    if num_successful_decryptions != len(encrypted_ballots) in decryptions:
+    if num_successful_decryptions != len(encrypted_ballots):
         print(
             f"Decryption: only {num_successful_decryptions} of {len(encrypted_ballots)} decrypted successfully, exiting."
         )
@@ -104,3 +105,7 @@ if __name__ == "__main__":
     mkdir_helper(decrypted_dir)
     for pballot in tqdm(decryptions, desc="Writing ballots"):
         write_proven_ballot(pballot, decrypted_dir)
+
+    generate_index_html_files(
+        f"{results.metadata.election_name} (Decrypted Ballots)", decrypted_dir
+    )
