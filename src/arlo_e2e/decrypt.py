@@ -1,6 +1,7 @@
 import functools
+import os
 from multiprocessing.pool import Pool
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, cast
 
 from electionguard.ballot import CiphertextAcceptedBallot, PlaintextBallotSelection
 from electionguard.chaum_pedersen import ChaumPedersenDecryptionProof
@@ -16,11 +17,16 @@ from electionguard.group import ElementModQ, ElementModP
 from electionguard.logs import log_error
 from tqdm import tqdm
 
+from arlo_e2e.admin import ElectionAdmin
+from arlo_e2e.eg_helpers import log_and_print
+from arlo_e2e.html_index import generate_index_html_files
+from arlo_e2e.tally import FastTallyEverythingResults
 from arlo_e2e.utils import (
     load_json_helper,
     write_json_helper,
     file_exists_helper,
     BALLOT_FILENAME_PREFIX_DIGITS,
+    mkdir_helper,
 )
 
 
@@ -161,3 +167,63 @@ def exists_proven_ballot(ballot_object_id: str, decrypted_dir: str) -> bool:
         ballot_object_id + ".json",
         [ballot_name_prefix],
     )
+
+
+def decrypt_and_write(
+    admin_state: ElectionAdmin,
+    results: FastTallyEverythingResults,
+    ballot_ids: List[str],
+    decrypted_dir: str,
+) -> bool:
+    """
+    Top-level command: given all the necessary election state, decrypts the desired ballots
+    (by ballot-id strings), and writes them out to the desired output directory. Returns True
+    if everything worked, or False if there was some sort of error. Errors are also printed
+    to stdout.
+    """
+
+    for bid in ballot_ids:
+        if bid not in results.metadata.ballot_id_to_ballot_type:
+            print(f"Ballot id {bid} is not part of the tally")
+
+    encrypted_ballots = [results.get_encrypted_ballot(bid) for bid in ballot_ids]
+    num_encrypted_ballots = len([x for x in encrypted_ballots if x is not None])
+    if num_encrypted_ballots != len(ballot_ids):
+        log_and_print(
+            f"Only successfully loaded {num_encrypted_ballots} of {len(ballot_ids)} encrypted ballots"
+        )
+        return False
+
+    # For now, we're not bothering with Ray, since we expect the number of decrypted ballots to be
+    # small enough to compute on a single computer.
+    pool = Pool(os.cpu_count())
+
+    ied = InternalElectionDescription(results.election_description)
+    extended_base_hash = results.context.crypto_extended_base_hash
+    decryptions = decrypt_ballots(
+        ied,
+        extended_base_hash,
+        admin_state.keypair,
+        pool,
+        cast(List[CiphertextAcceptedBallot], encrypted_ballots),
+    )
+
+    pool.close()
+
+    num_successful_decryptions = len([d for d in decryptions if d is not None])
+
+    if num_successful_decryptions != len(encrypted_ballots):
+        log_and_print(
+            f"Decryption: only {num_successful_decryptions} of {len(encrypted_ballots)} decrypted successfully."
+        )
+        return False
+
+    mkdir_helper(decrypted_dir)
+    for pballot in tqdm(decryptions, desc="Writing ballots"):
+        write_proven_ballot(pballot, decrypted_dir)
+
+    generate_index_html_files(
+        f"{results.metadata.election_name} (Decrypted Ballots)", decrypted_dir
+    )
+
+    return True
