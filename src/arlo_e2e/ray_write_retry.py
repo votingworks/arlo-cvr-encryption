@@ -4,7 +4,7 @@ from pathlib import PurePath
 from time import sleep
 from typing import Union, AnyStr, Optional
 
-from electionguard.logs import log_warning
+from electionguard.logs import log_warning, log_error
 from ray.actor import ActorHandle
 
 from arlo_e2e.eg_helpers import log_and_print
@@ -48,7 +48,13 @@ class WriteRetryStatusActor:
         """
         ONLY USED FOR TESTING. DO NOT USE IN PRODUCTION.
         """
-        log_warning(f"setting failure probability to {failure_probability:0.3f}")
+        if failure_probability < 0.0 or failure_probability > 1.0:
+            log_error(f"totally bogus failure probability: {failure_probability:0.3f}")
+        elif failure_probability > 0.0:
+            log_warning(
+                f"setting failure probability to {failure_probability:0.3f}, DO NOT USE IN PRODUCTION"
+            )
+
         self.failure_probability = failure_probability
 
     def get_failure_probability(self) -> float:
@@ -123,16 +129,23 @@ def r_delayed_write_file_with_retries(
         return
 
 
+__singleton_name = "WriteRetryStatusActorSingleton"
 __status_actor: Optional[ActorHandle] = None
+
+
+def init_status_actor() -> None:
+    """
+    Helper function, called by our own ray_init_* routines, exactly once, to make the singleton
+    WriteRetryStatusActor. If you want a handle to the actor, call `get_status_actor`.
+    """
+    global __status_actor
+    __status_actor = WriteRetryStatusActor.options(name=__singleton_name).remote()  # type: ignore
 
 
 def get_status_actor() -> ActorHandle:
     """
-    Gets the global WriteRetryStatusActor singleton. If it doesn't exist, creates it.
+    Gets the global WriteRetryStatusActor singleton.
     """
-
-    global __status_actor
-    singleton_name = "WriteRetryStatusActorSingleton"
 
     # We're using a "named actor" to hold our singleton.
     # https://docs.ray.io/en/master/actors.html#named-actors
@@ -140,30 +153,30 @@ def get_status_actor() -> ActorHandle:
     # - First we check if we have a saved reference in our process.
     #   Useful side effect: keeps the actor from getting garbage collected.
     # - Next, we see if it's already running somewhere else.
-    # - Last chance, we launch it ourselves.
+    # - If not, that means that initialization was done wrong.
+
+    global __status_actor
 
     if __status_actor is None:
-        try:
-            __status_actor = ray.get_actor(singleton_name)
-        except ValueError:
-            # it's not there, but that's fine
-            pass
+        __status_actor = ray.get_actor(__singleton_name)
+
     if __status_actor is None:
-        # mypy doesn't know about the "options" attribute, but it's there
-        __status_actor = WriteRetryStatusActor.options(name=singleton_name).remote()  # type: ignore
+        log_and_print(
+            "Configuration failure: we should have a status actor, but we don't."
+        )
+
     return __status_actor
 
 
-__failure_probability = 0.0
+__failure_probability: Optional[float] = None
 
 
 def set_failure_probability_for_testing(failure_probability: float) -> None:
     """
-    ONLY USE THIS FOR TESTING.
+    ONLY USE NON-ZERO HERE FOR TESTING.
     """
-    log_warning(f"setting failure probability to {failure_probability:0.3f}")
-    global __failure_probability
 
+    global __failure_probability
     __failure_probability = failure_probability
     if ray.is_initialized():
         get_status_actor().set_failure_probability.remote(failure_probability)
@@ -175,10 +188,16 @@ def get_failure_probability_for_testing() -> float:
     """
     global __failure_probability
 
-    if ray.is_initialized():
-        __failure_probability = ray.get(
-            get_status_actor().get_failure_probability.remote()
+    if __failure_probability is not None:
+        return __failure_probability
+
+    if not ray.is_initialized():
+        log_and_print(
+            "Can't get failure probability because Ray isn't properly initialized."
         )
+        return 0.0
+
+    __failure_probability = ray.get(get_status_actor().get_failure_probability.remote())
 
     return __failure_probability
 

@@ -4,6 +4,7 @@ from typing import List, Union
 import pandas as pd
 
 from arlo_e2e.eg_helpers import log_and_print
+from arlo_e2e.ray_tally import RayTallyEverythingResults
 from arlo_e2e.tally import FastTallyEverythingResults
 
 _dominion_iid_str = "ImprintedId"
@@ -11,7 +12,8 @@ _audit_iid_str = "Imprinted ID"
 
 
 def get_ballot_ids_from_imprint_ids(
-    tally: FastTallyEverythingResults, imprint_ids: List[str]
+    tally: Union[RayTallyEverythingResults, FastTallyEverythingResults],
+    imprint_ids: List[str],
 ) -> List[str]:
     """
     Given a set of election results and a list of Dominion imprint-ids, returns a list of arlo-e2e

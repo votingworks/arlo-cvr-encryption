@@ -11,8 +11,9 @@ from arlo_e2e.ballot_retrieval import (
 )
 from arlo_e2e.decrypt import decrypt_and_write
 from arlo_e2e.eg_helpers import log_nothing_to_stdout
-from arlo_e2e.publish import load_fast_tally
-from arlo_e2e.tally import FastTallyEverythingResults
+from arlo_e2e.publish import load_ray_tally
+from arlo_e2e.ray_helpers import ray_init_cluster, ray_init_localhost
+from arlo_e2e.ray_tally import RayTallyEverythingResults
 from arlo_e2e.utils import load_json_helper
 
 if __name__ == "__main__":
@@ -24,6 +25,11 @@ if __name__ == "__main__":
         description="Decrypts a batch of ballots based on a ballot retrieval CSV file"
     )
 
+    parser.add_argument(
+        "--cluster",
+        action="store_true",
+        help="uses a Ray cluster for distributed computation",
+    )
     parser.add_argument(
         "-t",
         "--tallies",
@@ -57,6 +63,12 @@ if __name__ == "__main__":
     tally_dir = args.tallies
     decrypted_dir = args.decrypted
     batch_file = args.batch_file[0]
+    use_cluster = args.cluster
+
+    if use_cluster:
+        ray_init_cluster()
+    else:
+        ray_init_localhost()
 
     admin_state: Optional[ElectionAdmin] = load_json_helper(".", keyfile, ElectionAdmin)
     if admin_state is None or not admin_state.is_valid():
@@ -64,7 +76,7 @@ if __name__ == "__main__":
         exit(1)
 
     print(f"Loading tallies from {tally_dir}.")
-    results: Optional[FastTallyEverythingResults] = load_fast_tally(
+    results: Optional[RayTallyEverythingResults] = load_ray_tally(
         tally_dir, check_proofs=False
     )
 
@@ -80,6 +92,6 @@ if __name__ == "__main__":
         print("Nothing to decrypt")
         exit(1)
 
-    ballot_ids = get_ballot_ids_from_imprint_ids(results, imprint_ids)
+    bids = get_ballot_ids_from_imprint_ids(results, imprint_ids)
 
-    decrypt_and_write(admin_state, results, ballot_ids, decrypted_dir)
+    decrypt_and_write(admin_state, results, bids, decrypted_dir)

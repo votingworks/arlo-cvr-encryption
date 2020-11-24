@@ -1,8 +1,10 @@
+import csv
 import functools
 import os
 from multiprocessing.pool import Pool
-from typing import Optional, Dict, List, cast
+from typing import Optional, Dict, List, Union
 
+import ray
 from electionguard.ballot import CiphertextAcceptedBallot, PlaintextBallotSelection
 from electionguard.chaum_pedersen import ChaumPedersenDecryptionProof
 from electionguard.decrypt_with_secrets import (
@@ -15,11 +17,14 @@ from electionguard.election import InternalElectionDescription
 from electionguard.elgamal import ElGamalCiphertext, ElGamalKeyPair
 from electionguard.group import ElementModQ, ElementModP
 from electionguard.logs import log_error
+from ray.actor import ActorHandle
 from tqdm import tqdm
 
 from arlo_e2e.admin import ElectionAdmin
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.html_index import generate_index_html_files
+from arlo_e2e.ray_progress import ProgressBar
+from arlo_e2e.ray_tally import RayTallyEverythingResults
 from arlo_e2e.tally import FastTallyEverythingResults
 from arlo_e2e.utils import (
     load_json_helper,
@@ -27,6 +32,7 @@ from arlo_e2e.utils import (
     file_exists_helper,
     BALLOT_FILENAME_PREFIX_DIGITS,
     mkdir_helper,
+    write_file_with_retries,
 )
 
 
@@ -169,9 +175,39 @@ def exists_proven_ballot(ballot_object_id: str, decrypted_dir: str) -> bool:
     )
 
 
+@ray.remote
+def decrypt_and_write_one(
+    keypair: ElGamalKeyPair,
+    results: RayTallyEverythingResults,
+    ied: InternalElectionDescription,
+    extended_base_hash: ElementModQ,
+    ballot_id: str,
+    decrypted_dir: str,
+    progressbar_actor: ActorHandle,
+) -> int:
+    """
+    Helper method for decrypt_and_write: runs remotely, returns the number of decrypted ballots
+    successfully written to disk (usually 1, 0 for failure), suitable for adding up later to
+    see how many successes we had.
+    """
+    encrypted_ballot = results.get_encrypted_ballot(ballot_id)
+    if encrypted_ballot is None:
+        progressbar_actor.update_completed.remote("Ballots", 1)
+        return 0
+
+    plaintext = _decrypt(ied, extended_base_hash, keypair, encrypted_ballot)
+    if plaintext is None:
+        progressbar_actor.update_completed.remote("Ballots", 1)
+        return 0
+
+    write_proven_ballot(plaintext, decrypted_dir, num_retries=10)
+    progressbar_actor.update_completed.remote("Ballots", 1)
+    return 1
+
+
 def decrypt_and_write(
     admin_state: ElectionAdmin,
-    results: FastTallyEverythingResults,
+    results: Union[FastTallyEverythingResults, RayTallyEverythingResults],
     ballot_ids: List[str],
     decrypted_dir: str,
 ) -> bool:
@@ -180,50 +216,75 @@ def decrypt_and_write(
     (by ballot-id strings), and writes them out to the desired output directory. Returns True
     if everything worked, or False if there was some sort of error. Errors are also printed
     to stdout.
+
+    Uses a Ray cluster for speedup.
     """
 
+    if not ray.is_initialized():
+        log_and_print("need Ray running for decrypt_and_tally")
+        return False
+
+    fail = False
     for bid in ballot_ids:
         if bid not in results.metadata.ballot_id_to_ballot_type:
             print(f"Ballot id {bid} is not part of the tally")
+            fail = True
 
-    encrypted_ballots = [results.get_encrypted_ballot(bid) for bid in ballot_ids]
-    num_encrypted_ballots = len([x for x in encrypted_ballots if x is not None])
-    if num_encrypted_ballots != len(ballot_ids):
-        log_and_print(
-            f"Only successfully loaded {num_encrypted_ballots} of {len(ballot_ids)} encrypted ballots"
-        )
+    if fail:
         return False
 
-    # For now, we're not bothering with Ray, since we expect the number of decrypted ballots to be
-    # small enough to compute on a single computer.
-    pool = Pool(os.cpu_count())
+    progressbar = ProgressBar({"Ballots": len(ballot_ids)})
 
-    ied = InternalElectionDescription(results.election_description)
-    extended_base_hash = results.context.crypto_extended_base_hash
-    decryptions = decrypt_ballots(
-        ied,
-        extended_base_hash,
-        admin_state.keypair,
-        pool,
-        cast(List[CiphertextAcceptedBallot], encrypted_ballots),
-    )
+    # encrypted_ballots = [results.get_encrypted_ballot(bid) for bid in ballot_ids]
+    # num_encrypted_ballots = len([x for x in encrypted_ballots if x is not None])
+    # if num_encrypted_ballots != len(ballot_ids):
+    #     log_and_print(
+    #         f"Only successfully loaded {num_encrypted_ballots} of {len(ballot_ids)} encrypted ballots"
+    #     )
+    #     return False
 
-    pool.close()
-
-    num_successful_decryptions = len([d for d in decryptions if d is not None])
-
-    if num_successful_decryptions != len(encrypted_ballots):
-        log_and_print(
-            f"Decryption: only {num_successful_decryptions} of {len(encrypted_ballots)} decrypted successfully."
-        )
-        return False
+    r_ied = ray.put(InternalElectionDescription(results.election_description))
+    r_extended_base_hash = ray.put(results.context.crypto_extended_base_hash)
+    r_keypair = ray.put(admin_state.keypair)
+    r_results = ray.put(results)
+    r_decrypted_dir = ray.put(decrypted_dir)
 
     mkdir_helper(decrypted_dir)
-    for pballot in tqdm(decryptions, desc="Writing ballots"):
-        write_proven_ballot(pballot, decrypted_dir)
+
+    plaintexts_future = [
+        decrypt_and_write_one.remote(
+            r_keypair,
+            r_results,
+            r_ied,
+            r_extended_base_hash,
+            bid,
+            r_decrypted_dir,
+            progressbar.actor,
+        )
+        for bid in ballot_ids
+    ]
+    progressbar.print_until_done()
+    progressbar.close()
+    successful_ops = sum(ray.get(plaintexts_future))
+
+    if successful_ops < len(ballot_ids):
+        log_and_print(
+            f"Only successfully wrote {successful_ops} of {len(ballot_ids)} proven plaintext ballots"
+        )
+        return False
+
+    # we also want to write out the relevant metadata rows
+    cvr_subset = results.cvr_metadata.loc[
+        results.cvr_metadata["BallotId"].isin(ballot_ids)
+    ]
+    metadata_filename = os.path.join(decrypted_dir, "cvr_metadata.csv")
+    cvr_bytes = cvr_subset.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC)
+    write_file_with_retries(metadata_filename, cvr_bytes, num_attempts=10)
 
     generate_index_html_files(
-        f"{results.metadata.election_name} (Decrypted Ballots)", decrypted_dir
+        f"{results.metadata.election_name} (Decrypted Ballots)",
+        decrypted_dir,
+        num_retries=10,
     )
 
     return True

@@ -709,14 +709,21 @@ class RayTallyEverythingResults(NamedTuple):
         ), "cannot get to encrypted ballots because they weren't written"
 
         result: List[Optional[CiphertextAcceptedBallot]] = [
-            self.manifest.load_ciphertext_ballot(name)
-            for name in self.cvr_metadata["BallotId"]
+            self.get_encrypted_ballot(name) for name in self.cvr_metadata["BallotId"]
         ]
 
         # We're just going to skip over the None values, which is what happens
         # if a hash is invalid or a file is missing, even though we might
         # perhaps want to scream a bit about it.
         return [b for b in result if b is not None]
+
+    def get_encrypted_ballot(
+        self, ballot_id: str
+    ) -> Optional[CiphertextAcceptedBallot]:
+        if self.manifest is None:
+            return None
+        else:
+            return self.manifest.load_ciphertext_ballot(ballot_id)
 
     def equivalent(
         self,
