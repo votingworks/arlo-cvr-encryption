@@ -30,7 +30,7 @@ if __name__ == "__main__":
         "-t",
         "--tallies",
         type=str,
-        default=["tally_output"],
+        default="tally_output",
         help="directory name for where the tally artifacts can be found (default: tally_output)",
     )
 
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    tally_dir = args.tallies[0]
+    tally_dir = args.tallies
     decrypted_dir = args.decrypted[0]
     ballot_ids = args.ballot_id
 
