@@ -50,12 +50,7 @@ def get_imprint_ids_from_ballot_retrieval_csv(file: Union[str, StringIO]) -> Lis
     # and which appears both here and in the original CSV files.
 
     try:
-        df = pd.read_csv(
-            file,
-            header=[0],
-            quoting=csv.QUOTE_NONE,
-            sep=",",
-        )
+        df = pd.read_csv(file, sep=",")
     except FileNotFoundError:
         log_and_print(f"file not found: {file}")
         return []

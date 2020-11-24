@@ -56,7 +56,7 @@ if __name__ == "__main__":
     keyfile = args.keys
     tally_dir = args.tallies
     decrypted_dir = args.decrypted
-    batch_file = args.batch_file
+    batch_file = args.batch_file[0]
 
     admin_state: Optional[ElectionAdmin] = load_json_helper(".", keyfile, ElectionAdmin)
     if admin_state is None or not admin_state.is_valid():
@@ -72,6 +72,7 @@ if __name__ == "__main__":
         print(f"Failed to load results from {tally_dir}")
         exit(1)
 
+    print(f"Processing {batch_file}.")
     imprint_ids = get_imprint_ids_from_ballot_retrieval_csv(batch_file)
 
     if len(imprint_ids) == 0:
