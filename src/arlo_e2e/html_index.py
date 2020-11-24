@@ -4,7 +4,7 @@ from os import listdir
 from os import path, stat
 from stat import S_ISDIR
 
-from arlo_e2e.utils import write_file_with_retries
+from arlo_e2e.ray_write_retry import write_file_with_retries
 
 index_start_text = """<!DOCTYPE html>
 <html>

@@ -16,9 +16,9 @@ from arlo_e2e.admin import make_fresh_election_admin, ElectionAdmin
 from arlo_e2e.utils import (
     write_json_helper,
     load_json_helper,
-    write_file_with_retries,
     mkdir_helper,
 )
+from arlo_e2e.ray_write_retry import write_file_with_retries
 
 # Design note: we're putting as much of the web functionality here, without the actual Flask web
 # server present, to make these methods easier to test. We're prefixing all of these methods

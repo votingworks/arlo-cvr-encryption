@@ -11,7 +11,6 @@ from typing import (
     Optional,
     Type,
     Union,
-    AnyStr,
 )
 
 from electionguard.logs import log_error
@@ -20,6 +19,7 @@ from electionguard.utils import flatmap_optional
 from jsons import DecodeError, UnfulfilledArgumentError
 
 from arlo_e2e.eg_helpers import log_and_print
+from arlo_e2e.ray_write_retry import write_file_with_retries
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -336,35 +336,3 @@ def all_files_in_directory(root_dir: str) -> List[PurePath]:
         for file in files:
             results.append(path.join(root, file))
     return [PurePath(x) for x in results]
-
-
-def write_file_with_retries(
-    full_file_name: Union[str, PurePath],
-    contents: AnyStr,  # bytes or str
-    num_retries: int = 1,
-) -> None:
-    """
-    Helper function: given a fully resolved file path, or a path-like object describing
-    a file location, writes the given contents to the a file of that name, and if it
-    fails, tries it again and again (based on the `num_retries` parameter). This works
-    around occasional failures that happen, for no good reason, with s3fs-fuse in big
-    clouds.
-    """
-    prev_exception = None
-    write_mode = "w" if isinstance(contents, str) else "wb"
-
-    for retry_number in range(0, num_retries):
-        try:
-            with open(full_file_name, write_mode) as f:
-                f.write(contents)
-            return
-        except Exception as e:
-            prev_exception = e
-            log_and_print(
-                f"failed to write {full_file_name} (attempt #{retry_number}): {str(e)}"
-            )
-
-    if num_retries > 1:
-        log_and_print(f"giving up writing {full_file_name}: failed {num_retries} times")
-    if prev_exception:
-        raise prev_exception

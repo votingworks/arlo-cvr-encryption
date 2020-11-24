@@ -1,6 +1,5 @@
 import argparse
-from multiprocessing import Pool
-from os import cpu_count, path
+from os import path
 from sys import exit
 from timeit import default_timer as timer
 from typing import Optional
@@ -9,14 +8,13 @@ from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.admin import ElectionAdmin
 from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.publish import write_fast_tally, write_ray_tally
+from arlo_e2e.publish import write_ray_tally
 from arlo_e2e.ray_helpers import (
     ray_init_cluster,
     ray_init_localhost,
     ray_wait_for_workers,
 )
 from arlo_e2e.ray_tally import ray_tally_everything
-from arlo_e2e.tally import fast_tally_everything
 from arlo_e2e.utils import load_json_helper
 
 if __name__ == "__main__":

@@ -18,9 +18,9 @@ from arlo_e2e.utils import (
     T,
     mkdir_list_helper,
     decode_json_file_contents,
-    write_file_with_retries,
     BALLOT_FILENAME_PREFIX_DIGITS,
 )
+from arlo_e2e.ray_write_retry import write_file_with_retries
 
 
 @dataclass(eq=True, unsafe_hash=True)
@@ -180,7 +180,9 @@ class Manifest:
 
         file_content_bytes = len(file_utf8_bytes)
         full_name = compose_filename(self.root_dir, file_name, subdirectories)
-        write_file_with_retries(full_name, file_utf8_bytes, num_retries=num_retries)
+        write_file_with_retries(
+            full_name, file_utf8_bytes, num_attempts=num_retries, initial_delay=1
+        )
         file_info = FileInfo(h, file_content_bytes)
 
         if manifest_name in self.hashes:
