@@ -8,6 +8,7 @@ used alongside an [Arlo RLA audit](https://voting.works/risk-limiting-audits/).
 - [Why E2E?](#why-e2e?)
 - [Command-line tools](#command-line-tools)
 - [Implementation thoughts](#implementation-thoughts)
+- [Amazon AWS details](#amazon-aws-s3-ec2-iam-details)
 
 ## Why E2E?
 
@@ -94,3 +95,45 @@ Other libraries that we're *not* using, but ostensibly could at some point:
   - Code is all MIT licensed
   - Core libraries in C
   - Alternative implementations in Java (server-side) and JavaScript (for embedding in a hypothetical voting machine)
+  
+## Amazon AWS (S3, EC2, IAM) details
+
+This part of the implementation is currently in need of some generalization
+and cleanup. But how it works right now.
+
+There are two YAML configurations for Ray in the `cloud` directory. One
+of them `aws-config.yaml` works and is tested regular. The other,
+`azure-config.yaml` is more of a work in progress and should not
+be assumed to be ready to go.
+
+A third file, `iam-policy-summary.txt` is something of an outline of how
+we had to specify the AWS security policies (IAM) in order to ensure that
+our EC2 virtual machines can speak to our S3 buckets. These almost certainly
+are far less than optimal. When in doubt, when making a new S3 bucket,
+you'll be dorking with the IAM policies until you can get everything
+mounted correctly with `s3fs`.
+
+Within `aws-config.yaml`:
+- The current specified `max_workers` and `initial_workers` are the biggest
+  we could run without triggering a weird crashy behavior in Ray. They're
+  working on it. Other Ray loads use far more nodes than arlo-e2e, so it's
+  something about the way we stress the cluster that's different.
+  
+- The "worker" nodes we're currently using are `c5a.16xlarge` (beefy 64 vCPU AMD machines),
+  with `c5.16xlarge` (similarly beefy Intel machines as an alternate), with a
+  `m5a.xlarge` (four vCPUs but lots more memory) that we use for our "head" node.
+  
+- The Ray autoscaler does all the work of creating and destroying our nodes on EC2.
+  It starts from an Ubuntu 20.04 VM, pre-installed with dependencies that we need
+  (you'll see the various `ami-` strings in there). Once it launches each VM, it then
+  executes the various `setup_commands`. Mostly these just install more things, but
+  they also set up `s3fs`, which mounts the S3 storage bucket we want onto `/mnt/arlo-data`.
+  
+- If you want to try to make your own Ubuntu virtual machine, you may find the script
+  in `ubuntu-setup.sh` to be helpful. This probably could/should be done just as well
+  with Docker, but we get where we need to be without it, for now.
+
+- Right now, everything is kinda arbitrarily set up to work in Amazon's `us-east-2`
+  datacenter. There's no reason you couldn't run this elsewhere. Just make sure the
+  S3 storage and EC2 compute nodes are in the same data center to avoid crazy data
+  charges.
