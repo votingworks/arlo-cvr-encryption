@@ -143,7 +143,11 @@ def get_status_actor() -> ActorHandle:
     # - Last chance, we launch it ourselves.
 
     if __status_actor is None:
-        __status_actor = ray.get_actor(singleton_name)
+        try:
+            __status_actor = ray.get_actor(singleton_name)
+        except ValueError:
+            # it's not there, but that's fine
+            pass
     if __status_actor is None:
         # mypy doesn't know about the "options" attribute, but it's there
         __status_actor = WriteRetryStatusActor.options(name=singleton_name).remote()  # type: ignore
@@ -172,7 +176,9 @@ def get_failure_probability_for_testing() -> float:
     global __failure_probability
 
     if ray.is_initialized():
-        __failure_probability = get_status_actor().get_failure_probability.remote()
+        __failure_probability = ray.get(
+            get_status_actor().get_failure_probability.remote()
+        )
 
     return __failure_probability
 
