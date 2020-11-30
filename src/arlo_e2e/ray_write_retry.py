@@ -20,10 +20,13 @@ class WriteRetryStatusActor:
     failure_probability: float
 
     def __init__(self) -> None:
+        self.event = Event()
+        self.reset_to_zero()
+
+    def reset_to_zero(self) -> None:
         self.num_failures = 0
         self.num_pending = 0
         self.failure_probability = 0.0
-        self.event = Event()
 
     def increment_pending(self) -> None:
         """
@@ -109,24 +112,26 @@ def r_delayed_write_file_with_retries(
     full_file_name: Union[str, PurePath],
     contents: AnyStr,
     num_attempts: int,
-    initial_delay: int,
+    initial_delay: float,
+    delta_delay: float,
     counter: int,
-    status_actor: Optional[ActorHandle],  # WriteRetryStatusActor
+    status_actor: Optional[ActorHandle],  # pragma: no cover
 ) -> None:
-    sleep(initial_delay)
-    success = _write_once(full_file_name, contents, counter)
-    if success:
-        if status_actor:
-            status_actor.decrement_pending.remote(False)
-        return
+    # actual return type: Optional[ActorHandle[WriteRetryStatusActor]], but type params not supported
 
-    if counter >= num_attempts:
-        if status_actor:
-            status_actor.decrement_pending.remote(True)
-        log_and_print(
-            f"giving up writing {full_file_name}: failed {num_attempts} times"
-        )
-        return
+    for attempt in range(counter, num_attempts):
+        sleep(initial_delay)
+        success = _write_once(full_file_name, contents, attempt)
+        if success:
+            if status_actor:
+                status_actor.decrement_pending.remote(False)
+            return
+
+        initial_delay += delta_delay
+
+    log_and_print(f"giving up writing {full_file_name}: failed {num_attempts} times")
+    if status_actor:
+        status_actor.decrement_pending.remote(True)
 
 
 __singleton_name = "WriteRetryStatusActorSingleton"
@@ -164,6 +169,7 @@ def get_status_actor() -> ActorHandle:
         log_and_print(
             "Configuration failure: we should have a status actor, but we don't."
         )
+        exit(1)
 
     return __status_actor
 
@@ -206,7 +212,8 @@ def write_file_with_retries(
     full_file_name: Union[str, PurePath],
     contents: AnyStr,  # bytes or str
     num_attempts: int = 1,
-    initial_delay: int = 1,
+    initial_delay: float = 1.0,
+    delta_delay: float = 1.0,
 ) -> None:
     """
     Helper function: given a fully resolved file path, or a path-like object describing
@@ -219,9 +226,8 @@ def write_file_with_retries(
     launch a Ray task to delay a bit and try again, allowing the initial call to
     return immediately, and the file will *eventually* get written out.
 
-    The delay time, in seconds, will be equal to the retry number, so first it waits
-    one second, then two, etc. (You can use the optional `initial_delay` parameter
-    to specify the first wait time, and thereafter it increments by one.)
+    The delay time, in seconds, starts with the `initial_delay` (default: 1 second)
+    then grows by `delta_delay` (default: 1 second) each time.
     """
     prev_exception = None
 
@@ -232,7 +238,13 @@ def write_file_with_retries(
         if status_actor:
             status_actor.increment_pending.remote()
         r_delayed_write_file_with_retries.remote(
-            full_file_name, contents, num_attempts, initial_delay, 2, status_actor
+            full_file_name,
+            contents,
+            num_attempts,
+            initial_delay,
+            delta_delay,
+            2,
+            status_actor,
         )
 
     else:
@@ -240,7 +252,7 @@ def write_file_with_retries(
             if _write_once(full_file_name, contents, retry_number):
                 return
             sleep(initial_delay)
-            initial_delay += 1
+            initial_delay += delta_delay
 
         if num_attempts > 1:
             log_and_print(

@@ -184,7 +184,7 @@ def decrypt_and_write_one(
     ballot_id: str,
     decrypted_dir: str,
     progressbar_actor: ActorHandle,
-) -> int:
+) -> int:  # pragma: no cover
     """
     Helper method for decrypt_and_write: runs remotely, returns the number of decrypted ballots
     successfully written to disk (usually 1, 0 for failure), suitable for adding up later to

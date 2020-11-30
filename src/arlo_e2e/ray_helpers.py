@@ -51,7 +51,7 @@ def ray_post_init(write_failure_probability: float = 0.0) -> None:
     set_failure_probability_for_testing(write_failure_probability)
 
 
-def ray_wait_for_workers(min_workers: int = 1) -> None:
+def ray_wait_for_workers(min_workers: int = 1) -> None:  # pragma: no cover
     """
     We don't want to dispatch any work until we have workers nodes ready to go.
     This function is a no-op when running on localhost.
