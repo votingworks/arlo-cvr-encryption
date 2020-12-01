@@ -18,6 +18,7 @@ from arlo_e2e.dominion import read_dominion_csv
 from arlo_e2e.publish import write_fast_tally
 from arlo_e2e.ray_helpers import ray_init_cluster
 from arlo_e2e.ray_tally import ray_tally_everything
+from arlo_e2e.ray_write_retry import wait_for_zero_pending_writes
 from arlo_e2e.tally import fast_tally_everything
 
 
@@ -116,3 +117,7 @@ if __name__ == "__main__":
         run_bench(arg, pool, file_dir)
 
     pool.close()
+
+    num_failures = wait_for_zero_pending_writes()
+    if num_failures > 0:
+        print(f"WARNING: Failed to write {num_failures} files. Something bad happened.")

@@ -9,7 +9,8 @@ from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.ray_write_retry import (
     set_failure_probability_for_testing,
     write_file_with_retries,
-    get_status_actor,
+    wait_for_zero_pending_writes,
+    reset_pending_state,
 )
 from arlo_e2e.utils import mkdir_helper
 
@@ -29,43 +30,67 @@ def verify_all_files(num_files: int) -> bool:
     return True
 
 
+def remove_test_tree() -> None:
+    try:
+        shutil.rmtree("write_output", ignore_errors=True)
+    except FileNotFoundError:
+        # okay if it's not there
+        pass
+
+
 class TestRayWriteRetry(unittest.TestCase):
-    def removeTree(self) -> None:
-        try:
-            shutil.rmtree("write_output", ignore_errors=True)
-        except FileNotFoundError:
-            # okay if it's not there
-            pass
-
     def setUp(self) -> None:
-        ray_init_localhost(num_cpus=cpu_count())
-
-        self.removeTree()
-        coverage.process_startup()  # necessary for coverage testing to work in parallel
+        remove_test_tree()
 
     def tearDown(self) -> None:
-        self.removeTree()
+        remove_test_tree()
 
     def test_zero_failures(self) -> None:
+        ray_init_localhost(num_cpus=cpu_count())
+        coverage.process_startup()  # necessary for coverage testing to work in parallel
         set_failure_probability_for_testing(0.0)
 
         mkdir_helper("write_output")
         write_all_files(10)
-        num_failures = ray.get(get_status_actor().wait_for_zero_pending.remote())
+        num_failures = wait_for_zero_pending_writes()
         self.assertEqual(num_failures, 0)
         self.assertTrue(verify_all_files(10))
-        self.removeTree()
+        remove_test_tree()
+        ray.shutdown()
+        reset_pending_state()
 
     def test_huge_failures(self) -> None:
+        ray_init_localhost(num_cpus=cpu_count())
+        coverage.process_startup()  # necessary for coverage testing to work in parallel
         set_failure_probability_for_testing(0.5)
 
         mkdir_helper("write_output")
-        write_all_files(
-            100, 100
-        )  # up to 100 retries, driving odds of total failure to zero
-        num_failures = ray.get(get_status_actor().wait_for_zero_pending.remote())
-        self.assertEqual(
-            num_failures, 0
-        )  # our retries should guarantee everything succeeds!
+
+        # up to 100 retries, driving odds of total failure to zero
+        write_all_files(100, 100)
+        num_failures = wait_for_zero_pending_writes()
+
+        # our retries should guarantee everything succeeds!
+        self.assertEqual(num_failures, 0)
         self.assertTrue(verify_all_files(100))
-        self.removeTree()
+        remove_test_tree()
+        ray.shutdown()
+        reset_pending_state()
+
+    def test_without_ray(self) -> None:
+        if ray.is_initialized():
+            ray.shutdown()
+
+        set_failure_probability_for_testing(0.2)
+
+        mkdir_helper("write_output")
+
+        # up to 100 retries, driving odds of total failure to zero
+        write_all_files(20, 100)
+        num_failures = wait_for_zero_pending_writes()
+
+        # our retries should guarantee everything succeeds!
+        self.assertEqual(num_failures, 0)
+        self.assertTrue(verify_all_files(20))
+        remove_test_tree()
+        reset_pending_state()

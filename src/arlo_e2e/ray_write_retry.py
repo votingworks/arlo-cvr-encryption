@@ -139,6 +139,23 @@ __singleton_name = "WriteRetryStatusActorSingleton"
 __status_actor: Optional[ActorHandle] = None
 
 
+def reset_pending_state() -> None:
+    """
+    If you've finished one computation and are about to start another, this resets all
+    the internal counters. Also, this will remove any actors, which will then be restarted
+    if necessary.
+
+    In a testing scenario, you might call this after a call to `ray.shutdown()`.
+    """
+    global __status_actor
+    global __failure_probability
+    global __local_failed_writes
+
+    __status_actor = None
+    __failure_probability = None
+    __local_failed_writes = 0
+
+
 def init_status_actor() -> None:
     """
     Helper function, called by our own ray_init_* routines, exactly once, to make the singleton
@@ -212,6 +229,25 @@ def get_failure_probability_for_testing() -> float:
     return __failure_probability
 
 
+__local_failed_writes = 0
+
+
+def wait_for_zero_pending_writes() -> int:
+    """
+    Blocking call: waits until all pending writes are complete, then returns
+    the number of failed writes (i.e., writes where the number of failures
+    exceeded the number of retry attempts). If this is zero, then every write
+    succeeded, eventually. If it's non-zero, then you should warn the user
+    with the number, perhaps suggesting that something really bad happened.
+    """
+    global __local_failed_writes
+    if ray.is_initialized():
+        num_failures: int = ray.get(get_status_actor().wait_for_zero_pending.remote())
+        return num_failures
+    else:
+        return __local_failed_writes
+
+
 def write_file_with_retries(
     full_file_name: Union[str, PurePath],
     contents: AnyStr,  # bytes or str
@@ -233,6 +269,7 @@ def write_file_with_retries(
     The delay time, in seconds, starts with the `initial_delay` (default: 1 second)
     then grows by `delta_delay` (default: 1 second) each time.
     """
+    global __local_failed_writes
     prev_exception = None
 
     if ray.is_initialized():
@@ -262,5 +299,10 @@ def write_file_with_retries(
             log_and_print(
                 f"giving up writing {full_file_name}: failed {num_attempts} times"
             )
+        else:
+            log_and_print(f"giving up writing {full_file_name}")
+
+        __local_failed_writes += 1
+
         if prev_exception:
             raise prev_exception

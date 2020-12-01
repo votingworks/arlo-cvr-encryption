@@ -12,6 +12,7 @@ from electionguard.utils import get_optional
 from arlo_e2e.dominion import read_dominion_csv
 from arlo_e2e.ray_helpers import ray_init_cluster, ray_init_localhost
 from arlo_e2e.ray_tally import ray_tally_everything
+from arlo_e2e.ray_write_retry import wait_for_zero_pending_writes
 
 
 def run_bench(filename: str, output_dir: Optional[str], use_progressbar: bool) -> None:
@@ -102,3 +103,7 @@ if __name__ == "__main__":
     print("Writing Ray timelines to disk.")
     ray.timeline("ray-timeline.json")
     ray.object_transfer_timeline("ray-object-transfer-timeline.json")
+
+    num_failures = wait_for_zero_pending_writes()
+    if num_failures > 0:
+        print(f"WARNING: Failed to write {num_failures} files. Something bad happened.")
