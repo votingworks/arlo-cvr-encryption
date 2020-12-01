@@ -13,7 +13,8 @@ import ray
 
 
 @ray.remote
-class WriteRetryStatusActor:
+class WriteRetryStatusActor:  # pragma: no cover
+    # sadly, code coverage testing can't trace into Ray remote methods and actors
     num_failures: int
     num_pending: int
     event: Event
@@ -184,6 +185,7 @@ def set_failure_probability_for_testing(failure_probability: float) -> None:
 
     global __failure_probability
     __failure_probability = failure_probability
+
     if ray.is_initialized():
         get_status_actor().set_failure_probability.remote(failure_probability)
 
@@ -199,11 +201,13 @@ def get_failure_probability_for_testing() -> float:
 
     if not ray.is_initialized():
         log_and_print(
-            "Can't get failure probability because Ray isn't properly initialized."
+            "Ray not initialized, so we're assuming a zero failure probability for writes."
         )
-        return 0.0
-
-    __failure_probability = ray.get(get_status_actor().get_failure_probability.remote())
+        __failure_probability = 0.0
+    else:
+        __failure_probability = ray.get(
+            get_status_actor().get_failure_probability.remote()
+        )
 
     return __failure_probability
 

@@ -46,7 +46,7 @@ class TestRayWriteRetry(unittest.TestCase):
     def tearDown(self) -> None:
         self.removeTree()
 
-    def testWithZeroFailureRate(self) -> None:
+    def test_zero_failures(self) -> None:
         set_failure_probability_for_testing(0.0)
 
         mkdir_helper("write_output")
@@ -56,7 +56,7 @@ class TestRayWriteRetry(unittest.TestCase):
         self.assertTrue(verify_all_files(10))
         self.removeTree()
 
-    def testWithHugeFailureRate(self) -> None:
+    def test_huge_failures(self) -> None:
         set_failure_probability_for_testing(0.5)
 
         mkdir_helper("write_output")
