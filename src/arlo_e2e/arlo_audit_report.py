@@ -1,10 +1,10 @@
 import csv
 import re
-
-from dataclasses import dataclass
 from io import StringIO
-from typing import Union, Optional, List, Dict, Any
+from typing import Union, Optional, List, Dict
+
 import pandas as pd
+from dataclasses import dataclass
 
 from arlo_e2e.dominion import fix_strings
 from arlo_e2e.eg_helpers import log_and_print
@@ -89,18 +89,11 @@ _audit_result = "Audit Result: "
 _discrepancy = "Discrepancy: "
 
 
-def _audit_fix_strings(input: Any) -> Any:
-    input = fix_strings(input)
-    if input == "CONTEST_NOT_ON_BALLOT":
-        return None
-    else:
-        return input
-
-
 def _fix_contest_name(input: str) -> str:
     # Removes any of the prefix strings above (e.g., "CVR Result: ") as well as
     # removes any "Vote for" suffix on the name of the contest; we have the necessary
-    # metadata from the arlo-e2e metadata on disk to know about k-of-n contests.
+    # metadata from the arlo-e2e metadata on disk to know about k-of-n contests, and
+    # we'd prefer for the contest names to match up.
 
     if input.startswith(_cvr_result):
         input = input[len(_cvr_result) :]
@@ -117,7 +110,7 @@ class ArloSampledBallot:
     imprintedId: str
     """String with the unique ballot id, suitable for identifying the same ballot's data elsewhere."""
 
-    metadata: Dict[str, Optional[str]]
+    metadata: Dict[str, Optional[Union[str, int]]]
     """All ballot metadata fields (all the columns, like jurisdiction name, and also including ticket numbers."""
 
     audit_result: Dict[str, Optional[str]]
@@ -157,7 +150,7 @@ class ArloSampledBallot:
 
         audit_keys = [k for k in row.keys() if k.startswith(_audit_result)]
         self.audit_result = {
-            _fix_contest_name(k): _audit_fix_strings(row[k]) for k in audit_keys
+            _fix_contest_name(k): fix_strings(row[k]) for k in audit_keys
         }
 
         cvr_keys = [k for k in row.keys() if k.startswith(_cvr_result)]
@@ -168,10 +161,23 @@ class ArloSampledBallot:
             _fix_contest_name(k): fix_strings(row[k]) for k in discrepancy_keys
         }
 
-        pass
+        # Now we're going to deal with CONTEST_NOT_ON_BALLOT and BLANK, which
+        # appear in the Audit columns, but the CVR column will just be an empty
+        # string (which will be None by the time we've gotten here). We're going
+        # to report out BLANK as-is, for both columns, and we're going to report
+        # out None for CONTEST_NOT_ON_BALLOT for both columns.
+
+        for k in self.audit_result.keys():
+            if self.audit_result[k] == "BLANK" and self.cvr_result[k] is None:
+                self.cvr_result[k] = "BLANK"
+            elif (
+                self.audit_result[k] == "CONTEST_NOT_ON_BALLOT"
+                and self.cvr_result[k] is None
+            ):
+                self.audit_result[k] = None
 
 
-def arlo_audit_report_to_results(
+def arlo_audit_report_to_sampled_ballots(
     file: Union[str, StringIO]
 ) -> Optional[List[ArloSampledBallot]]:
     """
@@ -180,12 +186,17 @@ def arlo_audit_report_to_results(
     parts of the audit data are ignored.
     """
     if isinstance(file, str):
-        # we have a filename and we instead want file-like object
         try:
-            file = open(file, "r")
+            f = open(file, "r")
+            lines = f.read().splitlines()
+            f.close()
         except FileNotFoundError:
             return None
-    lines = file.read().splitlines()
+    elif isinstance(file, StringIO):
+        lines = file.read().splitlines()
+    else:
+        raise ValueError(f"unexpected type for file: {type(file)}")
+
     header_line_no = -1
     for i in range(0, len(lines)):
         if lines[i].startswith("######## SAMPLED BALLOTS ########"):

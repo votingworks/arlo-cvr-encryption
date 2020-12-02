@@ -262,7 +262,11 @@ class Manifest:
             log_error(f"File {manifest_file_name} was not in the manifest")
             return False
 
-        file_info: FileInfo = self.hashes[manifest_file_name]
+        file_info: Optional[FileInfo] = self._get_hash_required(manifest_file_name)
+
+        if file_info is None:
+            return False
+
         file_len = len(file_contents.encode("utf-8"))
 
         if file_len != file_info.num_bytes:
