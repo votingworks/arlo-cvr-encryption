@@ -6,7 +6,7 @@ from arlo_e2e.arlo_audit_report import arlo_audit_report_to_sampled_ballots
 
 class TestArloAuditReport(unittest.TestCase):
     inyo_filename = "sample-data/audit-report-Inyo-County-2020.csv"
-    inyou_data = ""  # initialized by setUp
+    inyo_data = ""  # initialized by setUp
 
     def setUp(self) -> None:
         # Note: IntelliJ likes to start the tests running with the current directory equal
@@ -16,7 +16,7 @@ class TestArloAuditReport(unittest.TestCase):
             with open(self.inyo_filename, "r") as f:
                 self.inyo_data = f.read()
         except FileNotFoundError:
-            self.inyo_filename = f"../{self.inyo_data}"
+            self.inyo_filename = f"../{self.inyo_filename}"
             with open(self.inyo_filename, "r") as f:
                 self.inyo_data = f.read()
 

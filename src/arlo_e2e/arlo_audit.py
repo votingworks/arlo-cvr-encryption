@@ -1,9 +1,11 @@
 from io import StringIO
-from typing import List, Union, Dict
+from typing import List, Union, Dict, Optional, cast
 
 import pandas as pd
 from electionguard.ballot import PlaintextBallot
+from electionguard.decrypt_with_secrets import ProvenPlaintextBallot
 
+from arlo_e2e.arlo_audit_report import ArloSampledBallot
 from arlo_e2e.decrypt import load_proven_ballot
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.ray_tally import RayTallyEverythingResults
@@ -11,6 +13,19 @@ from arlo_e2e.tally import FastTallyEverythingResults
 
 _dominion_iid_str = "ImprintedId"
 _audit_iid_str = "Imprinted ID"
+
+
+def get_imprint_to_ballot_id_map(
+    tally: Union[RayTallyEverythingResults, FastTallyEverythingResults],
+    imprint_ids: List[str],
+) -> Dict[str, str]:
+    rows = tally.cvr_metadata.loc[
+        tally.cvr_metadata[_dominion_iid_str].isin(imprint_ids)
+    ]
+    pairs: List[Dict[str, str]] = rows[["ImprintedId", "BallotId"]].to_dict(
+        orient="records"
+    )
+    return {d["ImprintedId"]: d["BallotId"] for d in pairs}
 
 
 def get_ballot_ids_from_imprint_ids(
@@ -22,11 +37,8 @@ def get_ballot_ids_from_imprint_ids(
     ballot-ids. (Arlo ballot-ids are used throughout the encryption and decryption process, and
     map one-to-one with the Dominion imprint ids.)
     """
-    rows = tally.cvr_metadata.loc[
-        tally.cvr_metadata[_dominion_iid_str].isin(imprint_ids)
-    ]
-    bids = rows["BallotId"]
-    return sorted(list(bids))
+    map: Dict[str, str] = get_imprint_to_ballot_id_map(tally, imprint_ids)
+    return sorted(map.values())
 
 
 def get_imprint_ids_from_ballot_retrieval_csv(file: Union[str, StringIO]) -> List[str]:
@@ -74,13 +86,31 @@ def get_decrypted_ballots_from_ballot_ids(
     a dictionary from bids to the PlaintextBallot data. Any missing file will also be absent
     from the dictionary.
     """
-    proven_ballots = {
+    proven_ballots: Dict[str, Optional[ProvenPlaintextBallot]] = {
         bid: load_proven_ballot(ballot_object_id=bid, decrypted_dir=decrypted_dir)
         for bid in bids
     }
 
+    proven_ballots_not_none = cast(
+        Dict[str, ProvenPlaintextBallot],
+        {bid: proven_ballots[bid] for bid in bids if proven_ballots[bid] is not None},
+    )
+
+    # For our audit purposes, we don't care about the Chaum-Pedersen proofs, so we're just
+    # pulling out the ballot data.
+
     return {
-        bid: proven_ballots[bid].ballot
-        for bid in proven_ballots.keys()
-        if proven_ballots[bid] is not None
+        bid: proven_ballots_not_none[bid].ballot
+        for bid in proven_ballots_not_none.keys()
     }
+
+
+def compare_audit_sampled_ballot_to_plaintext_ballot(
+    tally: FastTallyEverythingResults,
+    audit_row: ArloSampledBallot,
+    ballot: PlaintextBallot,
+) -> bool:
+    """
+    Returns true if the audit row and the plaintext ballot correspond.
+    """
+    return True

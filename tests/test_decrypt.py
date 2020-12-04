@@ -94,9 +94,14 @@ class EncryptionAndDecryption(unittest.TestCase):
         proven_ballots_not_none = [x for x in proven_ballots if x is not None]
         self.assertEqual(len(proven_ballots), len(proven_ballots_not_none))
 
+        proven_ballots_by_bid = {x.ballot.object_id: x for x in proven_ballots_not_none}
+
         verifications = [
             r_verify_proven_ballot_proofs.remote(
-                extended_base_hash, keypair.public_key, tally.get_encrypted_ballot(bid)
+                extended_base_hash,
+                keypair.public_key,
+                tally.get_encrypted_ballot(bid),
+                proven_ballots_by_bid[bid],
             )
             for bid in bids_from_tally
         ]
