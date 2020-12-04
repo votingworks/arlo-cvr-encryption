@@ -5,7 +5,7 @@ from typing import Optional
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.admin import ElectionAdmin
-from arlo_e2e.ballot_retrieval import (
+from arlo_e2e.arlo_audit import (
     get_imprint_ids_from_ballot_retrieval_csv,
     get_ballot_ids_from_imprint_ids,
 )

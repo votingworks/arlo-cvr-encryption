@@ -36,6 +36,18 @@ from arlo_e2e.utils import (
 )
 
 
+@ray.remote
+def r_verify_proven_ballot_proofs(
+    extended_base_hash: ElementModQ,
+    public_key: ElementModP,
+    ciphertext_ballot: CiphertextAcceptedBallot,
+    pballot: ProvenPlaintextBallot,
+) -> bool:
+    return verify_proven_ballot_proofs(
+        extended_base_hash, public_key, ciphertext_ballot, pballot
+    )
+
+
 def verify_proven_ballot_proofs(
     extended_base_hash: ElementModQ,
     public_key: ElementModP,
@@ -176,7 +188,7 @@ def exists_proven_ballot(ballot_object_id: str, decrypted_dir: str) -> bool:
 
 
 @ray.remote
-def decrypt_and_write_one(
+def r_decrypt_and_write_one(
     keypair: ElGamalKeyPair,
     results: RayTallyEverythingResults,
     ied: InternalElectionDescription,
@@ -252,7 +264,7 @@ def decrypt_and_write(
     mkdir_helper(decrypted_dir)
 
     plaintexts_future = [
-        decrypt_and_write_one.remote(
+        r_decrypt_and_write_one.remote(
             r_keypair,
             r_results,
             r_ied,

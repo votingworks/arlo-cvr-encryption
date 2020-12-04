@@ -264,13 +264,17 @@ def dominion_cvrs(draw: _DrawType, max_rows: int = 300, max_votes_per_race: int 
 
     for cvr_number in range(1, num_cvrs + 1):
         bs_drawn: int = draw(integers(0, num_ballot_styles - 1))
+
+        # looks vaguely like the real ones, needs to be unique
+        imprint_id = f"1-1-{cvr_number}"
+
         output: List[Union[str, int]] = (
             [
                 cvr_number,
                 draw(integers(0, 3)),
                 draw(integers(0, 3)),
                 draw(integers(0, 3)),
-                draw(integers(0, 3)),
+                imprint_id,
                 draw(counting_groups()),
                 draw(integers(0, 3)),
                 ballot_style_strings[bs_drawn],
@@ -281,7 +285,7 @@ def dominion_cvrs(draw: _DrawType, max_rows: int = 300, max_votes_per_race: int 
                 draw(integers(0, 3)),
                 draw(integers(0, 3)),
                 draw(integers(0, 3)),
-                draw(integers(0, 3)),
+                imprint_id,
                 draw(integers(0, 3)),
                 ballot_style_strings[bs_drawn],
             ]
@@ -322,13 +326,15 @@ class DominionBallotsAndContext(NamedTuple):
 
 
 @composite
-def ballots_and_context(draw: _DrawType):
+def ballots_and_context(draw: _DrawType, max_rows: int = 300):
     """
     Wrapper around ElectionGuard's own `ciphertext_elections` strategy and our `dominion_cvrs`, returns
     an instance of `DominionBallotsAndContext` with everything you need for subsequent testing.
     """
     max_votes_per_race = draw(integers(1, 3))
-    raw_cvrs = draw(dominion_cvrs(max_votes_per_race=max_votes_per_race))
+    raw_cvrs = draw(
+        dominion_cvrs(max_votes_per_race=max_votes_per_race, max_rows=max_rows)
+    )
 
     parsed: Optional[DominionCSV] = read_dominion_csv(StringIO(raw_cvrs))
     assert parsed is not None, "CVR parser shouldn't fail!"

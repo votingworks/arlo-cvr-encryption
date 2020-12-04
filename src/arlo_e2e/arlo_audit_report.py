@@ -111,7 +111,7 @@ class ArloSampledBallot:
     """String with the unique ballot id, suitable for identifying the same ballot's data elsewhere."""
 
     metadata: Dict[str, Optional[Union[str, int]]]
-    """All ballot metadata fields (all the columns, like jurisdiction name, and also including ticket numbers."""
+    """All ballot metadata fields (all the columns, like jurisdiction name), and also including ticket numbers."""
 
     audit_result: Dict[str, Optional[str]]
     """Mapping from contest name to the result from the audit."""

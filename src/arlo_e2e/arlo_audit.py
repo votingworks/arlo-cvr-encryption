@@ -1,8 +1,10 @@
 from io import StringIO
-from typing import List, Union
+from typing import List, Union, Dict
 
 import pandas as pd
+from electionguard.ballot import PlaintextBallot
 
+from arlo_e2e.decrypt import load_proven_ballot
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.ray_tally import RayTallyEverythingResults
 from arlo_e2e.tally import FastTallyEverythingResults
@@ -62,3 +64,23 @@ def get_imprint_ids_from_ballot_retrieval_csv(file: Union[str, StringIO]) -> Lis
 
     iids = df[_audit_iid_str]
     return list(iids)
+
+
+def get_decrypted_ballots_from_ballot_ids(
+    bids: List[str], decrypted_dir: str
+) -> Dict[str, PlaintextBallot]:
+    """
+    Given a list ballot ids, loads the decrypted ballots from disk, if they exist, returning
+    a dictionary from bids to the PlaintextBallot data. Any missing file will also be absent
+    from the dictionary.
+    """
+    proven_ballots = {
+        bid: load_proven_ballot(ballot_object_id=bid, decrypted_dir=decrypted_dir)
+        for bid in bids
+    }
+
+    return {
+        bid: proven_ballots[bid].ballot
+        for bid in proven_ballots.keys()
+        if proven_ballots[bid] is not None
+    }
