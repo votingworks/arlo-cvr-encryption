@@ -879,10 +879,9 @@ class RayTallyEverythingResults(NamedTuple):
 
     def to_fast_tally(self) -> FastTallyEverythingResults:
         """
-        Converts from the "Ray" tally result to the "Fast" tally result used elsewhere. This will collect
-        all of the possibly-remote ballots into a single data structure on the caller's node, so could
-        take a while to run. Great for tests and for small numbers of ballots. If you've got a million
-        ballots, this could explode the memory of the node where it's running.
+        Converts from the "Ray" tally result to the "Fast" tally result used elsewhere. This will create
+        make it possible to access individual ballots, but they're only read on-demand. This method
+        should return quickly, even though reading the ballots later could be quite slow.
         """
 
         assert (

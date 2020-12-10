@@ -65,6 +65,8 @@ class EncryptionAndDecryption(unittest.TestCase):
         ).to_fast_tally()
         extended_base_hash = tally.context.crypto_extended_base_hash
         keypair = elgamal_keypair_from_secret(secret_key)
+
+        # exercise code from arlo_audit, while we've got the chance
         imprint_ids: List[str] = list(cvrs.data["ImprintedId"])
         bids_from_tally = get_ballot_ids_from_imprint_ids(tally, imprint_ids)
 

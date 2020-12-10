@@ -93,9 +93,10 @@ if __name__ == "__main__":
         print("Nothing to decrypt")
         exit(1)
 
-    bids = get_ballot_ids_from_imprint_ids(results, imprint_ids)
+    fresults = results.to_fast_tally()
+    bids = get_ballot_ids_from_imprint_ids(fresults, imprint_ids)
 
-    decrypt_and_write(admin_state, results, bids, decrypted_dir)
+    decrypt_and_write(admin_state, fresults, bids, decrypted_dir)
 
     num_failures = wait_for_zero_pending_writes()
     if num_failures > 0:

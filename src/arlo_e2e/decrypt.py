@@ -219,7 +219,7 @@ def r_decrypt_and_write_one(
 
 def decrypt_and_write(
     admin_state: ElectionAdmin,
-    results: Union[FastTallyEverythingResults, RayTallyEverythingResults],
+    results: FastTallyEverythingResults,
     ballot_ids: List[str],
     decrypted_dir: str,
 ) -> bool:

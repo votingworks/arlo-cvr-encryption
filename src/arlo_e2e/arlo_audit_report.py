@@ -83,10 +83,13 @@ from arlo_e2e.eg_helpers import log_and_print
 # Alternative code that can also parse this file:
 # https://github.com/umbernhard/arlo-verifier/blob/master/verify_report.py
 
-_imprinted_id = "Imprinted ID"
 _cvr_result = "CVR Result: "
 _audit_result = "Audit Result: "
 _discrepancy = "Discrepancy: "
+
+# Dominion CSV files and Arlo CSV files use different spellings of the same thing
+_audit_iid_str = "Imprinted ID"
+_dominion_iid_str = "ImprintedId"
 
 
 def _fix_contest_name(input: str) -> str:
@@ -123,7 +126,6 @@ class ArloSampledBallot:
     """Mapping from contest name to any discrepancy found."""
 
     def __init__(self, row: Dict[str, str]):
-        global _imprinted_id
         global _cvr_result
         global _audit_result
         global _discrepancy
@@ -132,7 +134,7 @@ class ArloSampledBallot:
         # same things for us that we need, such as converting Pandas's empty cells from
         # floating-point NaN to a more happy Pythonic None.
 
-        self.imprintedId = fix_strings(row[_imprinted_id])
+        self.imprintedId = fix_strings(row[_audit_iid_str])
         metadata_keys = [
             k
             for k in row.keys()

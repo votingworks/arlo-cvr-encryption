@@ -79,7 +79,8 @@ if __name__ == "__main__":
         print(f"Failed to load results from {tally_dir}")
         exit(1)
 
-    decrypt_and_write(admin_state, results, ballot_ids, decrypted_dir)
+    fresults = results.to_fast_tally()
+    decrypt_and_write(admin_state, fresults, ballot_ids, decrypted_dir)
 
     num_failures = wait_for_zero_pending_writes()
     if num_failures > 0:
