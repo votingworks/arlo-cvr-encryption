@@ -1,0 +1,166 @@
+import shutil
+import unittest
+from datetime import timedelta
+from typing import List, Dict
+
+import ray
+from electionguard.ballot import PlaintextBallot
+from electionguard.decrypt_with_secrets import plaintext_ballot_to_dict
+from electionguard.election import InternalElectionDescription, ElectionConstants
+from electionguard.elgamal import elgamal_keypair_from_secret
+from hypothesis import given
+from hypothesis import settings, HealthCheck, Phase
+
+from arlo_e2e.admin import ElectionAdmin
+from arlo_e2e.arlo_audit import (
+    get_ballot_ids_from_imprint_ids,
+    get_imprint_to_ballot_id_map,
+    get_decrypted_ballots_from_imprint_ids,
+    compare_audit_ballots,
+)
+from arlo_e2e.arlo_audit_report import (
+    ArloSampledBallot,
+    _dominion_iid_str,
+    _audit_result,
+    _cvr_result,
+    _discrepancy,
+    _audit_iid_str,
+)
+from arlo_e2e.decrypt import (
+    decrypt_and_write,
+    load_proven_ballot,
+    exists_proven_ballot,
+    r_verify_proven_ballot_proofs,
+)
+from arlo_e2e.ray_helpers import ray_init_localhost
+from arlo_e2e.ray_tally import ray_tally_everything
+from arlo_e2e.tally import FastTallyEverythingResults
+from arlo_e2e.utils import mkdir_helper
+from arlo_e2e_testing.dominion_hypothesis import (
+    ballots_and_context,
+    DominionBallotsAndContext,
+)
+
+_encrypted_ballot_dir = "audit_encrypted_ballots"
+_decrypted_ballot_dir = "audit_decrypted_ballots"
+
+# this is similar to test_decrypt, but is all about exercising the code in arlo_audit
+
+
+class TestArloAudit(unittest.TestCase):
+    def setUp(self) -> None:
+        shutil.rmtree(_encrypted_ballot_dir, ignore_errors=True)
+        shutil.rmtree(_decrypted_ballot_dir, ignore_errors=True)
+        ray_init_localhost()
+
+    def tearDown(self) -> None:
+        shutil.rmtree(_encrypted_ballot_dir, ignore_errors=True)
+        shutil.rmtree(_decrypted_ballot_dir, ignore_errors=True)
+        ray.shutdown()
+
+    @given(ballots_and_context(max_rows=20))
+    @settings(
+        deadline=timedelta(milliseconds=50000),
+        suppress_health_check=[HealthCheck.too_slow],
+        max_examples=2,
+        # disabling the "shrink" phase, because it runs very slowly
+        phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
+    )
+    def test_everything(self, input: DominionBallotsAndContext) -> None:
+        mkdir_helper(_encrypted_ballot_dir)
+        mkdir_helper(_decrypted_ballot_dir)
+
+        cvrs, ed, secret_key, id_map, cec, ballots = input
+        ied = InternalElectionDescription(ed)
+
+        # We're not actually using any of the ciphertexts we're about to generate,
+        # but we do need the tally structure. Easier to generate all this ciphertext
+        # and just ignore it.
+
+        tally = ray_tally_everything(
+            cvrs,
+            secret_key=secret_key,
+            use_progressbar=False,
+            root_dir=_encrypted_ballot_dir,
+        ).to_fast_tally()
+        keypair = elgamal_keypair_from_secret(secret_key)
+
+        imprint_ids: List[str] = list(cvrs.data["ImprintedId"])
+        bids_from_tally = get_ballot_ids_from_imprint_ids(tally, imprint_ids)
+
+        election_admin = ElectionAdmin(keypair, ElectionConstants())
+        self.assertTrue(election_admin.is_valid())
+
+        decrypt_and_write(election_admin, tally, bids_from_tally, _decrypted_ballot_dir)
+
+        decrypted_ballots = get_decrypted_ballots_from_imprint_ids(
+            tally, imprint_ids, _decrypted_ballot_dir
+        )
+        fake_audit_ballots = plaintext_ballots_to_arlo_sampled_ballots(
+            tally, input.ballots
+        )
+        self.assertTrue(
+            compare_audit_ballots(tally, decrypted_ballots, fake_audit_ballots)
+        )
+
+        shutil.rmtree(_encrypted_ballot_dir, ignore_errors=True)
+        shutil.rmtree(_decrypted_ballot_dir, ignore_errors=True)
+
+    # TODO: flip votes in the audit report, the comparison should fail
+
+
+def plaintext_ballots_to_arlo_sampled_ballots(
+    tally: FastTallyEverythingResults, plaintexts: List[PlaintextBallot]
+) -> List[ArloSampledBallot]:
+    iids = list(tally.cvr_metadata[_dominion_iid_str])
+    iid_to_bid_map = get_imprint_to_ballot_id_map(tally, iids)
+    bid_to_iid_map = {iid_to_bid_map[iid]: iid for iid in iids}
+    eg_ballot_style_to_normal_ballot_style: Dict[str, str] = {
+        tally.metadata.ballot_types[k]: k for k in tally.metadata.ballot_types.keys()
+    }
+
+    return [
+        plaintext_ballot_to_arlo_sampled_ballot(
+            tally, p, bid_to_iid_map, eg_ballot_style_to_normal_ballot_style
+        )
+        for p in plaintexts
+    ]
+
+
+def plaintext_ballot_to_arlo_sampled_ballot(
+    tally: FastTallyEverythingResults,
+    plaintext: PlaintextBallot,
+    bid_to_iid_map: Dict[str, str],
+    eg_ballot_style_to_normal_ballot_style: Dict[str, str],
+) -> ArloSampledBallot:
+    bid = plaintext.object_id
+    iid = bid_to_iid_map[bid]
+    ballot_type = plaintext.ballot_style
+    contests = tally.metadata.style_map[
+        eg_ballot_style_to_normal_ballot_style[ballot_type]
+    ]
+    plaintext_dict = plaintext_ballot_to_dict(plaintext)
+
+    row: Dict[str, str] = {_audit_iid_str: iid}
+
+    for c in tally.metadata.contest_name_order:
+        if c not in contests:
+            row[_audit_result + c] = "CONTEST_NOT_ON_BALLOT"
+            row[_cvr_result + c] = "CONTEST_NOT_ON_BALLOT"
+            row[_discrepancy + c] = "CONTEST_NOT_ON_BALLOT"
+        else:
+            included_results: List[str] = []
+            for s in sorted(
+                tally.metadata.contest_map[c], key=lambda m: m.sequence_number
+            ):
+                if s.object_id in plaintext_dict:
+                    plaintext_selection = plaintext_dict[s.object_id]
+                    plaintext_int = plaintext_selection.to_int()
+                    if plaintext_int == 1:
+                        included_results.append(s.choice_name)
+                result_str = ", ".join(sorted(included_results))
+                row[_audit_result + c] = result_str
+                row[_cvr_result + c] = result_str
+                row[_discrepancy + c] = None
+
+    return ArloSampledBallot(row)

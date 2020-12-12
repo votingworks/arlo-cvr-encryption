@@ -131,10 +131,6 @@ def compare_audit_ballots(
         )
         return False
 
-    all_audit_ballots = {
-        audit_ballot.imprintedId: audit_ballot for audit_ballot in audit_data
-    }
-
     all_audits = {
         audit_ballot.imprintedId: compare_audit_ballot(
             tally, decrypted_ballots[audit_ballot.imprintedId], audit_ballot
@@ -182,7 +178,7 @@ def compare_audit_ballot(
         log_error(err_str)
         return False
 
-    metadata_bid = metadata_row.get_value(0, "BallotId")
+    metadata_bid = metadata_row["BallotId"].values[0]
     if metadata_bid != bid:
         err_str = f"imprint-id {iid} has bid {bid} in the decrypted ballot versus {metadata_bid} in election metadata!"
         log_error(err_str)
@@ -200,12 +196,12 @@ def compare_audit_ballot(
         winner_str = audit_result[contest_name]
 
         # skip contests that aren't on the ballot
-        if winner_str is None:
+        if winner_str == "CONTEST_NOT_ON_BALLOT":
             continue
 
         # if there are multiple winners, as in a "vote 3 of n" sort of contest,
         # then they'll be separated by exactly a comma and a space
-        winners = set(winner_str.split(", "))
+        winners = set(winner_str.split(", ")) if winner_str else {}
         log_info(f"  Winners (audit): {winners}")
 
         # now we need to figure out the right key for plaintext ballot
@@ -270,7 +266,8 @@ def plaintext_ballot_to_printable(
 
     # this code is simplified from arlo_decode_ballots
 
-    # TODO: refactor this into a separate pretty-printers module, since ElectionGuard has no such thing
+    # TODO: refactor this into a separate pretty-printers module, since ElectionGuard has no such thing,
+    #   but find a way to do it without needing to have the full tally around for decoding.
 
     result_strs: List[str] = []
 
