@@ -28,9 +28,6 @@ from arlo_e2e.arlo_audit_report import (
 )
 from arlo_e2e.decrypt import (
     decrypt_and_write,
-    load_proven_ballot,
-    exists_proven_ballot,
-    r_verify_proven_ballot_proofs,
 )
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.ray_tally import ray_tally_everything
