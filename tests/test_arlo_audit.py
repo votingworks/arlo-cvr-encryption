@@ -5,7 +5,10 @@ from typing import List, Dict
 
 import ray
 from electionguard.ballot import PlaintextBallot
-from electionguard.decrypt_with_secrets import plaintext_ballot_to_dict
+from electionguard.decrypt_with_secrets import (
+    plaintext_ballot_to_dict,
+    ProvenPlaintextBallot,
+)
 from electionguard.election import InternalElectionDescription, ElectionConstants
 from electionguard.elgamal import elgamal_keypair_from_secret
 from hypothesis import given
@@ -17,6 +20,8 @@ from arlo_e2e.arlo_audit import (
     get_imprint_to_ballot_id_map,
     get_decrypted_ballots_from_imprint_ids,
     compare_audit_ballots,
+    get_decrypted_ballots_with_proofs_from_imprint_ids,
+    validate_plaintext_and_encrypted_ballot,
 )
 from arlo_e2e.arlo_audit_report import (
     ArloSampledBallot,
@@ -59,7 +64,7 @@ class TestArloAudit(unittest.TestCase):
     @settings(
         deadline=timedelta(milliseconds=50000),
         suppress_health_check=[HealthCheck.too_slow],
-        max_examples=2,
+        max_examples=4,
         # disabling the "shrink" phase, because it runs very slowly
         phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
     )
@@ -90,15 +95,40 @@ class TestArloAudit(unittest.TestCase):
 
         decrypt_and_write(election_admin, tally, bids_from_tally, _decrypted_ballot_dir)
 
-        decrypted_ballots = get_decrypted_ballots_from_imprint_ids(
+        decrypted_ballots_with_proofs: Dict[
+            str, ProvenPlaintextBallot
+        ] = get_decrypted_ballots_with_proofs_from_imprint_ids(
             tally, imprint_ids, _decrypted_ballot_dir
         )
-        fake_audit_ballots = plaintext_ballots_to_arlo_sampled_ballots(
-            tally, input.ballots
+        decrypted_ballots: Dict[str, PlaintextBallot] = {
+            x: decrypted_ballots_with_proofs[x].ballot
+            for x in decrypted_ballots_with_proofs.keys()
+        }
+
+        fake_audit_ballots: List[
+            ArloSampledBallot
+        ] = plaintext_ballots_to_arlo_sampled_ballots(tally, input.ballots)
+        self.assertEqual(
+            [], compare_audit_ballots(tally, decrypted_ballots, fake_audit_ballots)
         )
-        self.assertTrue(
-            compare_audit_ballots(tally, decrypted_ballots, fake_audit_ballots)
-        )
+
+        iid_to_audit_ballot_map: Dict[str, ArloSampledBallot] = {
+            x.imprintedId: x for x in fake_audit_ballots
+        }
+
+        iid_to_bid_map = get_imprint_to_ballot_id_map(tally, imprint_ids)
+        for iid in imprint_ids:
+            plaintext = decrypted_ballots_with_proofs[iid]
+            encrypted = tally.get_encrypted_ballot(iid_to_bid_map[iid])
+            self.assertTrue(
+                validate_plaintext_and_encrypted_ballot(
+                    tally,
+                    plaintext,
+                    encrypted,
+                    verbose=True,
+                    arlo_sample=iid_to_audit_ballot_map[iid],
+                )
+            )
 
         shutil.rmtree(_encrypted_ballot_dir, ignore_errors=True)
         shutil.rmtree(_decrypted_ballot_dir, ignore_errors=True)

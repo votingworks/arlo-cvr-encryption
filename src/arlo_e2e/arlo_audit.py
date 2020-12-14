@@ -1,11 +1,16 @@
 from io import StringIO
-from typing import List, Union, Dict, Optional, cast
+from typing import List, Union, Dict, Optional, cast, Set
 
 import pandas as pd
-from electionguard.ballot import PlaintextBallot, PlaintextBallotSelection
+from electionguard.ballot import (
+    PlaintextBallot,
+    PlaintextBallotSelection,
+    CiphertextAcceptedBallot,
+)
 from electionguard.decrypt_with_secrets import (
     ProvenPlaintextBallot,
     plaintext_ballot_to_dict,
+    ciphertext_ballot_to_dict,
 )
 from electionguard.logs import log_error, log_info
 
@@ -14,7 +19,7 @@ from arlo_e2e.arlo_audit_report import (
     _audit_iid_str,
     _dominion_iid_str,
 )
-from arlo_e2e.decrypt import load_proven_ballot
+from arlo_e2e.decrypt import load_proven_ballot, verify_proven_ballot_proofs
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.tally import FastTallyEverythingResults
 
@@ -82,12 +87,12 @@ def get_imprint_ids_from_ballot_retrieval_csv(file: Union[str, StringIO]) -> Lis
     return list(iids)
 
 
-def get_decrypted_ballots_from_imprint_ids(
+def get_decrypted_ballots_with_proofs_from_imprint_ids(
     tally: FastTallyEverythingResults, imprint_ids: List[str], decrypted_dir: str
-) -> Dict[str, PlaintextBallot]:
+) -> Dict[str, ProvenPlaintextBallot]:
     """
     Given a list of imprint-ids, locates and loads the decrypted ballots from disk, if they exist, returning
-    a dictionary from imprint-ids to the PlaintextBallot data. Any missing file will also be absent
+    a dictionary from imprint-ids to the ProvenPlaintextBallot data. Any missing file will also be absent
     from the dictionary, so double-check the number of keys if you want to check for file errors.
     """
     iid_map = get_imprint_to_ballot_id_map(tally, imprint_ids)
@@ -101,14 +106,31 @@ def get_decrypted_ballots_from_imprint_ids(
 
     # For our audit purposes, we don't care about the Chaum-Pedersen proofs, so we're just
     # pulling out the ballot data.
-    proven_ballots_not_none_no_proofs = cast(
-        Dict[str, PlaintextBallot],
-        {
-            iid: proven_ballots[iid].ballot  # type: ignore
-            for iid in proven_ballots.keys()
-            if proven_ballots[iid] is not None
-        },
+    proven_ballots_not_none: Dict[str, ProvenPlaintextBallot] = {
+        iid: proven_ballots[iid]  # type: ignore
+        for iid in proven_ballots.keys()
+        if proven_ballots[iid] is not None
+    }
+
+    return proven_ballots_not_none
+
+
+def get_decrypted_ballots_from_imprint_ids(
+    tally: FastTallyEverythingResults, imprint_ids: List[str], decrypted_dir: str
+) -> Dict[str, PlaintextBallot]:
+    """
+    Given a list of imprint-ids, locates and loads the decrypted ballots from disk, if they exist, returning
+    a dictionary from imprint-ids to the PlaintextBallot data. Any missing file will also be absent
+    from the dictionary, so double-check the number of keys if you want to check for file errors.
+    """
+    proven_ballots_not_none = get_decrypted_ballots_with_proofs_from_imprint_ids(
+        tally, imprint_ids, decrypted_dir
     )
+
+    proven_ballots_not_none_no_proofs: Dict[str, PlaintextBallot] = {
+        iid: proven_ballots_not_none[iid].ballot
+        for iid in proven_ballots_not_none.keys()
+    }
 
     return proven_ballots_not_none_no_proofs
 
@@ -117,9 +139,14 @@ def compare_audit_ballots(
     tally: FastTallyEverythingResults,
     decrypted_ballots: Dict[str, PlaintextBallot],
     audit_data: List[ArloSampledBallot],
-) -> bool:
+) -> Optional[List[str]]:
     """
-    Returns true if the audit data and the decrypted plaintext ballots correspond.
+    Returns a list of ballot imprint-ids where the validation failed. An empty-list
+    implies everything went perfectly. If any sort of internal error occurred, None
+    is returned.
+
+    (So, to check for success, check for the empty list, don't rely on the falsiness
+    of empty-list, since None is also falsy. Gotta love Python.)
     """
     all_iids = [ballot.imprintedId for ballot in audit_data]
     all_iids_present = all([iid in decrypted_ballots for iid in all_iids])
@@ -129,7 +156,7 @@ def compare_audit_ballots(
         log_and_print(
             f"One or more imprint-ids are missing from the decrypted ballots: {missing_iids}"
         )
-        return False
+        return None
 
     all_audits = {
         audit_ballot.imprintedId: compare_audit_ballot(
@@ -138,20 +165,7 @@ def compare_audit_ballots(
         for audit_ballot in audit_data
     }
 
-    if all(all_audits.values()):
-        return True
-
-    # Otherwise, time to print everything that failed
-    for iid in sorted(all_iids):
-        if not all_audits[iid]:
-            print(f"FAILED AUDIT FOR ImprintId {iid}, decrypted ballot is:")
-            joined_str = {
-                "\n  ".join(
-                    plaintext_ballot_to_printable(tally, decrypted_ballots[iid])
-                )
-            }
-            print(f"  {joined_str}\n")
-    return False
+    return [iid for iid in sorted(all_iids) if not all_audits[iid]]
 
 
 def compare_audit_ballot(
@@ -257,40 +271,122 @@ def compare_audit_ballot(
         return True
 
 
-def plaintext_ballot_to_printable(
-    tally: FastTallyEverythingResults, plaintext: PlaintextBallot
-) -> List[str]:
+def validate_plaintext_and_encrypted_ballot(
+    results: FastTallyEverythingResults,
+    plaintext: Optional[ProvenPlaintextBallot],
+    encrypted: Optional[CiphertextAcceptedBallot],
+    verbose: bool = True,
+    arlo_sample: Optional[ArloSampledBallot] = None,
+) -> bool:
     """
-    Utility function: decodes a PlaintextBallot to human-readable format, returns a list of strings.
+    Returns true if the "proven" plaintext ballot corresponds to the given encrypted ballot.
+    False if something didn't match.
+
+    Optional `verbose` flag to print things about the ballots. The Arlo sampled ballot is
+    printed alongside the other ballots during this verbose printing process, but is ignored
+    during the validation.
     """
+    if encrypted is None:
+        # this would have been caught earlier, will never happen here
+        return False
 
-    # this code is simplified from arlo_decode_ballots
+    bid = encrypted.object_id
+    if bid in results.metadata.ballot_id_to_ballot_type:
+        ballot_type = results.metadata.ballot_id_to_ballot_type[bid]
+    else:
+        if verbose:
+            print(f"Ballot: {bid}, Unknown ballot style!")
+        return False
 
-    # TODO: refactor this into a separate pretty-printers module, since ElectionGuard has no such thing,
-    #   but find a way to do it without needing to have the full tally around for decoding.
+    if plaintext is None:
+        decryption_status = "No decryption available"
+    else:
+        decryption_status = (
+            "Verified"
+            if verify_proven_ballot_proofs(
+                results.context.crypto_extended_base_hash,
+                results.context.elgamal_public_key,
+                encrypted,
+                plaintext,
+            )
+            else "INVALID"
+        )
 
-    result_strs: List[str] = []
+    if verbose:
+        print(f"Ballot: {bid}, Style: {ballot_type}, Decryption: {decryption_status}")
 
-    bid = plaintext.object_id
-    ballot_type = plaintext.ballot_style
+    encrypted_ballot_dict = ciphertext_ballot_to_dict(encrypted)
+    contests = sorted(results.metadata.style_map[ballot_type])
 
-    result_strs.append(f"Ballot: {bid}, Style: {ballot_type}")
+    success = True
 
-    contests = sorted(tally.metadata.style_map[ballot_type])
-    for c in tally.metadata.contest_name_order:
+    for c in results.metadata.contest_name_order:
         if c not in contests:
             continue
-
-        result_strs.append(f"    {c}")
-        plaintext_dict = plaintext_ballot_to_dict(plaintext)
-        for s in sorted(tally.metadata.contest_map[c], key=lambda m: m.sequence_number):
-            if s.object_id in plaintext_dict:
-                plaintext_selection = plaintext_dict[s.object_id]
-                plaintext_int = plaintext_selection.to_int()
-                result_strs.append(
-                    f"        {s.to_string_no_contest():30}: {plaintext_int}"
+        arlo_expected_winner_set: Optional[Set[str]] = None
+        if arlo_sample is not None:
+            arlo_expected_winner_str: Optional[str] = arlo_sample.audit_result[c]
+            if arlo_expected_winner_str is None:
+                arlo_expected_winner_set = None
+            elif arlo_expected_winner_str == "CONTEST_NOT_ON_BALLOT":
+                log_and_print(
+                    f"Unexpected to find contest {c} for imprint-id {arlo_sample.imprintedId}"
                 )
+                arlo_expected_winner_set = None
+            elif arlo_expected_winner_str == "BLANK":
+                arlo_expected_winner_set = set()
             else:
-                result_strs.append(f"        {s.to_string_no_contest():30}: MISSING")
+                arlo_expected_winner_set = set(", ".split(arlo_expected_winner_str))
 
-    return result_strs
+        if verbose:
+            print(f"    {c}")
+        if plaintext is not None:
+            plaintext_dict = plaintext_ballot_to_dict(plaintext.ballot)
+            proofs = plaintext.proofs
+            for s in sorted(
+                results.metadata.contest_map[c], key=lambda m: m.sequence_number
+            ):
+                selection_proof_status = ""
+                if s.object_id in plaintext_dict:
+                    plaintext_selection = plaintext_dict[s.object_id]
+                    plaintext_int = plaintext_selection.to_int()
+                    if decryption_status == "INVALID":
+                        success = False
+                        if (
+                            s.object_id in proofs
+                            and s.object_id in encrypted_ballot_dict
+                        ):
+                            valid = proofs[s.object_id].is_valid(
+                                plaintext_int,
+                                encrypted_ballot_dict[s.object_id],
+                                results.context.elgamal_public_key,
+                                results.context.crypto_extended_base_hash,
+                            )
+                            selection_proof_status = "" if valid else "(INVALID PROOF)"
+                        else:
+                            selection_proof_status = "(MISSING PROOF)"
+                    if verbose:
+                        if arlo_expected_winner_set is not None:
+                            arlo_result = (
+                                ""
+                                if (
+                                    plaintext_int == 1 and s in arlo_expected_winner_set
+                                )
+                                or (
+                                    plaintext_int == 0
+                                    and s not in arlo_expected_winner_set
+                                )
+                                else " (Arlo Inconsistency)"
+                            )
+                        else:
+                            arlo_result = ""
+                        print(
+                            f"        {s.to_string_no_contest():30}: {plaintext_int} {selection_proof_status}{arlo_result}"
+                        )
+                else:
+                    success = False
+                    if verbose:
+                        print(
+                            f"        {s.to_string_no_contest():30}: MISSING PLAINTEXT"
+                        )
+    return success
