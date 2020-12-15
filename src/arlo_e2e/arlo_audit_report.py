@@ -92,11 +92,13 @@ _audit_iid_str = "Imprinted ID"
 _dominion_iid_str = "ImprintedId"
 
 
-def _fix_contest_name(input: str) -> str:
-    # Removes any of the prefix strings above (e.g., "CVR Result: ") as well as
-    # removes any "Vote for" suffix on the name of the contest; we have the necessary
-    # metadata from the arlo-e2e metadata on disk to know about k-of-n contests, and
-    # we'd prefer for the contest names to match up.
+def fix_contest_name(input: str) -> str:
+    """
+    Removes any of the common prefix strings (e.g., "CVR Result: ") as well as
+    removes any "Vote for" suffix on the name of the contest; we have the necessary
+    metadata from the arlo-e2e metadata on disk to know about k-of-n contests, and
+    we'd prefer for the contest names to match up.
+    """
 
     if input.startswith(_cvr_result):
         input = input[len(_cvr_result) :]
@@ -106,6 +108,30 @@ def _fix_contest_name(input: str) -> str:
         input = input[len(_discrepancy) :]
 
     return re.sub(" Vote for.*$", "", input)
+
+
+def fix_excel_thinks_its_a_date(input: str) -> str:
+    """
+    Sometimes raw imprint-ids like "5-3-3" get munged by Excel into "5-3-2003".
+    There are memes about this, and it happens here as well. This function tries
+    to convert these monstrosities back to their proper imprint-ids.
+    """
+    m = re.match("(\d+-\d+)-(\d+)", input)
+    if not m:
+        return input
+
+    preamble, year = m[1], m[2]
+    if len(year) != 4:
+        return input
+
+    if year.startswith("0"):
+        return f"{preamble}-{int(year)}"
+    elif year.startswith("19"):
+        return f"{preamble}-{int(year) - 1900}"
+    elif year.startswith("2"):
+        return f"{preamble}-{int(year) - 2000}"
+    else:
+        return input
 
 
 @dataclass(eq=True, unsafe_hash=True)
@@ -134,7 +160,7 @@ class ArloSampledBallot:
         # same things for us that we need, such as converting Pandas's empty cells from
         # floating-point NaN to a more happy Pythonic None.
 
-        self.imprintedId = fix_strings(row[_audit_iid_str])
+        self.imprintedId = fix_excel_thinks_its_a_date(fix_strings(row[_audit_iid_str]))
         metadata_keys = [
             k
             for k in row.keys()
@@ -143,7 +169,7 @@ class ArloSampledBallot:
             and (not k.startswith(_audit_result))
         ]
         self.metadata = {
-            _fix_contest_name(k): fix_strings(row[k]) for k in metadata_keys
+            fix_contest_name(k): fix_strings(row[k]) for k in metadata_keys
         }
 
         # We're removing the prefix from the fields for CVR Result, Audit Result
@@ -152,15 +178,15 @@ class ArloSampledBallot:
 
         audit_keys = [k for k in row.keys() if k.startswith(_audit_result)]
         self.audit_result = {
-            _fix_contest_name(k): fix_strings(row[k]) for k in audit_keys
+            fix_contest_name(k): fix_strings(row[k]) for k in audit_keys
         }
 
         cvr_keys = [k for k in row.keys() if k.startswith(_cvr_result)]
-        self.cvr_result = {_fix_contest_name(k): fix_strings(row[k]) for k in cvr_keys}
+        self.cvr_result = {fix_contest_name(k): fix_strings(row[k]) for k in cvr_keys}
 
         discrepancy_keys = [k for k in row.keys() if k.startswith(_discrepancy)]
         self.discrepancy = {
-            _fix_contest_name(k): fix_strings(row[k]) for k in discrepancy_keys
+            fix_contest_name(k): fix_strings(row[k]) for k in discrepancy_keys
         }
 
         # Now we're going to deal with CONTEST_NOT_ON_BALLOT and BLANK, which

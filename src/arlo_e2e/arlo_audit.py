@@ -154,7 +154,7 @@ def compare_audit_ballots(
     if not all_iids_present:
         missing_iids = [iid for iid in all_iids if iid not in decrypted_ballots]
         log_and_print(
-            f"One or more imprint-ids are missing from the decrypted ballots: {missing_iids}"
+            f"{len(missing_iids)} imprint-ids are missing from the decrypted ballots: {missing_iids}"
         )
         return None
 
@@ -209,8 +209,8 @@ def compare_audit_ballot(
         log_info(f"  Auditing contest: {contest_name}")
         winner_str = audit_result[contest_name]
 
-        # skip contests that aren't on the ballot
-        if winner_str == "CONTEST_NOT_ON_BALLOT":
+        # skip contests that aren't on the ballot or weren't audited
+        if winner_str == "CONTEST_NOT_ON_BALLOT" or winner_str is None:
             continue
 
         # if there are multiple winners, as in a "vote 3 of n" sort of contest,

@@ -1,7 +1,10 @@
 import unittest
 from io import StringIO, open
 
-from arlo_e2e.arlo_audit_report import arlo_audit_report_to_sampled_ballots
+from arlo_e2e.arlo_audit_report import (
+    arlo_audit_report_to_sampled_ballots,
+    fix_excel_thinks_its_a_date,
+)
 
 
 class TestArloAuditReport(unittest.TestCase):
@@ -78,3 +81,11 @@ class TestArloAuditReport(unittest.TestCase):
                     r.cvr_result[k],
                     f"equality of audit and CVR for {k} in {r}",
                 )
+
+    def test_excel_thinks_its_a_date(self) -> None:
+        self.assertEqual("5-3-3", fix_excel_thinks_its_a_date("5-3-2003"))
+        self.assertEqual("5-3-115", fix_excel_thinks_its_a_date("5-3-0115"))
+        self.assertEqual("2-24-111", fix_excel_thinks_its_a_date("2-24-0111"))
+        self.assertEqual("2-24-46", fix_excel_thinks_its_a_date("2-24-46"))
+        self.assertEqual("2-24-46", fix_excel_thinks_its_a_date("2-24-1946"))
+        self.assertEqual("cheeseburger", fix_excel_thinks_its_a_date("cheeseburger"))
