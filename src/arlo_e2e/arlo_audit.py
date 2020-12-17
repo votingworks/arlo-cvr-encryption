@@ -213,10 +213,12 @@ def compare_audit_ballot(
         if winner_str == "CONTEST_NOT_ON_BALLOT" or winner_str is None:
             continue
 
-        # if there are multiple winners, as in a "vote 3 of n" sort of contest,
-        # then they'll be separated by exactly a comma and a space
-        winners = set(winner_str.split(", ")) if winner_str else {}
-        log_info(f"  Winners (audit): {winners}")
+        # If there are multiple winners, as in a "vote 3 of n" sort of contest,
+        # then they'll be separated by exactly a comma and a space. Notable
+        # exception to this is that Arlo reports "BLANK" when there are no
+        # choices, so we have to deal with that specially.
+        winners = set(winner_str.split(", ")) if winner_str != "BLANK" else {}
+        log_info(f"  Winners (audit): {winners if len(winners) > 0 else '<BLANK>'}")
 
         # now we need to figure out the right key for plaintext ballot
         selection_metadata = tally.metadata.contest_map[contest_name]
@@ -226,30 +228,45 @@ def compare_audit_ballot(
             log_error(err_str)
             return False
 
-        # note special case handling for the audit reporting the the winners are "BLANK",
-        # which implies that
-        winning_selection_object_ids = (
-            [
-                s.object_id
-                for s in selection_metadata
-                if s.contest_name == contest_name and s.choice_name in winners
-            ]
-            if winners != {"BLANK"}
-            else []
-        )
+        winning_selection_object_ids = [
+            s.object_id
+            for s in selection_metadata
+            if s.contest_name == contest_name and s.choice_name in winners
+        ]
 
+        # Arlo-e2e will generate selection names like "Write-in" and "Write-in (2)", but
+        # during the RLA those are completely ignored, so we need to filter them out here.
         empty_selection_object_ids = [
             s.object_id
             for s in selection_metadata
-            if s.contest_name == contest_name and s.choice_name not in winners
+            if s.contest_name == contest_name
+            and s.choice_name not in winners
+            and not s.choice_name.startswith("Write-in")
+        ]
+
+        empty_choice_names = [
+            s.choice_name
+            for s in selection_metadata
+            if s.contest_name == contest_name
+            and s.choice_name not in winners
+            and not s.choice_name.startswith("Write-in")
         ]
 
         # finally, we can go look inside the ElectionGuard plaintext-ballot structures
         winning_selections: List[PlaintextBallotSelection] = [
             bdict[id] for id in winning_selection_object_ids
         ]
+
+        # weird case: sometimes Arlo-e2e thinks a race is completely absent from a ballot but Arlo
+        # thinks that it's present with no selections. This could be a consequence of problems with
+        # how Arlo-e2e infers what contests are present on which ballots. Anyway, the workaround is
+        # is that little "if id in bdict" bit at the end, which means that in this particular case,
+        # we have fewer empties than we think, but the verification will still continue.
+        # TODO: go over this with the Arlo people, see in particular ballot #9045 (bid b0009044)
+        #   in the Inyo CVR file
+
         empty_selections: List[PlaintextBallotSelection] = [
-            bdict[id] for id in empty_selection_object_ids
+            bdict[id] for id in empty_selection_object_ids if id in bdict
         ]
 
         winners_good = all([s.to_int() == 1 for s in winning_selections])
