@@ -4,10 +4,10 @@ from typing import Optional, Dict, List
 
 from electionguard.ballot import PlaintextBallot
 from electionguard.decrypt_with_secrets import ProvenPlaintextBallot
+from electionguard.logs import log_info
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.arlo_audit import (
-    get_decrypted_ballots_from_imprint_ids,
     compare_audit_ballots,
     validate_plaintext_and_encrypted_ballot,
     get_imprint_to_ballot_id_map,
@@ -17,11 +17,9 @@ from arlo_e2e.arlo_audit_report import (
     ArloSampledBallot,
     arlo_audit_report_to_sampled_ballots,
 )
-from arlo_e2e.decrypt import load_proven_ballot
 from arlo_e2e.eg_helpers import log_nothing_to_stdout
 from arlo_e2e.publish import load_fast_tally
 from arlo_e2e.tally import FastTallyEverythingResults
-
 
 if __name__ == "__main__":
     set_serializers()
@@ -112,11 +110,12 @@ if __name__ == "__main__":
             f"Successful audit for {len(sampled_ballots)} ballots, zero discrepancies!"
         )
 
-    # if we're in verbose mode, we print everything, otherwise we only print the busted ballots
+    # normally, we only want to print something about the ballots where something went wrong
     printed_iids = iids if validate_decryptions else failed_iids
 
-    iid_to_bid_map = get_imprint_to_ballot_id_map(tally, iids)
-    for iid in iids:
+    iid_to_bid_map = get_imprint_to_ballot_id_map(tally, printed_iids)
+    for iid in printed_iids:
+        log_info(f"Verifying imprint id: iid")
         plaintext = decrypted_ballots_with_proofs[iid]
         encrypted = tally.get_encrypted_ballot(iid_to_bid_map[iid])
         validate_plaintext_and_encrypted_ballot(

@@ -1,5 +1,5 @@
 from io import StringIO
-from typing import List, Union, Dict, Optional, cast, Set
+from typing import List, Union, Dict, Optional, Set
 
 import pandas as pd
 from electionguard.ballot import (
@@ -341,7 +341,7 @@ def validate_plaintext_and_encrypted_ballot(
         if c not in contests:
             continue
         arlo_expected_winner_set: Optional[Set[str]] = None
-        if arlo_sample is not None:
+        if arlo_sample is not None and c in arlo_sample.audit_result:
             arlo_expected_winner_str: Optional[str] = arlo_sample.audit_result[c]
             if arlo_expected_winner_str is None:
                 arlo_expected_winner_set = None
@@ -353,7 +353,7 @@ def validate_plaintext_and_encrypted_ballot(
             elif arlo_expected_winner_str == "BLANK":
                 arlo_expected_winner_set = set()
             else:
-                arlo_expected_winner_set = set(", ".split(arlo_expected_winner_str))
+                arlo_expected_winner_set = set(arlo_expected_winner_str.split(", "))
 
         if verbose:
             print(f"    {c}")
@@ -385,16 +385,18 @@ def validate_plaintext_and_encrypted_ballot(
                     if verbose:
                         if arlo_expected_winner_set is not None:
                             arlo_result = (
-                                ""
+                                " (RLA Verified)"
                                 if (
-                                    plaintext_int == 1 and s in arlo_expected_winner_set
+                                    plaintext_int == 1
+                                    and s.choice_name in arlo_expected_winner_set
                                 )
                                 or (
                                     plaintext_int == 0
-                                    and s not in arlo_expected_winner_set
+                                    and s.choice_name not in arlo_expected_winner_set
                                 )
-                                else " (Arlo Inconsistency)"
+                                else f" (RLA Inconsistency! Expected winners: {arlo_expected_winner_set} ({len(arlo_expected_winner_set)}))"
                             )
+
                         else:
                             arlo_result = ""
                         print(
