@@ -3,7 +3,7 @@ from base64 import b64encode
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import PurePath
-from typing import Dict, Optional, Type, List, Union, AnyStr
+from typing import Dict, Optional, Type, List, Union, AnyStr, TypeVar
 
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.logs import log_error, log_warning
@@ -15,12 +15,14 @@ from arlo_e2e.utils import (
     load_json_helper,
     load_file_helper,
     compose_filename,
-    T,
     mkdir_list_helper,
     decode_json_file_contents,
     BALLOT_FILENAME_PREFIX_DIGITS,
 )
 from arlo_e2e.ray_write_retry import write_file_with_retries
+
+T = TypeVar("T")
+S = TypeVar("S", bound=Serializable)
 
 
 @dataclass(eq=True, unsafe_hash=True)
@@ -229,9 +231,9 @@ class Manifest:
     def read_json_file(
         self,
         file_name: Union[PurePath, str],
-        class_handle: Type[Serializable[T]],
+        class_handle: Type[S],
         subdirectories: List[str] = None,
-    ) -> Optional[T]:
+    ) -> Optional[S]:
         """
         Reads the requested file, by name, returning its contents as a Python object for the given class handle.
         If no hash for the file is present, if the file doesn't match its known hash, or if the JSON deserialization

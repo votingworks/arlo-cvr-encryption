@@ -23,6 +23,7 @@ from arlo_e2e.ray_write_retry import write_file_with_retries
 
 T = TypeVar("T")
 U = TypeVar("U")
+S = TypeVar("S", bound=Serializable)
 
 
 BALLOT_FILENAME_PREFIX_DIGITS = 5
@@ -235,9 +236,7 @@ def load_file_helper(
         return None
 
 
-def decode_json_file_contents(
-    json_str: str, class_handle: Type[Serializable[T]]
-) -> Optional[T]:
+def decode_json_file_contents(json_str: str, class_handle: Type[S]) -> Optional[S]:
     """
     Wrapper around JSON deserialization. Given a string of JSON text and a handle to an
     ElectionGuard `Serializable` class, tries to decode the JSON into an instance of that
@@ -301,9 +300,9 @@ def write_json_helper(
 def load_json_helper(
     root_dir: str,
     file_name: Union[str, PurePath],
-    class_handle: Type[Serializable[T]],
+    class_handle: Type[S],
     subdirectories: List[str] = None,
-) -> Optional[T]:
+) -> Optional[S]:
     """
     Wrapper around JSON deserialization that, given a directory name and file name (including
     the ".json" suffix) as well as an optional handle to the class type, will load the contents

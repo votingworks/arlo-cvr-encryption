@@ -1,8 +1,13 @@
-import logging
 from typing import Dict, Tuple
 
 from electionguard.group import ElementModQ
-from electionguard.logs import LOG, log_info
+from electionguard.logs import (
+    log_info,
+    get_file_handler,
+    log_handlers,
+    log_remove_handler,
+    log_add_handler,
+)
 from electionguard.tally import CiphertextTally
 
 
@@ -63,18 +68,15 @@ def log_nothing_to_stdout() -> None:
     things we don't want to bother the users about.
     """
 
-    # We're trying to get to a private field in LOG. That means the name is "mangled" to have the
-    # class name in front of it, and mypy will have an error, saying it doesn't exist. The special
-    # "ignore" comment tells mypy to skip this line.
+    fh = get_file_handler()
+    # sh = get_stream_handler()
 
-    logger: logging.Logger = LOG._ElectionGuardLog__logger  # type: ignore
+    for h in log_handlers():
+        log_remove_handler(h)
 
-    for h in logger.handlers.copy():
-        logger.removeHandler(h)
+    log_add_handler(fh)
 
-    logger.addHandler(LOG._get_file_handler())
-
-    assert len(logger.handlers) == 1, "we failed to modify the logger!"
+    assert len(log_handlers()) == 1, "we failed to modify the logger!"
 
 
 def log_and_print(s: str, verbose: bool = True) -> None:
