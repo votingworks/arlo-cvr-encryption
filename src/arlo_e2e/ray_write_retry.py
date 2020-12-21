@@ -4,12 +4,11 @@ from pathlib import PurePath
 from time import sleep
 from typing import Union, AnyStr, Optional
 
-from electionguard.logs import log_warning, log_error
+import ray
+from electionguard.logs import log_warning, log_error, log_info
 from ray.actor import ActorHandle
 
 from arlo_e2e.eg_helpers import log_and_print
-
-import ray
 
 
 @ray.remote
@@ -217,7 +216,7 @@ def get_failure_probability_for_testing() -> float:
         return __failure_probability
 
     if not ray.is_initialized():
-        log_and_print(
+        log_info(
             "Ray not initialized, so we're assuming a zero failure probability for writes."
         )
         __failure_probability = 0.0
