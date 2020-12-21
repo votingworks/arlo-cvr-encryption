@@ -23,6 +23,8 @@ tqdm = "==4.47.0"
 cryptography = "==3.2"
 modin = '==0.8.0'
 flask = "==1.1.2"
+pillow = "==8.0.1"
+qrcode = "==6.1"
 
 # relevant description and useful links on how to do platform-specific includes for nightly builds:
 # https://dev.to/tomoyukiaota/creating-a-pipfile-which-has-different-installation-instructions-depending-on-operating-systems-pytorch-v041-as-an-example-56i8

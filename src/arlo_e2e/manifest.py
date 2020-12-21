@@ -1,25 +1,24 @@
 import shutil
 from base64 import b64encode
-from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import PurePath
 from typing import Dict, Optional, Type, List, Union, AnyStr, TypeVar
 
+from dataclasses import dataclass
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.logs import log_error, log_warning
 from electionguard.serializable import Serializable
 from electionguard.utils import flatmap_optional
 
 from arlo_e2e.eg_helpers import log_and_print
+from arlo_e2e.ray_write_retry import write_file_with_retries
 from arlo_e2e.utils import (
-    load_json_helper,
     load_file_helper,
     compose_filename,
     mkdir_list_helper,
     decode_json_file_contents,
     BALLOT_FILENAME_PREFIX_DIGITS,
 )
-from arlo_e2e.ray_write_retry import write_file_with_retries
 
 T = TypeVar("T")
 S = TypeVar("S", bound=Serializable)
@@ -378,14 +377,31 @@ def make_fresh_manifest(root_dir: str, delete_existing: bool = False) -> Manifes
     return Manifest(root_dir=root_dir, hashes={})
 
 
-def make_existing_manifest(root_dir: str) -> Optional[Manifest]:
+def make_existing_manifest(
+    root_dir: str, expected_root_hash: Optional[str] = None
+) -> Optional[Manifest]:
     """
     Constructs a `Manifest` instance from a directory that contains a `MANIFEST.json` file.
     If the file is missing or something else goes wrong, you could get `None` as a result.
+    :param expected_root_hash: optional string of the form produced by `sha256_hash`; validates the
+      manifest against the hash, returns `None` and logs if there's a mismatch
     :param root_dir: a name for the directory containing `MANIFEST.json` and other files.
     """
-    manifest_ex: Optional[ManifestExternal] = load_json_helper(
-        root_dir=root_dir, file_name="MANIFEST.json", class_handle=ManifestExternal
+    manifest_str = load_file_helper(root_dir=root_dir, file_name="MANIFEST.json")
+
+    if manifest_str is None:
+        return None
+
+    if expected_root_hash is not None:
+        data_hash = sha256_hash(manifest_str)
+        if data_hash != expected_root_hash:
+            log_and_print(
+                f"Root hash mismatch on MANIFEST.json; expected {expected_root_hash}, got {data_hash}"
+            )
+            return None
+
+    manifest_ex: Optional[ManifestExternal] = decode_json_file_contents(
+        manifest_str, class_handle=ManifestExternal
     )
     return flatmap_optional(manifest_ex, lambda m: m.to_manifest(root_dir))
 
@@ -393,7 +409,7 @@ def make_existing_manifest(root_dir: str) -> Optional[Manifest]:
 def sha256_hash(input: AnyStr) -> str:
     """
     Given a string or array of bytes, returns a base64-encoded representation of the
-    256-bit SHA2-256 hash of that input string (in utf8).
+    256-bit SHA2-256 hash of that input string, first encoding the input string as UTF8.
     """
     h = sha256()
     if isinstance(input, str):
