@@ -62,12 +62,12 @@ def gen_root_qrcode(
     num_retry_attempts: int = 10,
 ) -> None:
     """
-    Creates and writes a file, `root_hash_poster.html` and associated image files,
+    Creates and writes a file, `root_hash.html` and its associated image files,
     in the `tally_dir` folder. Assumes that `MANIFEST.json` has already been
     written to the same directory and will compute its hash.
 
     The `metadata` field allows you to specify arbitrary keys and values to be written
-    out with the QRcode. Recommended fields:
+    out with the QRcode as well as the human-readable portion. Recommended fields:
 
     * s3_host
     * s3_bucket
@@ -77,7 +77,8 @@ def gen_root_qrcode(
     * web_prefix
     * web_prefix_decrypted
 
-    See also, `make_existing_manifest` has an optional `expected_root_hash` field.
+    See also, `make_existing_manifest` has an optional `expected_root_hash` field,
+    used by `load_ray_tally` and `load_fast_tally`.
 
     :param election_name: Human-readable name of the election, e.g., `Harris County General Election, November 2020`
     :param tally_dir: Local directory where `MANIFEST.json` can be found and where results will be written

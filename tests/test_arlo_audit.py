@@ -1,6 +1,7 @@
 import shutil
 import unittest
 from datetime import timedelta
+from io import StringIO
 from typing import List, Dict
 
 import ray
@@ -18,10 +19,10 @@ from arlo_e2e.admin import ElectionAdmin
 from arlo_e2e.arlo_audit import (
     get_ballot_ids_from_imprint_ids,
     get_imprint_to_ballot_id_map,
-    get_decrypted_ballots_from_imprint_ids,
     compare_audit_ballots,
     get_decrypted_ballots_with_proofs_from_imprint_ids,
     validate_plaintext_and_encrypted_ballot,
+    get_imprint_ids_from_ballot_retrieval_csv,
 )
 from arlo_e2e.arlo_audit_report import (
     ArloSampledBallot,
@@ -134,6 +135,37 @@ class TestArloAudit(unittest.TestCase):
         shutil.rmtree(_decrypted_ballot_dir, ignore_errors=True)
 
     # TODO: flip votes in the audit report, the comparison should fail
+
+    def test_audit_ballot_manifest_reader(self) -> None:
+        input = StringIO(
+            """
+Container,Tabulator,Batch Name,Ballot Number,Imprinted ID,Ticket Numbers,Already Audited,Audit Board
+101,2,40,26,2-40-26,0.031076785376728041,N,Audit Board #1
+101,2,40,28,2-40-28,0.021826135722965789,N,Audit Board #1
+101,2,40,45,2-40-45,0.034623708282185027,N,Audit Board #1
+101,2,40,49,2-40-49,0.090637005933095012,N,Audit Board #1
+101,2,40,53,2-40-53,0.049162872653210574,N,Audit Board #1
+101,2,40,59,2-40-59,0.081861274452917595,N,Audit Board #1
+101,2,40,61,2-40-61,0.073496959644001595,N,Audit Board #1
+101,2,40,72,2-40-72,0.078147659105285294,N,Audit Board #1
+101,2,40,86,2-40-86,0.063680993788903031,N,Audit Board #1
+"""
+        )
+        expected = {
+            "2-40-26",
+            "2-40-28",
+            "2-40-45",
+            "2-40-49",
+            "2-40-53",
+            "2-40-59",
+            "2-40-61",
+            "2-40-72",
+            "2-40-86",
+        }
+
+        result = set(get_imprint_ids_from_ballot_retrieval_csv(input))
+
+        self.assertEquals(expected, result)
 
 
 def plaintext_ballots_to_arlo_sampled_ballots(

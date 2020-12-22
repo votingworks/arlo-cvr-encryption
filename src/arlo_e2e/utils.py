@@ -2,6 +2,7 @@ from math import ceil, floor
 from os import path, stat, walk
 from pathlib import PurePath, Path
 from stat import S_ISREG
+from time import sleep
 from typing import (
     TypeVar,
     Callable,
@@ -123,6 +124,9 @@ def mkdir_helper(p: Union[str, Path], num_retries: int = 1) -> None:
         except Exception as e:
             prev_exception = e
             log_and_print(f"failed to make directory {p} (attempt {attempt}): {str(e)}")
+
+            # S3 failures seem to happen at the same time; sleeping might help.
+            sleep(1)
 
     if num_retries > 1:
         log_and_print(
