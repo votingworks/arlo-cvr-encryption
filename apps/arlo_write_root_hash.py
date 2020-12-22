@@ -63,8 +63,8 @@ if __name__ == "__main__":
     election_name: str = args.election_name
     tally_dir: str = args.tallies
     metadata_strs: List[str] = args.metadata
-    metadata: Dict[str, str] = {}
 
+    metadata: Dict[str, str] = {}
     for s in metadata_strs:
         items = s.split("=")
         key = items[0].strip()  # remove blanks around keys

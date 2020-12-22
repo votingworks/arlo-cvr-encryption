@@ -42,7 +42,7 @@ if __name__ == "__main__":
         "-d",
         "--decrypted",
         type=str,
-        default=["decrypted_ballots"],
+        default="decrypted_ballots",
         help="directory name for where decrypted ballots can be found (default: decrypted_ballots)",
     )
 
@@ -64,7 +64,7 @@ if __name__ == "__main__":
 
     tally_dir = args.tallies
     decrypted_dir = args.decrypted
-    audit_report_filename = args.audit_report[0]
+    audit_report_filename = args.audit_report
     validate_decryptions = args.validate
 
     print(f"Loading tallies from {tally_dir}.")

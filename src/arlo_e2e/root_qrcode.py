@@ -16,10 +16,6 @@ from arlo_e2e.utils import load_file_helper
 root_start_text = """<!DOCTYPE html>
 <html>
 <style>
-html, body {{
-  height: 100%;
-}}
-
 .qrcode {{
     width: 50%;
     height: 50%;
@@ -50,8 +46,9 @@ html, body {{
 
 root_end_text = """
     </ul>
-    <center>
-    <img class=qrcode src="root_hash_qrcode.png" alt="QRcode with the same information as above">
+    <div class=qrcode>
+    <img src="root_hash_qrcode.png" alt="QRcode with the same information as above">
+    </div>
     </center>
 </body>
 </html>
@@ -101,7 +98,11 @@ def gen_root_qrcode(
 
     bullet_text = ""
     for k in sorted(qr_data.keys()):
-        value_data = f'<a href="{qr_data[k]}f">{qr_data[k]}</a>' if qr_data[k].startswith("http") else qr_data[k]
+        value_data = (
+            f'<a href="{qr_data[k]}f">{qr_data[k]}</a>'
+            if qr_data[k].startswith("http")
+            else qr_data[k]
+        )
         bullet_text += (
             f"        <li><code><b>{k}:</b></code> <code>{value_data}</code></li>\n"
         )
