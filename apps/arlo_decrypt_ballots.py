@@ -1,6 +1,6 @@
 import argparse
 from sys import exit
-from typing import Optional
+from typing import Optional, List
 
 from electionguard.serializable import set_serializers, set_deserializers
 
@@ -25,6 +25,7 @@ if __name__ == "__main__":
         action="store_true",
         help="uses a Ray cluster for distributed computation",
     )
+
     parser.add_argument(
         "-t",
         "--tallies",
@@ -32,6 +33,7 @@ if __name__ == "__main__":
         default="tally_output",
         help="directory name for where the tally artifacts can be found (default: tally_output)",
     )
+
     parser.add_argument(
         "-k",
         "--keys",
@@ -39,6 +41,7 @@ if __name__ == "__main__":
         default="secret_election_keys.json",
         help="file name for where the information is written (default: secret_election_keys.json)",
     )
+
     parser.add_argument(
         "-d",
         "--decrypted",
@@ -46,6 +49,16 @@ if __name__ == "__main__":
         default="decrypted_ballots",
         help="directory name for where decrypted ballots will be written (default: decrypted_ballots)",
     )
+
+    parser.add_argument(
+        "-r",
+        "--root-hash",
+        "--root_hash",
+        type=str,
+        default=None,
+        help="optional root hash for the tally directory; if the manifest is tampered, an error is indicated",
+    )
+
     parser.add_argument(
         "ballot_id",
         type=str,
@@ -57,8 +70,9 @@ if __name__ == "__main__":
     keyfile = args.keys
     tally_dir = args.tallies
     decrypted_dir = args.decrypted
-    ballot_ids = args.ballot_id
+    ballot_ids: List[str] = args.ballot_id
     use_cluster = args.cluster
+    root_hash = args.root_hash
 
     if use_cluster:
         ray_init_cluster()
@@ -72,7 +86,7 @@ if __name__ == "__main__":
 
     print(f"Loading tallies from {tally_dir}.")
     results: Optional[RayTallyEverythingResults] = load_ray_tally(
-        tally_dir, check_proofs=False
+        tally_dir, check_proofs=False, root_hash=root_hash
     )
 
     if results is None:

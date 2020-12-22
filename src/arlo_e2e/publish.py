@@ -40,7 +40,6 @@ CRYPTO_CONSTANTS: Final[str] = "constants.json"
 CRYPTO_CONTEXT: Final[str] = "cryptographic_context.json"
 
 
-# TODO: this can't be private anymore: it's going to be called from ray_tally.py
 def _write_tally_shared(
     results_dir: str,
     election_description: ElectionDescription,
@@ -158,7 +157,7 @@ def write_ray_tally(
 
 
 def _load_tally_shared(
-    results_dir: str,
+    results_dir: str, root_hash: Optional[str]
 ) -> Optional[
     Tuple[
         Manifest,
@@ -182,7 +181,7 @@ def _load_tally_shared(
         log_error(f"Path ({results_dir}) not found, cannot load the fast-tally")
         return None
 
-    manifest = make_existing_manifest(results_dir)
+    manifest = make_existing_manifest(results_dir, root_hash)
     if manifest is None:
         return None
 
@@ -242,6 +241,7 @@ def load_ray_tally(
     check_proofs: bool = True,
     verbose: bool = False,
     recheck_ballots_and_tallies: bool = False,
+    root_hash: Optional[str] = None,
 ) -> Optional[RayTallyEverythingResults]:
     """
     Given the directory name / path-name to a disk representation of a fast-tally structure, this reads
@@ -251,7 +251,7 @@ def load_ray_tally(
     cluster, for improved concurrency later on.
     """
 
-    result = _load_tally_shared(results_dir)
+    result = _load_tally_shared(results_dir, root_hash)
     if result is None:
         return None
 
@@ -289,6 +289,7 @@ def load_fast_tally(
     pool: Optional[Pool] = None,
     verbose: bool = False,
     recheck_ballots_and_tallies: bool = False,
+    root_hash: Optional[str] = None,
 ) -> Optional[FastTallyEverythingResults]:
     """
     Given the directory name / path-name to a disk representation of a fast-tally structure, this reads
@@ -297,7 +298,7 @@ def load_fast_tally(
     in the verification process.
     """
 
-    result = _load_tally_shared(results_dir)
+    result = _load_tally_shared(results_dir, root_hash)
     if result is None:
         return None
 

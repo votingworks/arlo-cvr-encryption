@@ -94,7 +94,10 @@ def gen_root_qrcode(
         "election_name": election_name,
         "root_hash": data_hash,
     }
-    qr_data = {**qr_headers, **metadata}  # goofy syntax to merge two dictionaries
+    qr_data = {
+        **qr_headers,
+        **metadata,
+    }  # goofy Python syntax to merge two dictionaries
 
     bullet_text = ""
     for k in sorted(qr_data.keys()):

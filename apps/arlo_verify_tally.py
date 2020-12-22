@@ -31,10 +31,20 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "-r",
+        "--root-hash",
+        "--root_hash",
+        type=str,
+        default=None,
+        help="optional root hash for the tally directory; if the manifest is tampered, an error is indicated",
+    )
+
+    parser.add_argument(
         "--totals",
         action="store_true",
         help="prints the verified totals for every race",
     )
+
     parser.add_argument(
         "--cluster",
         action="store_true",
@@ -45,6 +55,7 @@ if __name__ == "__main__":
     tallydir = args.tallies
     totals = args.totals
     use_cluster = args.cluster
+    root_hash = args.root_hash
 
     results: Optional[Union[RayTallyEverythingResults, FastTallyEverythingResults]]
 
@@ -53,7 +64,10 @@ if __name__ == "__main__":
         ray_init_cluster()
 
         ray_results = load_ray_tally(
-            tallydir, check_proofs=True, recheck_ballots_and_tallies=True
+            tallydir,
+            check_proofs=True,
+            recheck_ballots_and_tallies=True,
+            root_hash=root_hash,
         )
 
         results = ray_results
@@ -62,7 +76,11 @@ if __name__ == "__main__":
         pool = Pool(os.cpu_count())
 
         fast_results = load_fast_tally(
-            tallydir, check_proofs=True, pool=pool, recheck_ballots_and_tallies=True
+            tallydir,
+            check_proofs=True,
+            pool=pool,
+            recheck_ballots_and_tallies=True,
+            root_hash=root_hash,
         )
 
         pool.close()

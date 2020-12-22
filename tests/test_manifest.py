@@ -61,11 +61,19 @@ class TestManifestPublishing(unittest.TestCase):
         manifest = make_fresh_manifest(manifest_testing_dir)
         for file_name, file_path, file_contents in files:
             manifest.write_file(file_name, file_contents, file_path)
-        manifest.write_manifest()
+        manifest_hash = manifest.write_manifest()
         self.assertTrue(manifest.all_hashes_unique())
 
-        manifest2 = make_existing_manifest(manifest_testing_dir)
+        manifest2 = make_existing_manifest(manifest_testing_dir, manifest_hash)
         self.assertTrue(manifest.equivalent(manifest2))
+
+        # While we're here, we'll validate that tampered root hashes are rejected.
+        # To keep the hash the same length, we're just substituting some of the initial
+        # characters.
+        manifest3 = make_existing_manifest(
+            manifest_testing_dir, "abcdefgh" + manifest_hash[8:]
+        )
+        self.assertIsNone(manifest3)
 
         file_contents2 = [
             manifest2.read_file(file_name, file_path)

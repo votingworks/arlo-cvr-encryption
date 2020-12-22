@@ -1,6 +1,6 @@
 import argparse
 from sys import exit
-from typing import Optional
+from typing import Optional, List
 
 from electionguard.serializable import set_serializers, set_deserializers
 
@@ -38,6 +38,15 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "-r",
+        "--root-hash",
+        "--root_hash",
+        type=str,
+        default=None,
+        help="optional root hash for the tally directory; if the manifest is tampered, an error is indicated",
+    )
+
+    parser.add_argument(
         "ballot_id",
         type=str,
         nargs="+",
@@ -47,11 +56,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
     tally_dir = args.tallies
     decrypted_dir = args.decrypted
-    ballot_ids = args.ballot_id
+    ballot_ids: List[str] = args.ballot_id
+    root_hash = args.root_hash
 
     print(f"Loading tallies from {tally_dir}.")
     tally: Optional[FastTallyEverythingResults] = load_fast_tally(
-        tally_dir, check_proofs=False
+        tally_dir, check_proofs=False, root_hash=root_hash
     )
 
     if tally is None:

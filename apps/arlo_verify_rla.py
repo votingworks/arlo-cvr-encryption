@@ -54,6 +54,15 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "-r",
+        "--root-hash",
+        "--root_hash",
+        type=str,
+        default=None,
+        help="optional root hash for the tally directory; if the manifest is tampered, an error is indicated",
+    )
+
+    parser.add_argument(
         "audit_report",
         type=str,
         nargs=1,
@@ -64,12 +73,13 @@ if __name__ == "__main__":
 
     tally_dir = args.tallies
     decrypted_dir = args.decrypted
-    audit_report_filename = args.audit_report
+    audit_report_filename = args.audit_report[0]
     validate_decryptions = args.validate
+    root_hash = args.root_hash
 
     print(f"Loading tallies from {tally_dir}.")
     tally: Optional[FastTallyEverythingResults] = load_fast_tally(
-        tally_dir, check_proofs=False
+        tally_dir, check_proofs=False, root_hash=root_hash
     )
 
     if tally is None:

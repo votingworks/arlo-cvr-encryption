@@ -47,6 +47,10 @@ election private key is not needed. This tool verifies that the tally is consist
 encrypted ballots, and that all the proofs verify correctly. This process is something that
 a third-party observer would conduct against the public bulletin board.
 
+`arlo_verify_rla`: Input is a tally directory, a decrypted ballots directory, and the
+CSV audit file written out by Arlo. Verifies that the proper ballots were decrypted correctly,
+and that they match up with what the auditors saw during the RLA.
+
 `arlo_ballot_style_summary`: Input is a tally directory, output is a summary of all the
 contests and ballot styles. Demonstrates how to work with the metadata included
 in a tally directory.
@@ -60,10 +64,20 @@ the *private* key of the election, and the identifier(s) for the ballot(s) to be
 to a separate directory, including both the plaintext and proofs of the plaintext's correctness. These are the ballots
 that a "ballot-level comparison audit" would be considering.
 
+`arlo_decrypt_ballots_batch`: Input is an Arlo ballot retrieval manifest, in CSV format, the tally directory, and the decrypted ballot directory. The
+ballots from the manifest are decrypted and written out, as with the regular `arlo_decrypt_ballots` command.
+
 `arlo_decode_ballots`: Given some ballot identifiers (as above), prints everything we know about those ballots. If they
 were previously decrypted, this will print their decryptions and verify their equivalence proofs. If the proofs don't
 check out, this tool flags the issue. (Like `arlo_verify_tally`, this tool would be used by a third-party observer
 of an election audit.) For ballots that were never decrypted, we at least print the available metadata for the ballot.
+
+`arlo_write_root_hash`: Given a tally directory, computes the hash of `MANIFEST.json` and
+writes that along with any other desired metadata into `root_hash.html` and
+a corresponding QRcode embedded as a PNG file. This is something an election official might 
+print and give out to members of the press. Many of the above commands take a `--root-hash` argument,
+where this root-hash value, if specified, will be checked against the manifest file, thus
+verifying the integrity of every file hashed inside the manifest.
 
 ## Implementation status
 
