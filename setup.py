@@ -63,7 +63,7 @@ setup(
         "tqdm==4.47.0",
         "cryptography==3.2",
         "flask==1.1.2",
-        "ray==1.0.1",
+        "ray==1.1.0",
     ],
     # electionguard is also a requirement, but we're assuming that's being installed elsewhere, since
     # we're hanging on a dev branch, etc. Ray is also a bit weird, so we're leaving that out here.
