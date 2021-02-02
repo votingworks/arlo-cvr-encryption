@@ -67,6 +67,5 @@ setup(
     ],
     # ElectionGuard is also a requirement, but we're assuming that's being installed elsewhere, since
     # we're using a forked version of it.
-
     # Note: this file needs to be kept in sync with Pipfile.
 )
