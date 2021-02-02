@@ -63,7 +63,7 @@ def ray_wait_for_workers(min_workers: int = 1) -> None:  # pragma: no cover
         return
 
     while True:
-        nodes = ray.nodes()
+        nodes = ray.workers()
         if len(nodes) >= min_workers:
             if carriage_return_needed:
                 print(".", flush=True)
