@@ -97,8 +97,6 @@ def r_map(
     result = context.reduce(*map_outputs)
     if progress_actor:
         progress_actor.update_completed.remote(reduction_description, num_inputs)
-
-    if progress_actor:
         progress_actor.update_completed.remote(RUNNING_MAPS_STR, -1)
 
     return result
@@ -147,13 +145,13 @@ class RayMapReducer(Generic[T, R]):
         Given zero or more inputs, passed vararg style, runs the map and reduce tasks.
         """
         num_inputs = len(input)
+        log_and_print(f"Launching map-reduce task with {num_inputs} inputs")
         if num_inputs == 0:
             return self._context.zero()
 
         progressbar: Optional[ProgressBar] = None
         progress_actor: Optional[ActorHandle] = None
 
-        log_and_print(f"Launching map-reduce task with {num_inputs} inputs")
         start_time = timer()
 
         if self._use_progressbar:

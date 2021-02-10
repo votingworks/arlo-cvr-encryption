@@ -27,12 +27,15 @@ class ElGamalEncryptor(MapReduceContext[Tuple[ElementModQ, int], ElGamalCipherte
 
     def map(self, input: Tuple[ElementModQ, int]) -> ElGamalCiphertext:
         nonce, plaintext = input
+        # print(f"map({plaintext})")
         return get_optional(elgamal_encrypt(plaintext, nonce, self.keypair.public_key))
 
     def reduce(self, *input: ElGamalCiphertext) -> ElGamalCiphertext:
+        # print(f"reduce({len(input)}) inputs")
         return elgamal_add(*input)
 
     def zero(self) -> ElGamalCiphertext:
+        # print("zero")
         nonce = rand_q()  # we'll get a different zero each time
         return self.map((nonce, 0))
 
@@ -88,13 +91,15 @@ class TestRayMapReduce(unittest.TestCase):
     ) -> None:
         nonces = Nonces(int_to_q(3), "test-nonce-sequence")[0 : len(counters)]
         context = ElGamalEncryptor(keypair)
-        inputs = zip(nonces, counters)
+
+        # Apparently important: converting from a "zip object" to a "list" once, because
+        # if you do it twice, the second time you get an empty-list out. Zip objects
+        # aren't immutable!
+        inputs = list(zip(nonces, counters))
 
         # reference solution: computed conventionally
         reference_start = timer()
-        expected_sum = elgamal_add(
-            *[elgamal_encrypt(i[1], i[0], keypair.public_key) for i in inputs]
-        )
+        expected_sum = context.reduce(*[context.map(i) for i in inputs])
         reference_end = timer()
 
         log_and_print(
