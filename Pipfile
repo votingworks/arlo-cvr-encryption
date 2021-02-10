@@ -20,7 +20,7 @@ hypothesis = "==5.43.3"
 typish = '==1.7.0'
 jsons = '==1.1.2'
 tqdm = "==4.47.0"
-cryptography = "==3.2"
+cryptography = "==3.3.2"
 modin = '==0.8.0'
 flask = "==1.1.2"
 pillow = "==8.0.1"
