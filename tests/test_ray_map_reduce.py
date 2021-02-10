@@ -1,7 +1,7 @@
 import unittest
 from datetime import timedelta
-from typing import List, NamedTuple, Tuple
 from timeit import default_timer as timer
+from typing import List, Tuple
 
 from electionguard.elgamal import (
     ElGamalKeyPair,
@@ -27,15 +27,12 @@ class ElGamalEncryptor(MapReduceContext[Tuple[ElementModQ, int], ElGamalCipherte
 
     def map(self, input: Tuple[ElementModQ, int]) -> ElGamalCiphertext:
         nonce, plaintext = input
-        # print(f"map({plaintext})")
         return get_optional(elgamal_encrypt(plaintext, nonce, self.keypair.public_key))
 
     def reduce(self, *input: ElGamalCiphertext) -> ElGamalCiphertext:
-        # print(f"reduce({len(input)}) inputs")
         return elgamal_add(*input)
 
     def zero(self) -> ElGamalCiphertext:
-        # print("zero")
         nonce = rand_q()  # we'll get a different zero each time
         return self.map((nonce, 0))
 
@@ -71,7 +68,47 @@ class TestRayMapReduce(unittest.TestCase):
             counters, keypair, max_tasks, map_shard_size, reduce_shard_size
         )
 
-    def test_map_reduce_simplified(self) -> None:
+    def test_map_reduce_one_task(self) -> None:
+        counters = [1, 0, 1] * 100
+        keypair = get_optional(elgamal_keypair_from_secret(int_to_q(3)))
+        max_tasks = 1
+        map_shard_size = 2
+        reduce_shard_size = 2
+        self.map_reduce_helper(
+            counters, keypair, max_tasks, map_shard_size, reduce_shard_size
+        )
+
+    def test_map_reduce_tiny_shards(self) -> None:
+        counters = [1, 0, 1] * 100
+        keypair = get_optional(elgamal_keypair_from_secret(int_to_q(3)))
+        max_tasks = 2
+        map_shard_size = 1
+        reduce_shard_size = 2
+        self.map_reduce_helper(
+            counters, keypair, max_tasks, map_shard_size, reduce_shard_size
+        )
+
+    def test_map_reduce_longer_input(self) -> None:
+        counters = [1, 0, 1] * 1000
+        keypair = get_optional(elgamal_keypair_from_secret(int_to_q(3)))
+
+        # Fun experiments to try: monkey with the maximum number of tasks. When you
+        # make it significantly bigger than the number of cores, you get a modest
+        # speedup.
+
+        max_tasks = 50
+        map_shard_size = 10
+        reduce_shard_size = 20
+        self.map_reduce_helper(
+            counters,
+            keypair,
+            max_tasks,
+            map_shard_size,
+            reduce_shard_size,
+            use_progressbar=True,
+        )
+
+    def test_map_reduce_short_input(self) -> None:
         counters = [1, 0, 1]
         keypair = get_optional(elgamal_keypair_from_secret(int_to_q(3)))
         max_tasks = 2
@@ -88,6 +125,7 @@ class TestRayMapReduce(unittest.TestCase):
         max_tasks: int,
         map_shard_size: int,
         reduce_shard_size: int,
+        use_progressbar: bool = False,
     ) -> None:
         nonces = Nonces(int_to_q(3), "test-nonce-sequence")[0 : len(counters)]
         context = ElGamalEncryptor(keypair)
@@ -96,6 +134,24 @@ class TestRayMapReduce(unittest.TestCase):
         # if you do it twice, the second time you get an empty-list out. Zip objects
         # aren't immutable!
         inputs = list(zip(nonces, counters))
+
+        # run with the map-reduce framework
+        start_time = timer()
+        rmr = RayMapReducer(
+            context=context,
+            use_progressbar=use_progressbar,
+            input_description="Encrypts",
+            reduction_description="Adds",
+            max_tasks=max_tasks,
+            map_shard_size=map_shard_size,
+            reduce_shard_size=reduce_shard_size,
+        )
+
+        actual_sum = rmr.map_reduce(*inputs)
+        end_time = timer()
+        log_and_print(
+            f"Map-reduce version: {len(counters) / (end_time - start_time):0.3f} inputs/sec"
+        )
 
         # reference solution: computed conventionally
         reference_start = timer()
@@ -106,18 +162,9 @@ class TestRayMapReduce(unittest.TestCase):
             f"Single-core reference: {len(counters) / (reference_end - reference_start):0.3f} encrypts/sec"
         )
 
-        # now, with the map-reduce framework
-        rmr = RayMapReducer(
-            context,
-            True,
-            "Encrypts",
-            "Adds",
-            max_tasks=max_tasks,
-            map_shard_size=map_shard_size,
-            reduce_shard_size=reduce_shard_size,
+        log_and_print(
+            f"Speedup: {(reference_end - reference_start) / (end_time - start_time):0.3f}x"
         )
-
-        actual_sum = rmr.map_reduce(*inputs)
 
         expected_plaintext = expected_sum.decrypt(keypair.secret_key)
         actual_plaintext = actual_sum.decrypt(keypair.secret_key)

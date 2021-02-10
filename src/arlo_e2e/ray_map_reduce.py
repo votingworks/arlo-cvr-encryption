@@ -3,7 +3,6 @@
 # run reduction tasks quickly to minimize the lifetimes of intermediate results.
 from abc import ABC, abstractmethod
 from typing import TypeVar, Generic, Optional, List, Tuple
-from timeit import default_timer as timer
 
 import ray
 from dataclasses import dataclass
@@ -24,8 +23,6 @@ R = TypeVar("R")
 The output type for the map methods and the input/output type for the reduce methods.
 """
 
-RUNNING_MAPS_STR = "Running Maps"
-RUNNING_REDUCES_STR = "Running Reduces"
 DEFAULT_INPUT_STR = "Inputs"
 DEFAULT_REDUCTION_STR = "Reduction"
 
@@ -48,12 +45,12 @@ class MapReduceContext(ABC, Generic[T, R]):
         pass
 
     @abstractmethod
-    def reduce(self, *input: R) -> R:
+    def reduce(self, *inputs: R) -> R:
         """
         A function that is given one or more values of type R and returns one value of type R.
         *This function must be commutative*, since no guarantees are made about the order
-        in which computations will complete, and they'll be reduced eagerly when available.
-        You will never get zero inputs, but you may get one input.
+        in which computations will complete. You will never get zero inputs. In the degenerate
+        case where map-reduce is run with exactly one input, this method might not be called.
         """
         pass
 
@@ -81,7 +78,7 @@ def r_map(
         return context.zero()
 
     if progress_actor:
-        progress_actor.update_completed.remote(RUNNING_MAPS_STR, 1)
+        progress_actor.update_num_concurrent.remote(input_description, 1)
 
     map_outputs: List[R] = []
 
@@ -92,12 +89,13 @@ def r_map(
 
     # Even though we're changing gears from running a "map" to running a "reduction",
     # we're not going to monkey with the user-visible progressbars, because we're still
-    # in the middle of a "map task", not a "reduce task".
+    # in the middle of a "map task", not a "reduce task". That said, we will increment
+    # the total number of reductions that happened.
 
     result = context.reduce(*map_outputs)
     if progress_actor:
         progress_actor.update_completed.remote(reduction_description, num_inputs)
-        progress_actor.update_completed.remote(RUNNING_MAPS_STR, -1)
+        progress_actor.update_num_concurrent.remote(input_description, -1)
 
     return result
 
@@ -110,17 +108,18 @@ def r_reduce(
     *inputs: R,
 ) -> R:
     num_inputs = len(inputs)
+
     if num_inputs == 0:
         return context.zero()
 
     if progress_actor:
-        progress_actor.update_completed.remote(RUNNING_REDUCES_STR, 1)
+        progress_actor.update_num_concurrent.remote(reduction_description, 1)
 
     result = context.reduce(*inputs)
 
     if progress_actor:
         progress_actor.update_completed.remote(reduction_description, num_inputs)
-        progress_actor.update_completed.remote(RUNNING_REDUCES_STR, -1)
+        progress_actor.update_num_concurrent.remote(reduction_description, -1)
 
     return result
 
@@ -152,21 +151,18 @@ class RayMapReducer(Generic[T, R]):
         progressbar: Optional[ProgressBar] = None
         progress_actor: Optional[ActorHandle] = None
 
-        start_time = timer()
-
         if self._use_progressbar:
             progressbar = ProgressBar(
                 {
                     self._input_description: num_inputs,
                     self._reduction_description: num_inputs,
-                    RUNNING_MAPS_STR: 0,
-                    RUNNING_REDUCES_STR: 0,
                 }
             )
             progress_actor = progressbar.actor
 
         pending_map_shards = shard_list_uniform(input, self._map_shard_size)
         running_jobs: List[ObjectRef] = []
+        ready_refs: List[ObjectRef] = []
 
         context_ref = ray.put(self._context)
         input_desc_ref = ray.put(self._input_description)
@@ -174,10 +170,15 @@ class RayMapReducer(Generic[T, R]):
         iterations = 0
         result: Optional[ObjectRef] = None
 
-        while len(pending_map_shards) > 0 or len(running_jobs) > 0:
+        while (
+            len(pending_map_shards) > 0 or len(running_jobs) > 0 or len(ready_refs) > 0
+        ):
             if progressbar:
                 progressbar.print_update()
             iterations += 1
+            # print(
+            #     f"{iterations:4d}: Pending map shards: {len(pending_map_shards)}, running jobs: {len(running_jobs)}"
+            # )
 
             # first, see if we can add anything new to the job queue
             if len(running_jobs) < self._max_tasks and len(pending_map_shards) > 0:
@@ -200,16 +201,15 @@ class RayMapReducer(Generic[T, R]):
             tmp: Tuple[List[ObjectRef], List[ObjectRef]] = ray.wait(
                 running_jobs, num_returns=len(running_jobs), timeout=0.5
             )
-            ready_refs, pending_refs = tmp
-            num_ready_refs = len(ready_refs)
-            num_pending_refs = len(pending_refs)
-            assert (
-                len(running_jobs) == num_pending_refs + num_ready_refs
-            ), "ray.wait fail: we lost some inputs!"
             # TODO: Ray version 2 (dev builds) add an option here, fetch_local=False,
             #  which seems like it would be relevant to us. It's not available in the
             #  version 1.1 release. Unclear whether that fetching is happening in
             #  the release versions of Ray or not. Hopefully not.
+
+            new_ready_refs, pending_refs = tmp
+            ready_refs = ready_refs + new_ready_refs
+            num_ready_refs = len(ready_refs)
+            num_pending_refs = len(pending_refs)
 
             if (
                 num_ready_refs == 1
@@ -240,22 +240,17 @@ class RayMapReducer(Generic[T, R]):
                     for rs in usable_shards
                 ]
 
-                running_jobs = list(
-                    partial_reductions + pending_refs + [x[0] for x in size_one_shards]
-                )
+                running_jobs = partial_reductions + pending_refs
+                ready_refs = [s[0] for s in size_one_shards]
             else:
-                # annoying case: we have exactly one result and nothing useful to do with it,
-                # so we'll just go back and ray.wait again for more results to show up.
+                # Annoying case: we have exactly one ready result, one or more pending
+                # results, and nothing to reduce, so we'll just go back and ray.wait
+                # again for more results to show up.
+                running_jobs = pending_refs
                 pass
 
-        assert (
-            result is not None
-        ), "reducer fail: somehow exited the loop with no result!"
+        assert result is not None, "reducer fail: exited loop with no result!"
 
-        end_time = timer()
-        log_and_print(
-            f"Map-reduce task completed {num_inputs} maps, with {iterations} iterations, in {num_inputs / (end_time - start_time):0.3f} inputs/sec"
-        )
         if progressbar:
             progressbar.close()
         result_local: R = ray.get(result)
@@ -282,6 +277,10 @@ class RayMapReducer(Generic[T, R]):
         @param reduce_shard_size: The number of reduce computations to run at once.
         @return: a single instance of the result type, representing the completion of the reduction process
         """
+        assert reduce_shard_size > 1, "reduce_shard_size must be greater than 1"
+        assert map_shard_size >= 1, "map_shard_size must be at least 1"
+        assert max_tasks >= 1, "max_tasks must be at least 1"
+
         self._context = context
         self._input_description = input_description
         self._reduction_description = reduction_description

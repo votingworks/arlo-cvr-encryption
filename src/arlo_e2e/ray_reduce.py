@@ -95,7 +95,6 @@ def ray_reduce_with_ray_wait(
 
     while inputs:
         if progressbar:
-            progressbar.actor.update_completed.remote("Iterations", 1)
             progressbar.print_update()
 
         iteration_count += 1
@@ -229,7 +228,6 @@ def ray_reduce_with_rounds(
         num_inputs = len(inputs)
 
         if progressbar_actor is not None:
-            progressbar_actor.update_completed.remote("Iterations", 1)
             progressbar_actor.update_total.remote(progressbar_key, num_inputs)
 
         if num_inputs <= shard_size:

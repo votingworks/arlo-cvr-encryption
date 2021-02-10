@@ -133,6 +133,9 @@ def r_encrypt_and_write(
     """
 
     try:
+        if progressbar_actor:
+            progressbar_actor.update_num_concurrent.remote("Ballots", 1)
+
         manifest = make_fresh_manifest(root_dir) if root_dir is not None else None
 
         num_ballots = len(plaintext_ballot_dicts)
@@ -159,7 +162,7 @@ def r_encrypt_and_write(
             if manifest is not None:
                 manifest.write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
 
-            if progressbar_actor is not None:
+            if progressbar_actor:
                 progressbar_actor.update_completed.remote("Ballots", 1)
 
             ptally = ciphertext_ballot_to_dict(cballot)
@@ -172,6 +175,9 @@ def r_encrypt_and_write(
 
         if manifest is not None and manifest_aggregator is not None:
             manifest_aggregator.add.remote(manifest)
+
+        if progressbar_actor:
+            progressbar_actor.update_num_concurrent.remote("Ballots", -1)
 
         return ptally_final
     except Exception as e:
@@ -198,6 +204,8 @@ def partial_tally(
 
     if None in ptallies:
         return None
+    if progressbar_actor:
+        progressbar_actor.update_num_concurrent.remote("Tallies", 1)
 
     num_ptallies = len(ptallies)
 
@@ -207,8 +215,9 @@ def partial_tally(
         ), "type failure: we were expecting a dict (TALLY_TYPE), not an objectref"
 
     result: TALLY_TYPE = sequential_tally(ptallies)
-    if progressbar_actor is not None:
+    if progressbar_actor:
         progressbar_actor.update_completed.remote("Tallies", num_ptallies)
+        progressbar_actor.update_num_concurrent.remote("Tallies", -1)
     return result
 
 
@@ -457,8 +466,6 @@ def ray_tally_everything(
             {
                 "Ballots": num_ballots,
                 "Tallies": num_ballots,
-                "Iterations": 0,
-                "Batch": 0,
             }
         )
         if use_progressbar
@@ -468,9 +475,6 @@ def ray_tally_everything(
 
     batch_tallies: List[ObjectRef] = []
     for batch in batches:
-        if progressbar_actor:
-            progressbar_actor.update_completed.remote("Batch", 1)
-
         num_ballots_in_batch = len(batch)
         sharded_inputs = shard_list_uniform(batch, BALLOTS_PER_SHARD)
         num_shards = len(sharded_inputs)
@@ -799,8 +803,6 @@ class RayTallyEverythingResults(NamedTuple):
                     {
                         "Ballots": num_ballots,
                         "Tallies": num_ballots,
-                        "Iterations": 0,
-                        "Batch": 0,
                     }
                 )
                 if use_progressbar
@@ -818,9 +820,6 @@ class RayTallyEverythingResults(NamedTuple):
             recomputed_tallies: List[ObjectRef] = []
 
             for batch in batches:
-                if progressbar_actor:
-                    progressbar_actor.update_completed.remote("Batch", 1)
-
                 cballot_manifest_name_shards: Sequence[
                     Sequence[str]
                 ] = shard_list_uniform(batch, BALLOTS_PER_SHARD)
