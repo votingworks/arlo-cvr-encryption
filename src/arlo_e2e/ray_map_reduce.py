@@ -256,7 +256,7 @@ class RayMapReducer(Generic[T, R]):
 
         end_time = timer()
         log_and_print(
-            f"Map-reduce task completed {num_inputs} maps, with {iterations} iterations, in {num_inputs / (end_time - start_time):%.3f} inputs/sec"
+            f"Map-reduce task completed {num_inputs} maps, with {iterations} iterations, in {num_inputs / (end_time - start_time):0.3f} inputs/sec"
         )
         if progressbar:
             progressbar.close()
