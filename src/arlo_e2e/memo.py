@@ -75,15 +75,15 @@ def make_memo_lambda(func: Callable[[], Optional[T]]) -> Memo[T]:
 
     Warning: Python's lambdas don't capture values from their environment in the way that normal functional
     programming languages work. Here's an example of how this can go wrong. The lambdas are all capturing
-    the same object for `i` rather than each individual value.
-    >>> memos = [make_memo_lambda(lambda: i) for i in range(0, 10)]
-    >>> [memo.contents for memo in memos]
-    [9, 9, 9, 9, 9, 9, 9, 9, 9, 9]
+    the same object for `i` rather than each individual value::
+        > memos = [make_memo_lambda(lambda: i) for i in range(0, 10)]
+        > [memo.contents for memo in memos]
+        [9, 9, 9, 9, 9, 9, 9, 9, 9, 9]
 
-    Here's how you might make copies, to ensure everything works how you would expect.
-    >>> memos = [(lambda i: make_memo_lambda(lambda: i))(i) for i in range(0, 10)]
-    >>> [memo.contents for memo in memos]
-    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    Here's how you might make copies, to ensure everything works how you would expect::
+        > memos = [(lambda i: make_memo_lambda(lambda: i))(i) for i in range(0, 10)]
+        > [memo.contents for memo in memos]
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
     Additional details: https://louisabraham.github.io/articles/python-lambda-closures.html
     """

@@ -32,12 +32,38 @@ class MapReduceContext(ABC, Generic[T, R]):
     function and a reduction function. Inevitably, you'll also want to have some sort
     of environment that assists you in doing these computations. To do this, you'll
     create an instance of this Python interface class, in which you can place any
-    read-only context you want. The map-reduce library will replicate this to all of
-    the remote nodes, and arrange to call the map and reduce methods.
+    context you want (i.e., it's like the closure aspect of a lambda). The map-reduce
+    library will replicate this to all of the remote nodes, and arrange to call the
+    map and reduce methods. If somebody tries to run this on an input of zero-length,
+    then the zero method will be called so there's at least *something* to return.
 
     Note: your instance of this class will be serialized and copied to all of the
     remote computation nodes. That means you can put whatever values you want in here,
     but you shouldn't mutate them and expect those changes to be persistent or visible.
+    Also, Ray uses Python's "pickle" serializer, so anything you put in here needs
+    to be compatible with that.
+
+    When you create an instance of this abstract base class, you'll be specifying
+    two types: `T` and `R`. The former is the type of the _input_ to the map function.
+    The latter is the type of the _output_ of the `map` method and as well both the
+    input and output types of the `reduce` method.
+
+    For example, if you were converting strings to integers (via the `len` function)
+    and then adding the lengths, you might define your `MapReduceContext` with::
+      class StringLengthContext(MapReduceContext[str, int]):
+        def map(self, input: str) -> int:
+          return len(input)
+
+        def reduce(self, input: List[int]) -> int:
+          return sum(input)
+
+        def zero(self) -> int:
+          return 0
+
+    And then run it with::
+      rmr = RayMapReducer(context=StringLengthContext())
+      total1 = rmr.map_reduce(["ABC", "DEFGH", "I", "", "J"]))  # --> 10
+      total2 = rmr.map_reduce([]))  # --> 0
     """
 
     @abstractmethod
@@ -48,7 +74,7 @@ class MapReduceContext(ABC, Generic[T, R]):
         pass
 
     @abstractmethod
-    def reduce(self, *inputs: R) -> R:
+    def reduce(self, inputs: List[R]) -> R:
         """
         A function that is given one or more values of type R and returns one value of type R.
         *This function must be commutative*, since no guarantees are made about the order
@@ -95,7 +121,7 @@ def _ray_mr_map(
     # in the middle of a "map task", not a "reduce task". That said, we will increment
     # the total number of reductions that happened.
 
-    result = context.reduce(*map_outputs)
+    result = context.reduce(map_outputs)
     if progress_actor:
         progress_actor.update_completed.remote(reduction_description, num_inputs)
         progress_actor.update_num_concurrent.remote(input_description, -1)
@@ -118,7 +144,7 @@ def _ray_mr_reduce(
     if progress_actor:
         progress_actor.update_num_concurrent.remote(reduction_description, 1)
 
-    result = context.reduce(*inputs)
+    result = context.reduce(list(inputs))
 
     if progress_actor:
         progress_actor.update_completed.remote(reduction_description, num_inputs)
@@ -131,9 +157,18 @@ def _ray_mr_reduce(
 class RayMapReducer(Generic[T, R]):
     """
     This is the handle for launching a map-reduce computation. You create one of these
-    using the constructor, and afterward you call the `map_reduce` method with your inputs.
-    All of the parallelism is handled inside, and all the calls into your custom code,
-    supplied via the `MapReduceContext` instance you'll create, will run in parallel.
+    using the constructor, and afterward you call the `map_reduce` or `map_reduce_vararg`
+    method with your inputs. All of the parallelism is handled inside, and all the calls
+    into your custom code, supplied via the `MapReduceContext` instance you'll create,
+    will run in parallel.
+
+    A useful way to think about this: your instance of `MapReduceContext` provides the environment
+    in which you're evaluating the map and reduce functions, but knows absolutely nothing about
+    the Ray library or about the ordering in which it's executed.
+
+    Your instance of `RayMapReducer` includes this context as well as variables that define
+    exactly how the computation will be sharded up and distributed, whether there will be a
+    progress bar, and so forth.
     """
 
     _context: MapReduceContext[T, R]
@@ -153,9 +188,6 @@ class RayMapReducer(Generic[T, R]):
     def map_reduce_vararg(self, *input: T) -> R:
         """
         Given zero or more inputs, passed vararg style, runs the map and reduce tasks.
-
-        Note: if you have a list of inputs, you should call `my_map_reducer.map_reduce(*inputs)`,
-        to ensure that the list is treated in vararg style.
         """
         num_inputs = len(input)
         # log_and_print(f"Launching map-reduce task with {num_inputs} inputs")

@@ -26,6 +26,7 @@ def ray_init_localhost(
         ray.init(num_cpus=num_cpus if num_cpus > 0 else os.cpu_count())
         _ray_is_local = True
         ray_post_init(write_failure_probability)
+        ray_wait_for_workers()
 
 
 def ray_init_cluster(

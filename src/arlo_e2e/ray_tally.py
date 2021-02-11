@@ -242,7 +242,7 @@ class BallotTallyContext(MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_T
 
         return ciphertext_ballot_to_dict(cballot)
 
-    def reduce(self, *ptallies: Optional[TALLY_TYPE]) -> Optional[TALLY_TYPE]:
+    def reduce(self, ptallies: List[Optional[TALLY_TYPE]]) -> Optional[TALLY_TYPE]:
         num_ptallies = len(ptallies)
 
         if None in ptallies:
@@ -474,7 +474,7 @@ class BallotVerifyContext(MapReduceContext[str, Optional[TALLY_TYPE]]):
         else:
             return None
 
-    def reduce(self, *ptallies: Optional[TALLY_TYPE]) -> Optional[TALLY_TYPE]:
+    def reduce(self, ptallies: List[Optional[TALLY_TYPE]]) -> Optional[TALLY_TYPE]:
         num_ptallies = len(ptallies)
 
         if None in ptallies:
