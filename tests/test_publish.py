@@ -10,7 +10,7 @@ from electionguard.ballot import _list_eq
 from electionguard.election import InternalElectionDescription
 from electionguard.elgamal import ElGamalKeyPair
 from electionguardtest.elgamal import elgamal_keypairs
-from hypothesis import settings, given, HealthCheck, Phase, reproduce_failure
+from hypothesis import settings, given, HealthCheck, Phase
 from hypothesis.strategies import booleans
 
 from arlo_e2e.decrypt import (

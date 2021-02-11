@@ -13,7 +13,6 @@ from typing import (
     Tuple,
     Any,
     Final,
-    TypeVar,
 )
 
 import pandas as pd

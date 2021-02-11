@@ -6,8 +6,8 @@ from pathlib import PurePath
 from typing import List
 
 from electionguard.logs import log_warning
-from hypothesis import given, assume, settings
-from hypothesis.strategies import lists, integers, booleans
+from hypothesis import given, settings
+from hypothesis.strategies import integers, booleans
 
 from arlo_e2e.manifest import (
     make_fresh_manifest,

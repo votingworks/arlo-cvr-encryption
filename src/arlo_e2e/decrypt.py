@@ -2,7 +2,7 @@ import csv
 import functools
 import os
 from multiprocessing.pool import Pool
-from typing import Optional, Dict, List, Union
+from typing import Optional, Dict, List
 
 import ray
 from electionguard.ballot import CiphertextAcceptedBallot, PlaintextBallotSelection
