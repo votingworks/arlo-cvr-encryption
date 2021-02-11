@@ -15,13 +15,13 @@ pydocstyle = "*"
 [packages]
 gmpy2 = "==2.1.0b5"
 numpy = '==1.18.2'
-pandas = '==1.0.5'
-hypothesis = "==5.43.3"
+pandas = '==1.1.5'
+hypothesis = "==6.1.1"
 typish = '==1.7.0'
 jsons = '==1.1.2'
-tqdm = "==4.47.0"
+tqdm = "==4.56.2"
 cryptography = "==3.3.2"
-modin = '==0.8.0'
+modin = '==0.8.3'
 flask = "==1.1.2"
 pillow = "==8.0.1"
 qrcode = "==6.1"

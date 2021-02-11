@@ -75,7 +75,7 @@ def _ray_mr_map(
     input_description: str,
     reduction_description: str,
     *inputs: T,
-) -> R:
+) -> R:  # pragma: no cover
     num_inputs = len(inputs)
     if num_inputs == 0:
         return context.zero()
@@ -109,7 +109,7 @@ def _ray_mr_reduce(
     progress_actor: Optional[ActorHandle],
     reduction_description: str,
     *inputs: R,
-) -> R:
+) -> R:  # pragma: no cover
     num_inputs = len(inputs)
 
     if num_inputs == 0:
