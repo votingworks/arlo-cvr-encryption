@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from ray import ObjectRef
 from ray.actor import ActorHandle
 
-from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.utils import shard_list_uniform
 
@@ -35,6 +34,10 @@ class MapReduceContext(ABC, Generic[T, R]):
     create an instance of this Python interface class, in which you can place any
     read-only context you want. The map-reduce library will replicate this to all of
     the remote nodes, and arrange to call the map and reduce methods.
+
+    Note: your instance of this class will be serialized and copied to all of the
+    remote computation nodes. That means you can put whatever values you want in here,
+    but you shouldn't mutate them and expect those changes to be persistent or visible.
     """
 
     @abstractmethod
@@ -66,7 +69,7 @@ class MapReduceContext(ABC, Generic[T, R]):
 
 
 @ray.remote
-def r_map(
+def _ray_mr_map(
     context: MapReduceContext[T, R],
     progress_actor: Optional[ActorHandle],
     input_description: str,
@@ -101,7 +104,7 @@ def r_map(
 
 
 @ray.remote
-def r_reduce(
+def _ray_mr_reduce(
     context: MapReduceContext[T, R],
     progress_actor: Optional[ActorHandle],
     reduction_description: str,
@@ -128,7 +131,9 @@ def r_reduce(
 class RayMapReducer(Generic[T, R]):
     """
     This is the handle for launching a map-reduce computation. You create one of these
-    using `make_ray_map_reducer`, and afterward you use the defined methods to operate it.
+    using the constructor, and afterward you call the `map_reduce` method with your inputs.
+    All of the parallelism is handled inside, and all the calls into your custom code,
+    supplied via the `MapReduceContext` instance you'll create, will run in parallel.
     """
 
     _context: MapReduceContext[T, R]
@@ -139,12 +144,21 @@ class RayMapReducer(Generic[T, R]):
     _map_shard_size: int
     _reduce_shard_size: int
 
-    def map_reduce(self, *input: T) -> R:
+    def map_reduce(self, input: List[T]) -> R:
+        """
+        Given zero or more inputs, passed as a Python list, runs the map and reduce tasks.
+        """
+        return self.map_reduce_vararg(*input)
+
+    def map_reduce_vararg(self, *input: T) -> R:
         """
         Given zero or more inputs, passed vararg style, runs the map and reduce tasks.
+
+        Note: if you have a list of inputs, you should call `my_map_reducer.map_reduce(*inputs)`,
+        to ensure that the list is treated in vararg style.
         """
         num_inputs = len(input)
-        log_and_print(f"Launching map-reduce task with {num_inputs} inputs")
+        # log_and_print(f"Launching map-reduce task with {num_inputs} inputs")
         if num_inputs == 0:
             return self._context.zero()
 
@@ -186,7 +200,7 @@ class RayMapReducer(Generic[T, R]):
                 shards_to_launch = pending_map_shards[0:num_new_jobs]
                 pending_map_shards = pending_map_shards[num_new_jobs:]
                 new_job_refs = [
-                    r_map.remote(
+                    _ray_mr_map.remote(
                         context_ref,
                         progress_actor,
                         input_desc_ref,
@@ -204,7 +218,7 @@ class RayMapReducer(Generic[T, R]):
             # TODO: Ray version 2 (dev builds) add an option here, fetch_local=False,
             #  which seems like it would be relevant to us. It's not available in the
             #  version 1.1 release. Unclear whether that fetching is happening in
-            #  the release versions of Ray or not. Hopefully not.
+            #  the 1.1 release of Ray or not. Hopefully not.
 
             new_ready_refs, pending_refs = tmp
             ready_refs = ready_refs + new_ready_refs
@@ -234,7 +248,7 @@ class RayMapReducer(Generic[T, R]):
                     )
 
                 partial_reductions = [
-                    r_reduce.remote(
+                    _ray_mr_reduce.remote(
                         context_ref, progress_actor, reduction_desc_ref, *rs
                     )
                     for rs in usable_shards
@@ -267,15 +281,19 @@ class RayMapReducer(Generic[T, R]):
         reduce_shard_size: int = 10,
     ):
         """
-        This method creates a RayMapReducer, which is used for subsequent map-reduce computations.
-        @param context: An instance of your own class which implements `MapReduceContext`, providing the three methods needed for mapping, reducing, and getting a suitable zero.
-        @param use_progressbar: If true, a progressbar will be created to give updates as the computation runs
-        @param input_description: A textual description of the input type (e.g., "Ballots"), used by the progressbar
-        @param reduction_description: A textual description of the output type (e.g., "Tallies"), used by the progressbar
-        @param max_tasks: The maximum number of concurrent tasks to send to the Ray cluster. Should be at least as large as the number of workers.
-        @param map_shard_size: The number of map computations to run as part of the same task. The results will then be immediately reduced at the same time, saving bandwidth.
-        @param reduce_shard_size: The number of reduce computations to run at once.
-        @return: a single instance of the result type, representing the completion of the reduction process
+        This is the constructor for a RayMapReducer, which is used for subsequent map-reduce computations.
+        @param context: An instance of your own class which implements `MapReduceContext`,
+          providing the three methods needed for mapping, reducing, and getting a suitable zero.
+        @param use_progressbar: If true, a progressbar will be created to give updates as the computation runs.
+        @param input_description: A textual description of the input type (e.g., "Ballots"), used by the
+          progressbar.
+        @param reduction_description: A textual description of the output type (e.g., "Tallies"), used by the
+          progressbar.
+        @param max_tasks: The maximum number of concurrent tasks to send to the Ray cluster. Should be at least
+          as large as the number of workers.
+        @param map_shard_size: The number of map computations to run as part of the same task. The results will
+          be immediately reduced within the same task, saving network bandwidth.
+        @param reduce_shard_size: The number of reduce inputs to run as a single task.
         """
         assert reduce_shard_size > 1, "reduce_shard_size must be greater than 1"
         assert map_shard_size >= 1, "map_shard_size must be at least 1"

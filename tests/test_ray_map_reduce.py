@@ -147,7 +147,7 @@ class TestRayMapReduce(unittest.TestCase):
             reduce_shard_size=reduce_shard_size,
         )
 
-        actual_sum = rmr.map_reduce(*inputs)
+        actual_sum = rmr.map_reduce(inputs)
         end_time = timer()
         log_and_print(
             f"Map-reduce version: {len(counters) / (end_time - start_time):0.3f} inputs/sec"
