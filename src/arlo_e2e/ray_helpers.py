@@ -64,12 +64,9 @@ def ray_wait_for_workers(min_workers: int = 1) -> None:  # pragma: no cover
         return
 
     while True:
-        # ray.workers() is indeed defined in Ray 1.1 or later, but for whatever
-        # reason we're getting errors from mypy, so the solution is to suppress
-        # that specific error on this line. This shouldn't be necessary.
-        nodes = ray.workers()  # type: ignore[attr-defined]
-
-        if len(nodes) >= min_workers:
+        nodes = ray.nodes()
+        if len(nodes) >= min_workers + 1:
+            # min_workers + 1 because the head node is going to be included
             if carriage_return_needed:
                 print(".", flush=True)
             return
