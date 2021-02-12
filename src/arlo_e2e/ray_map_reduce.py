@@ -13,14 +13,10 @@ from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.utils import shard_list_uniform
 
 T = TypeVar("T")
-"""
-The input type for the map methods.
-"""
+"""The input type for the map methods."""
 
 R = TypeVar("R")
-"""
-The output type for the map methods and the input/output type for the reduce methods.
-"""
+"""The output type for the map methods and the input/output type for the reduce methods."""
 
 DEFAULT_INPUT_STR = "Inputs"
 DEFAULT_REDUCTION_STR = "Reduction"

@@ -25,8 +25,8 @@ def ray_init_localhost(
     if not ray.is_initialized():
         ray.init(num_cpus=num_cpus if num_cpus > 0 else os.cpu_count())
         _ray_is_local = True
-        ray_post_init(write_failure_probability)
         ray_wait_for_workers()
+        ray_post_init(write_failure_probability)
 
 
 def ray_init_cluster(
@@ -64,7 +64,7 @@ def ray_wait_for_workers(min_workers: int = 1) -> None:  # pragma: no cover
         return
 
     while True:
-        # ray.workers() is indeed defined in Ray 1.1 or later, but for whateer
+        # ray.workers() is indeed defined in Ray 1.1 or later, but for whatever
         # reason we're getting errors from mypy, so the solution is to suppress
         # that specific error on this line. This shouldn't be necessary.
         nodes = ray.workers()  # type: ignore[attr-defined]
