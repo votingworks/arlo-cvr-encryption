@@ -14,18 +14,11 @@ max_workers: 13
 # subsequent `ray up`) this number of nodes will be started.
 initial_workers: 13
 
-# Whether or not to autoscale aggressively. If this is enabled, if at any point
-#   we would start more workers, we start at least enough to bring us to
-#   initial_workers.
-# TODO: the code for "aggressive" doesn't really change very much; do we just want a whole lot of initial workers?
-autoscaling_mode: aggressive
-
-# The autoscaler will scale up the cluster to this target fraction of resource
-# usage. For example, if a cluster of 10 nodes is 100% busy and
-# target_utilization is 0.8, it would resize the cluster to 13. This fraction
-# can be decreased to increase the aggressiveness of upscaling.
-# This max value allowed is 1.0, which is the most conservative setting.
-target_utilization_fraction: 0.8
+# The autoscaler will scale up the cluster faster with higher upscaling speed.
+# E.g., if the task requires adding more nodes then autoscaler will gradually
+# scale up the cluster in chunks of upscaling_speed*currently_running_nodes.
+# This number should be > 0.
+upscaling_speed: 1.0
 
 # If a node is idle for this many minutes, it will be removed.
 idle_timeout_minutes: 10
@@ -52,16 +45,16 @@ auth:
 #    ssh_private_key: /path/to/your/key.pem
 
 available_node_types:
-    worker_x64:
+    worker_x64_intel:
         node_config:
-            InstanceType: c5a.16xlarge
+            InstanceType: c5.12xlarge
         #            InstanceMarketOptions:
         #                MarketType: spot
-        resources: {"CPU": 64}
-        max_workers: 64
-    worker_x64_alt:
+        resources: {"CPU": 48}
+        max_workers: 48
+    worker_x64_amd:
         node_config:
-            InstanceType: c5.16xlarge
+            InstanceType: c5a.16xlarge
 #            InstanceMarketOptions:
 #                MarketType: spot
         resources: {"CPU": 64}
@@ -75,7 +68,7 @@ available_node_types:
 
 # Eventually, we'll be able to specify multiple node types here. But not yet.
 # https://github.com/ray-project/ray/issues/10929
-worker_default_node_type: worker_x64
+worker_default_node_type: worker_x64_amd
 head_node_type: head_x64
 
 # Provider-specific config for the head node, e.g. instance type. By default
