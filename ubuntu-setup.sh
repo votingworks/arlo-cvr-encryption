@@ -21,7 +21,7 @@ ln -s /usr/bin/python3.8 /usr/bin/python
 pip install boto3==1.15.12  # newer than what's in the AMI
 pip install six==1.13.0 requests==2.18.0  # solves some dependency issues
 # pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-manylinux1_x86_64.whl
-pip install ray==1.0.1
+pip install ray==1.1.0
 pip install -e 'git+https://github.com/votingworks/electionguard-python.git#egg=electionguard'
 pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
 

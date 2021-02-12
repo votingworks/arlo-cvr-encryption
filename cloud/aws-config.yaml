@@ -84,9 +84,7 @@ head_node_type: head_x64
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 head_node:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-    ImageId: ami-048d11da5dca6e6f0  # customized version of above, with pre-installed libraries
-#    ImageId: ami-0c56ef48fe96056ba # customized Ubuntu 18.04, pre-installed libraries
-#    ImageId: ami-0483bcef1b4f0e5d8 # customized Ubuntu 16.04
+    ImageId: ami-0f542b2b48007b168  # customized Ubuntu, pre-install with arlo-e2e, ElectionGuard, Ray; 12 Feb 2021
 
     IamInstanceProfile:
       Arn: arn:aws:iam::339914263940:instance-profile/ray-head-arlo-v1
@@ -105,9 +103,7 @@ head_node:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 worker_nodes:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-    ImageId: ami-048d11da5dca6e6f0  # customized version of above, with pre-installed libraries
-#    ImageId: ami-0c56ef48fe96056ba # customized Ubuntu 18.04, pre-installed libraries
-#    ImageId: ami-0483bcef1b4f0e5d8 # customized Ubuntu 16.04
+    ImageId: ami-0f542b2b48007b168  # customized Ubuntu, pre-install with arlo-e2e, ElectionGuard, Ray; 12 Feb 2021
 
     IamInstanceProfile:
       Arn: arn:aws:iam::339914263940:instance-profile/ray-worker-arlo-v1
@@ -147,8 +143,8 @@ setup_commands:
 
     # get any updates that might be newer than what's in the AMI
     - sudo -H pip install boto3==1.15.12
-    - sudo pip install ray==1.1.0
-    - sudo pip install --exists-action w -e 'git+https://github.com/votingworks/electionguard-python.git#egg=electionguard'
+    # - sudo pip install ray==1.1.0
+    - sudo pip install -e 'git+https://github.com/votingworks/electionguard-python.git#egg=electionguard'
     - sudo pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
 #    - sudo mkdir /mnt/arlo-data
     - sudo s3fs arlo-e2e-denver-demo /mnt/arlo-data -o endpoint=us-east-2 -o iam_role=auto -o allow_other -o storage_class=standard_ia
