@@ -79,7 +79,7 @@ def shard_list_uniform(input: Iterable[T], num_per_group: int) -> Sequence[Seque
     if length == 0:
         return []
 
-    num_groups = ceil(length / num_per_group)
+    num_groups = int(ceil(length / num_per_group))
 
     # this will be a floating point number, not an integer
     num_per_group_revised = length / num_groups
@@ -92,7 +92,7 @@ def shard_list_uniform(input: Iterable[T], num_per_group: int) -> Sequence[Seque
 
     while input_list:
         current_num_per_group_float = num_per_group_revised + residual
-        current_num_per_group_int = floor(num_per_group_revised + residual)
+        current_num_per_group_int = int(floor(num_per_group_revised + residual))
         residual = current_num_per_group_float - current_num_per_group_int
 
         # With floating point approximations, we might get really close but not quite, so we'll compensate

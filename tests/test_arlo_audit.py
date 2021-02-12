@@ -165,7 +165,7 @@ Container,Tabulator,Batch Name,Ballot Number,Imprinted ID,Ticket Numbers,Already
 
         result = set(get_imprint_ids_from_ballot_retrieval_csv(input))
 
-        self.assertEquals(expected, result)
+        self.assertEqual(expected, result)
 
 
 def plaintext_ballots_to_arlo_sampled_ballots(

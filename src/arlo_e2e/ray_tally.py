@@ -13,7 +13,6 @@ from typing import (
     Tuple,
     Any,
     Final,
-    TypeVar,
 )
 
 import pandas as pd
@@ -36,18 +35,17 @@ from electionguard.elgamal import (
 )
 from electionguard.encrypt import encrypt_ballot
 from electionguard.group import ElementModQ, rand_q, ElementModP
+from electionguard.logs import log_error
 from electionguard.nonces import Nonces
-from electionguard.utils import get_optional
 from ray import ObjectRef
 from ray.actor import ActorHandle
 
 from arlo_e2e.dominion import DominionCSV, BallotPlaintextFactory
 from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.manifest import Manifest, make_fresh_manifest, manifest_name_to_filename
+from arlo_e2e.manifest import Manifest, make_fresh_manifest, make_existing_manifest
 from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.ray_helpers import ray_wait_for_workers
-from arlo_e2e.ray_progress import ProgressBar
-from arlo_e2e.ray_reduce import ray_reduce_with_ray_wait
+from arlo_e2e.ray_map_reduce import MapReduceContext, RayMapReducer
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
     TALLY_TYPE,
@@ -67,8 +65,8 @@ from arlo_e2e.utils import shard_list_uniform, mkdir_helper
 # This is how many times we'll retry each write until it works.
 NUM_WRITE_RETRIES: Final = 10
 
-# These constants define how we shard up the ballot processing
-BATCH_SIZE: Final = 10000
+# These constants define how we shard up the ballot processing for the map-reduce pipeline
+MAX_CONCURRENT_TASKS: Final = 5000
 BALLOTS_PER_SHARD: Final = 4
 PARTIAL_TALLIES_PER_SHARD: Final = 10
 
@@ -88,8 +86,8 @@ PARTIAL_TALLIES_PER_SHARD: Final = 10
 @ray.remote
 class ManifestAggregatorActor:
     """
-    This is a Ray "actor" to which we'll send all of the partial manifests from within
-    r_encrypt_and_write. They're accumulated as they show up.
+    This is a Ray "actor" to which we'll send all of the partial manifests when doing
+    the encryption and writing to disk. They're aggregated as they show up.
     """
 
     aggregate: Manifest
@@ -111,74 +109,6 @@ class ManifestAggregatorActor:
         return self.aggregate
 
 
-@ray.remote
-def r_encrypt_and_write(
-    ied: InternalElectionDescription,
-    cec: CiphertextElectionContext,
-    seed_hash: ElementModQ,
-    root_dir: Optional[str],
-    manifest_aggregator: Optional[ActorHandle],
-    progressbar_actor: Optional[ActorHandle],
-    bpf: BallotPlaintextFactory,
-    nonces: Nonces,
-    nonce_indices: List[int],
-    *plaintext_ballot_dicts: Dict[str, Any],
-) -> Optional[TALLY_TYPE]:  # pragma: no cover
-    """
-    Remotely encrypts a list of ballots and their associated nonces. If a `root_dir`
-    is specified, the encrypted ballots are written to disk, otherwise no disk activity.
-    What's returned is a `RemoteTallyResult`. If the ballots were written, the
-    `manifest_aggregator` actor will be notified. A "partial tally" of the
-    encrypted ballots is returned.
-    """
-
-    try:
-        manifest = make_fresh_manifest(root_dir) if root_dir is not None else None
-
-        num_ballots = len(plaintext_ballot_dicts)
-        assert (
-            len(nonce_indices) == num_ballots
-        ), "mismatching numbers of nonces and ballots!"
-        assert num_ballots > 0, "need at least one ballot"
-
-        ptally_final: Optional[TALLY_TYPE] = None
-        for i in range(0, num_ballots):
-            pballot = bpf.row_to_plaintext_ballot(plaintext_ballot_dicts[i])
-            cballot = ciphertext_ballot_to_accepted(
-                get_optional(
-                    encrypt_ballot(
-                        pballot,
-                        ied,
-                        cec,
-                        seed_hash,
-                        nonces[nonce_indices[i]],
-                        should_verify_proofs=False,
-                    )
-                )
-            )
-            if manifest is not None:
-                manifest.write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
-
-            if progressbar_actor is not None:
-                progressbar_actor.update_completed.remote("Ballots", 1)
-
-            ptally = ciphertext_ballot_to_dict(cballot)
-            ptally_final = (
-                sequential_tally([ptally_final, ptally]) if ptally_final else ptally
-            )
-
-            if progressbar_actor is not None:
-                progressbar_actor.update_completed.remote("Tallies", 1)
-
-        if manifest is not None and manifest_aggregator is not None:
-            manifest_aggregator.add.remote(manifest)
-
-        return ptally_final
-    except Exception as e:
-        log_and_print(f"Unexpected exception in r_encrypt_and_write: {e}", True)
-        return None
-
-
 def partial_tally(
     progressbar_actor: Optional[ActorHandle],
     *ptallies: Optional[TALLY_TYPE],
@@ -198,6 +128,8 @@ def partial_tally(
 
     if None in ptallies:
         return None
+    if progressbar_actor:
+        progressbar_actor.update_num_concurrent.remote("Tallies", 1)
 
     num_ptallies = len(ptallies)
 
@@ -207,70 +139,9 @@ def partial_tally(
         ), "type failure: we were expecting a dict (TALLY_TYPE), not an objectref"
 
     result: TALLY_TYPE = sequential_tally(ptallies)
-    if progressbar_actor is not None:
+    if progressbar_actor:
         progressbar_actor.update_completed.remote("Tallies", num_ptallies)
-    return result
-
-
-@ray.remote
-def r_partial_tally(
-    progressbar_actor: Optional[ActorHandle],
-    *ptallies: Optional[TALLY_TYPE],
-) -> Optional[TALLY_TYPE]:  # pragma: no cover
-    """
-    This is a front-end for `partial_tally`, that can be called remotely via Ray.
-    """
-    try:
-        result = partial_tally(progressbar_actor, *ptallies)
-        return result
-    except Exception as e:
-        log_and_print(f"Unexpected exception in r_partial_tally: {e}", True)
-        return None
-
-
-def ray_tally_ballots(
-    ptallies: Sequence[ObjectRef],  # Sequence[ObjectRef[Optional[TALLY_TYPE]]]
-    bps: int,
-    progressbar: Optional[ProgressBar] = None,
-) -> ObjectRef:
-    """
-    Launches a parallel tally reduction tree, with a fanout based on `bps` ballots per shard. Returns
-    a Ray ObjectRef reference to the future result, which the caller will then need to call
-    `ray.get()` to retrieve. The input is expected to be a sequence of references to ballots.
-    """
-
-    # The shards used for encryption can be pretty small, since there's so much work
-    # being done per shard. For tallying, it's a lot less work, so having a bigger
-    # number here speeds things up by having fewer rounds of tally reduction.
-    bps = max(10, bps)
-
-    assert not isinstance(
-        ptallies, Dict
-    ), "type failure: got a dict when we should have gotten a sequence"
-    assert bps > 1, f"bps = {bps}, should be greater than 1"
-
-    bps = max(10, bps)
-
-    progressbar_actor = progressbar.actor if progressbar else None
-
-    # Potential scalability issues in ray.wait if it's called with 100k objects, but seem to work.
-
-    result = ray_reduce_with_ray_wait(
-        ptallies,
-        bps,
-        progressbar_actor,
-        r_partial_tally.remote,
-        progressbar,
-        "Tallies",
-        timeout=0.5,
-    )
-
-    # Original algorithm. Doesn't use ray.wait explicitly, but instead creates a reduction
-    # tree. Doesn't launch reduction jobs as quickly, so it's slightly less efficient.
-
-    # result: Optional[TALLY_TYPE] = ray_reduce_with_rounds(
-    #     ptallies, bps, progressbar_actor, r_partial_tally.remote, progressbar, "Tallies"
-    # )
+        progressbar_actor.update_num_concurrent.remote("Tallies", -1)
     return result
 
 
@@ -334,22 +205,90 @@ def ray_decrypt_tally(
     }
 
 
-T = TypeVar("T")
-U = TypeVar("U")
+# a dict-style plaintext ballot (the output of the CSV parser), and an index into a nonce-generator
+TALLY_MAP_INPUT_TYPE = Tuple[Dict[str, Any], int]
 
 
-def left_tuple_list(input: Sequence[Tuple[T, U]]) -> List[T]:
-    """
-    Given a sequence or list of tuples, returns a list of just the left elements.
-    """
-    return [t for t, u in input]
+class BallotTallyContext(MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_TYPE]]):
+    _ied: InternalElectionDescription
+    _cec: CiphertextElectionContext
+    _seed_hash: ElementModQ
+    _root_dir: Optional[str]
+    _manifest_aggregator: Optional[ActorHandle]
+    _bpf: BallotPlaintextFactory
+    _nonces: Nonces
 
+    def map(self, tuple: TALLY_MAP_INPUT_TYPE) -> Optional[TALLY_TYPE]:
+        pballot_dict, nonce_index = tuple
+        pballot = self._bpf.row_to_plaintext_ballot(pballot_dict)
+        cballot_option = encrypt_ballot(
+            pballot,
+            self._ied,
+            self._cec,
+            self._seed_hash,
+            self._nonces[nonce_index],
+            should_verify_proofs=False,
+        )
+        if cballot_option is None:
+            log_error(f"failed to encrypt ballot {nonce_index}: {pballot_dict}")
+            return None
 
-def right_tuple_list(input: Sequence[Tuple[T, U]]) -> List[U]:
-    """
-    Given a sequence or list of tuples, returns a list of just the right elements.
-    """
-    return [u for t, u in input]
+        cballot = ciphertext_ballot_to_accepted(cballot_option)
+
+        if self._root_dir is not None and self._manifest_aggregator is not None:
+            manifest = make_fresh_manifest(self._root_dir, delete_existing=False)
+            manifest.write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
+            self._manifest_aggregator.add.remote(manifest)
+
+        return ciphertext_ballot_to_dict(cballot)
+
+    def reduce(self, ptallies: List[Optional[TALLY_TYPE]]) -> Optional[TALLY_TYPE]:
+        num_ptallies = len(ptallies)
+
+        if None in ptallies:
+            return None
+
+        if num_ptallies > 0:
+            assert isinstance(
+                ptallies[0], Dict
+            ), "type failure: we were expecting a dict (TALLY_TYPE), not an objectref"
+
+        return sequential_tally(ptallies)
+
+    def zero(self) -> Optional[TALLY_TYPE]:
+        return {}  # an empty tally dict
+
+    def get_final_manifest(self) -> Optional[Manifest]:
+        if self._manifest_aggregator is None:
+            return None
+        else:
+            manifest_result: Optional[Manifest] = ray.get(
+                self._manifest_aggregator.result.remote()
+            )
+            return manifest_result
+
+    def __init__(
+        self,
+        ied: InternalElectionDescription,
+        cec: CiphertextElectionContext,
+        seed_hash: ElementModQ,
+        root_dir: Optional[str],
+        bpf: BallotPlaintextFactory,
+        nonces: Nonces,
+    ):
+        self._ied = ied
+        self._cec = cec
+        self._seed_hash = seed_hash
+        self._root_dir = root_dir
+        self._manifest_aggregator = (
+            # Ray actors don't seem to play nice with mypy, generating a spurious warning
+            # for the following line, which we need to suppress. The code is fine.
+            ManifestAggregatorActor.remote(root_dir)  # type: ignore
+            if root_dir is not None
+            else None
+        )
+        self._bpf = bpf
+        self._nonces = nonces
 
 
 def ray_tally_everything(
@@ -387,11 +326,6 @@ def ray_tally_everything(
 
     if root_dir is not None:
         mkdir_helper(root_dir, num_retries=NUM_WRITE_RETRIES)
-        r_manifest_aggregator = ManifestAggregatorActor.remote(root_dir)  # type: ignore
-    else:
-        r_manifest_aggregator = None
-
-    r_root_dir = ray.put(root_dir)
 
     start_time = timer()
 
@@ -415,6 +349,8 @@ def ray_tally_everything(
         else elgamal_keypair_from_secret(secret_key)
     )
     assert keypair is not None, "unexpected failure with keypair computation"
+    r_keypair = ray.put(keypair)
+
     secret_key, public_key = keypair
 
     cec = make_ciphertext_election_context(
@@ -426,89 +362,31 @@ def ray_tally_everything(
     r_cec = ray.put(cec)
 
     ied = InternalElectionDescription(ed)
-    r_ied = ray.put(ied)
 
     if seed_hash is None:
         seed_hash = rand_q()
-    r_seed_hash = ray.put(seed_hash)
-    r_keypair = ray.put(keypair)
-
-    r_ballot_plaintext_factory = ray.put(bpf)
 
     if master_nonce is None:
         master_nonce = rand_q()
 
     nonces = Nonces(master_nonce)
-    r_nonces = ray.put(nonces)
-    nonce_indices = range(num_ballots)
 
+    btc = BallotTallyContext(ied, cec, seed_hash, root_dir, bpf, nonces)
+
+    nonce_indices = range(num_ballots)
     inputs = list(zip(ballot_dicts, nonce_indices))
 
-    batches = shard_list_uniform(inputs, BATCH_SIZE)
-    num_batches = len(batches)
-    log_and_print(
-        f"Launching Ray.io remote encryption! (number of batches: {num_batches})"
+    rmr = RayMapReducer(
+        context=btc,
+        use_progressbar=use_progressbar,
+        input_description="Ballots",
+        reduction_description="Tallies",
+        max_tasks=MAX_CONCURRENT_TASKS,
+        map_shard_size=BALLOTS_PER_SHARD,
+        reduce_shard_size=PARTIAL_TALLIES_PER_SHARD,
     )
 
-    start_time = timer()
-
-    progressbar = (
-        ProgressBar(
-            {
-                "Ballots": num_ballots,
-                "Tallies": num_ballots,
-                "Iterations": 0,
-                "Batch": 0,
-            }
-        )
-        if use_progressbar
-        else None
-    )
-    progressbar_actor = progressbar.actor if progressbar is not None else None
-
-    batch_tallies: List[ObjectRef] = []
-    for batch in batches:
-        if progressbar_actor:
-            progressbar_actor.update_completed.remote("Batch", 1)
-
-        num_ballots_in_batch = len(batch)
-        sharded_inputs = shard_list_uniform(batch, BALLOTS_PER_SHARD)
-        num_shards = len(sharded_inputs)
-
-        partial_tally_refs = [
-            r_encrypt_and_write.remote(
-                r_ied,
-                r_cec,
-                r_seed_hash,
-                r_root_dir,
-                r_manifest_aggregator,
-                progressbar_actor,
-                r_ballot_plaintext_factory,
-                r_nonces,
-                right_tuple_list(shard),
-                *(left_tuple_list(shard)),
-            )
-            for shard in sharded_inputs
-        ]
-
-        # log_and_print("Remote tallying.")
-        btally = ray_tally_ballots(partial_tally_refs, BALLOTS_PER_SHARD, progressbar)
-        batch_tallies.append(btally)
-
-    # Each batch ultimately yields one partial tally; we add these up here at the
-    # very end. If we have a million ballots and have batches of 10k ballots, this
-    # would mean we'd have only 100 partial tallies. So, what's here works just fine.
-    # If we wanted, we could certainly burn some scalar time and keep a running,
-    # singular, partial tally. It's probably more important to push onward to the
-    # next batch, so we can do as much work in parallel as possible.
-
-    if len(batch_tallies) > 1:
-        tally = ray.get(ray_tally_ballots(batch_tallies, 10, progressbar))
-    else:
-        tally = ray.get(batch_tallies[0])
-
-    if progressbar:
-        progressbar.close()
+    tally = rmr.map_reduce(inputs)
 
     assert tally is not None, "tally failed!"
 
@@ -536,7 +414,8 @@ def ray_tally_everything(
     final_manifest: Optional[Manifest] = None
 
     if root_dir is not None:
-        final_manifest = ray.get(r_manifest_aggregator.result.remote())
+        final_manifest = btc.get_final_manifest()
+        assert final_manifest is not None, "manifest should not have been none!"
         assert isinstance(
             final_manifest, Manifest
         ), "type error: bad result from manifest aggregation"
@@ -573,6 +452,60 @@ def ray_tally_everything(
     )
 
 
+class BallotVerifyContext(MapReduceContext[str, Optional[TALLY_TYPE]]):
+    _public_key: ElementModP
+    _hash_header: ElementModQ
+    _cec: CiphertextElectionContext
+    _root_dir: str
+    _manifest: Manifest
+
+    def map(self, filename: str) -> Optional[TALLY_TYPE]:
+        cballot = self._manifest.load_ciphertext_ballot(filename)
+
+        if cballot is None:
+            return None
+
+        is_valid = cballot.is_valid_encryption(
+            cballot.description_hash, self._public_key, self._hash_header
+        )
+
+        if is_valid:
+            return ciphertext_ballot_to_dict(cballot)
+        else:
+            return None
+
+    def reduce(self, ptallies: List[Optional[TALLY_TYPE]]) -> Optional[TALLY_TYPE]:
+        num_ptallies = len(ptallies)
+
+        if None in ptallies:
+            return None
+
+        if num_ptallies > 0:
+            assert isinstance(
+                ptallies[0], Dict
+            ), "type failure: we were expecting a dict (TALLY_TYPE), not an objectref"
+
+        return sequential_tally(ptallies)
+
+    def zero(self) -> Optional[TALLY_TYPE]:
+        return {}  # an empty tally dict
+
+    def __init__(
+        self,
+        public_key: ElementModP,
+        hash_header: ElementModQ,
+        root_dir: str,
+    ):
+        self._public_key = public_key
+        self._hash_header = hash_header
+        self._root_dir = root_dir
+        manifest = make_existing_manifest(root_dir)
+        if manifest is None:
+            raise RuntimeError("unexpected failure to make a manifest!")
+        else:
+            self._manifest = manifest
+
+
 @ray.remote
 def r_verify_tally_selection_proofs(
     public_key: ElementModP,
@@ -590,71 +523,6 @@ def r_verify_tally_selection_proofs(
             f"Unexpected exception in r_verify_tally_selection_proofs: {e}", True
         )
         return False
-
-
-def manifest_ballot_name_to_cballot(
-    manifest: Manifest, manifest_name: str
-) -> Optional[CiphertextAcceptedBallot]:
-    """
-    Helper to fetch a ballot from disk.
-    """
-    filename = manifest_name_to_filename(manifest_name)
-    ballot = manifest.read_json_file(filename, CiphertextAcceptedBallot)
-    return ballot
-
-
-@ray.remote
-def r_verify_ballot_proofs(
-    manifest: Manifest,
-    public_key: ElementModP,
-    hash_header: ElementModQ,
-    progressbar_actor: Optional[ActorHandle],
-    *cballot_filenames: str,
-) -> Optional[TALLY_TYPE]:  # pragma: no cover
-    """
-    Given a list of ballots, verify their Chaum-Pedersen proofs and redo the tally.
-    Returns `None` if anything didn't verify correctly, otherwise a partial tally
-    of the ballots (of type `TALLY_TYPE`).
-    """
-
-    # We're never moving ciphertext ballots through Ray's remote object system. Instead,
-    # we've got filenames coming in. We load the ciphertext ballots, verify them, and
-    # we're immediately done with them.  This puts a lot of pressure on the filesystem
-    # but S3 buckets, Azure blob storage, etc. can handle it.
-
-    try:
-        valid_count = 0
-        num_ballots = len(cballot_filenames)
-        ptallies: List[TALLY_TYPE] = []
-
-        for name in cballot_filenames:
-            cballot = manifest.load_ciphertext_ballot(name)
-
-            if cballot is None:
-                return None
-
-            is_valid = cballot.is_valid_encryption(
-                cballot.description_hash, public_key, hash_header
-            )
-            if is_valid:
-                valid_count = valid_count + 1
-            if progressbar_actor is not None:
-                progressbar_actor.update_completed.remote("Ballots", 1)
-
-            ptallies.append(ciphertext_ballot_to_dict(cballot))
-
-        if valid_count < num_ballots:
-            # log_and_print(f"Only {valid_count} of {num_ballots} ballots are valid.")
-            return None
-
-        ptally = sequential_tally(ptallies)
-        if progressbar_actor is not None:
-            progressbar_actor.update_completed.remote("Tallies", num_ballots)
-
-        return ptally
-    except Exception as e:
-        log_and_print(f"Unexpected exception in r_verify_ballot_proofs: {e}", True)
-        return None
 
 
 class RayTallyEverythingResults(NamedTuple):
@@ -792,73 +660,28 @@ class RayTallyEverythingResults(NamedTuple):
             # show the progress bar, even if verbose is false
             num_ballots = self.num_ballots
 
-            r_manifest = ray.put(self.manifest)
-
-            progressbar = (
-                ProgressBar(
-                    {
-                        "Ballots": num_ballots,
-                        "Tallies": num_ballots,
-                        "Iterations": 0,
-                        "Batch": 0,
-                    }
-                )
-                if use_progressbar
-                else None
-            )
-            progressbar_actor = progressbar.actor if progressbar is not None else None
-
-            ballot_start = timer()
-
-            batches: Sequence[Sequence[str]] = shard_list_uniform(
-                self.cvr_metadata["BallotId"], BATCH_SIZE
-            )
+            ballot_ids = self.cvr_metadata["BallotId"]
 
             # List[ObjectRef[Optional[TALLY_TYPE]]]
             recomputed_tallies: List[ObjectRef] = []
 
-            for batch in batches:
-                if progressbar_actor:
-                    progressbar_actor.update_completed.remote("Batch", 1)
+            ballot_start = timer()
 
-                cballot_manifest_name_shards: Sequence[
-                    Sequence[str]
-                ] = shard_list_uniform(batch, BALLOTS_PER_SHARD)
-
-                # List[ObjectRef[Optional[TALLY_TYPE]]]
-                ballot_results: List[ObjectRef] = [
-                    r_verify_ballot_proofs.remote(
-                        r_manifest,
-                        r_public_key,
-                        r_hash_header,
-                        progressbar_actor,
-                        *shard,
-                    )
-                    for shard in cballot_manifest_name_shards
-                ]
-                # ray.wait(
-                #     ballot_results,
-                #     num_returns=len(cballot_manifest_name_shards),
-                #     timeout=None,
-                # )
-                # log_and_print("Recomputing tallies.", verbose)
-
-                ptally = ray_tally_ballots(
-                    ballot_results, PARTIAL_TALLIES_PER_SHARD, progressbar
-                )
-                recomputed_tallies.append(ptally)
-
-            if len(recomputed_tallies) > 1:
-                recomputed_tally = ray.get(
-                    ray_tally_ballots(
-                        recomputed_tallies, PARTIAL_TALLIES_PER_SHARD, progressbar
-                    )
-                )
-            else:
-                recomputed_tally = ray.get(recomputed_tallies[0])
-
-            if progressbar:
-                progressbar.close()
+            bvc = BallotVerifyContext(
+                self.context.elgamal_public_key,
+                self.context.crypto_extended_base_hash,
+                self.manifest.root_dir,
+            )
+            rmr = RayMapReducer(
+                context=bvc,
+                use_progressbar=use_progressbar,
+                input_description="Ballots",
+                reduction_description="Tallies",
+                max_tasks=MAX_CONCURRENT_TASKS,
+                map_shard_size=BALLOTS_PER_SHARD,
+                reduce_shard_size=PARTIAL_TALLIES_PER_SHARD,
+            )
+            recomputed_tally = rmr.map_reduce(ballot_ids)
 
             if not recomputed_tally:
                 return False

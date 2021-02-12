@@ -16,12 +16,16 @@ class ProgressBarState:
 
     counter: int
     total: int
+    num_concurrent: int
 
     def update_completed(self, delta_num_items_completed: int) -> None:
         self.counter += delta_num_items_completed
 
     def update_total(self, delta_total: int) -> None:
         self.total += delta_total
+
+    def update_num_concurrent(self, delta_concurrent: int) -> None:
+        self.num_concurrent += delta_concurrent
 
 
 @ray.remote
@@ -36,8 +40,19 @@ class ProgressBarActor:
     event: Event
 
     def __init__(self, totals: Dict[str, int]) -> None:
-        self.state = {key: ProgressBarState(0, totals[key]) for key in totals.keys()}
+        self.state = {key: ProgressBarState(0, totals[key], 0) for key in totals.keys()}
         self.event = Event()
+
+    def update_num_concurrent(self, key: str, delta_num_concurrent: int) -> None:
+        """
+        Updates a "postfix" for the ProgressBar key that indicates how many
+        concurrent tasks are working on that key.
+        """
+        assert (
+            key in self.state
+        ), f"error: used key {key}, which isn't in ({list(self.state.keys())})"
+        self.state[key].update_num_concurrent(delta_num_concurrent)
+        self.event.set()
 
     def update_completed(self, key: str, delta_num_items_completed: int) -> None:
         """
@@ -139,6 +154,7 @@ class ProgressBar:
                 p: tqdm = self.progress_bars[k]
                 p.n = s.counter
                 p.total = s.total
+                p.set_postfix(running=s.num_concurrent)
                 p.refresh()
                 complete = complete and s.counter >= s.total
             if complete:
