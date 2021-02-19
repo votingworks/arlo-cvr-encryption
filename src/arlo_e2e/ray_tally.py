@@ -13,6 +13,7 @@ from typing import (
     Tuple,
     Any,
     Final,
+    Iterable,
 )
 
 import pandas as pd
@@ -59,7 +60,7 @@ from arlo_e2e.tally import (
     DecryptOutput,
     DecryptInput,
 )
-from arlo_e2e.utils import shard_list_uniform, mkdir_helper
+from arlo_e2e.utils import shard_iterable_uniform, mkdir_helper, shard_list_uniform
 
 # When we're writing files to s3fs, we'll rarely see failures, but with enough files, it's a certainty.
 # This is how many times we'll retry each write until it works.
@@ -374,7 +375,7 @@ def ray_tally_everything(
     btc = BallotTallyContext(ied, cec, seed_hash, root_dir, bpf, nonces)
 
     nonce_indices = range(num_ballots)
-    inputs = list(zip(ballot_dicts, nonce_indices))
+    inputs = zip(ballot_dicts, nonce_indices)
 
     rmr = RayMapReducer(
         context=btc,
@@ -386,7 +387,7 @@ def ray_tally_everything(
         reduce_shard_size=PARTIAL_TALLIES_PER_SHARD,
     )
 
-    tally = rmr.map_reduce(inputs)
+    tally = rmr.map_reduce_iterable(inputs, num_inputs=len(ballot_dicts))
 
     assert tally is not None, "tally failed!"
 
@@ -629,8 +630,9 @@ class RayTallyEverythingResults(NamedTuple):
 
         start = timer()
         selections = self.tally.map.values()
-        sharded_selections: Sequence[Sequence[SelectionInfo]] = shard_list_uniform(
-            selections, 2
+        num_selections = len(selections)
+        sharded_selections = shard_iterable_uniform(
+            selections, 2, num_inputs=num_selections
         )
 
         # parallelizing this is overkill, but why not?
@@ -681,7 +683,7 @@ class RayTallyEverythingResults(NamedTuple):
                 map_shard_size=BALLOTS_PER_SHARD,
                 reduce_shard_size=PARTIAL_TALLIES_PER_SHARD,
             )
-            recomputed_tally = rmr.map_reduce(ballot_ids)
+            recomputed_tally = rmr.map_reduce_list(ballot_ids)
 
             if not recomputed_tally:
                 return False

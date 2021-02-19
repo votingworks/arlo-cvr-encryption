@@ -2,7 +2,8 @@
 # of tasks in flight to be only a small multiple of the number of active workers, and it tries to
 # run reduction tasks quickly to minimize the lifetimes of intermediate results.
 from abc import ABC, abstractmethod
-from typing import TypeVar, Generic, Optional, List, Tuple
+from typing import TypeVar, Generic, Optional, List, Tuple, Iterable, Sequence
+from more_itertools import peekable
 
 import ray
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ from ray import ObjectRef
 from ray.actor import ActorHandle
 
 from arlo_e2e.ray_progress import ProgressBar
-from arlo_e2e.utils import shard_list_uniform
+from arlo_e2e.utils import shard_iterable_uniform, first_n, shard_list_uniform
 
 T = TypeVar("T")
 """The input type for the map methods."""
@@ -58,8 +59,8 @@ class MapReduceContext(ABC, Generic[T, R]):
 
     And then run it with::
       rmr = RayMapReducer(context=StringLengthContext())
-      total1 = rmr.map_reduce(["ABC", "DEFGH", "I", "", "J"]))  # --> 10
-      total2 = rmr.map_reduce([]))  # --> 0
+      total1 = rmr.map_reduce_iterable(["ABC", "DEFGH", "I", "", "J"]))  # --> 10
+      total2 = rmr.map_reduce_iterable([]))  # --> 0
     """
 
     @abstractmethod
@@ -153,7 +154,7 @@ def _ray_mr_reduce(
 class RayMapReducer(Generic[T, R]):
     """
     This is the handle for launching a map-reduce computation. You create one of these
-    using the constructor, and afterward you call the `map_reduce` or `map_reduce_vararg`
+    using the constructor, and afterward you call the `map_reduce_iterable` or `map_reduce_vararg`
     method with your inputs. All of the parallelism is handled inside, and all the calls
     into your custom code, supplied via the `MapReduceContext` instance you'll create,
     will run in parallel.
@@ -175,19 +176,24 @@ class RayMapReducer(Generic[T, R]):
     _map_shard_size: int
     _reduce_shard_size: int
 
-    def map_reduce(self, input: List[T]) -> R:
+    def map_reduce_list(self, input: Sequence[T]) -> R:
         """
-        Given zero or more inputs, passed as a Python list, runs the map and reduce tasks.
+        Given zero or more inputs, passed as a Python list or other "sized" input sequence, runs
+        the map and reduce tasks.
         """
-        return self.map_reduce_vararg(*input)
 
-    def map_reduce_vararg(self, *input: T) -> R:
+        return self.map_reduce_iterable(input, len(input))
+
+    def map_reduce_iterable(self, input: Iterable[T], num_inputs: int) -> R:
         """
-        Given zero or more inputs, passed vararg style, runs the map and reduce tasks.
+        Given zero or more inputs, passed as a Python iterable, runs the map and reduce tasks.
+        Since the input can be *any* iterable, we can't just directly ask it for its length,
+        so the length needs to be passed here as another parameter. If your input knows its
+        size, then you can use `map_reduce_list` instead.
         """
-        num_inputs = len(input)
-        # log_and_print(f"Launching map-reduce task with {num_inputs} inputs")
-        if num_inputs == 0:
+
+        input = peekable(input)
+        if not input:
             return self._context.zero()
 
         progressbar: Optional[ProgressBar] = None
@@ -202,7 +208,9 @@ class RayMapReducer(Generic[T, R]):
             )
             progress_actor = progressbar.actor
 
-        pending_map_shards = shard_list_uniform(input, self._map_shard_size)
+        pending_map_shards = peekable(
+            shard_iterable_uniform(input, self._map_shard_size, num_inputs)
+        )
         running_jobs: List[ObjectRef] = []
         ready_refs: List[ObjectRef] = []
 
@@ -212,21 +220,20 @@ class RayMapReducer(Generic[T, R]):
         iterations = 0
         result: Optional[ObjectRef] = None
 
-        while (
-            len(pending_map_shards) > 0 or len(running_jobs) > 0 or len(ready_refs) > 0
-        ):
+        while pending_map_shards or len(running_jobs) > 0 or len(ready_refs) > 0:
             if progressbar:
                 progressbar.print_update()
             iterations += 1
+
             # print(
-            #     f"{iterations:4d}: Pending map shards: {len(pending_map_shards)}, running jobs: {len(running_jobs)}"
+            #     f"{iterations:4d}: Pending map shards? {bool(pending_map_shards)}, running jobs: {len(running_jobs)}"
             # )
 
             # first, see if we can add anything new to the job queue
-            if len(running_jobs) < self._max_tasks and len(pending_map_shards) > 0:
+            if (len(running_jobs) < self._max_tasks) and pending_map_shards:
                 num_new_jobs = self._max_tasks - len(running_jobs)
-                shards_to_launch = pending_map_shards[0:num_new_jobs]
-                pending_map_shards = pending_map_shards[num_new_jobs:]
+                shards_to_launch = first_n(pending_map_shards, num_new_jobs)
+
                 new_job_refs = [
                     _ray_mr_map.remote(
                         context_ref,
@@ -256,7 +263,7 @@ class RayMapReducer(Generic[T, R]):
             if (
                 num_ready_refs == 1
                 and num_pending_refs == 0
-                and len(pending_map_shards) == 0
+                and (not pending_map_shards)
             ):
                 # terminal case: we have one result and nothing pending; we're done!
                 result = ready_refs[0]
@@ -265,7 +272,9 @@ class RayMapReducer(Generic[T, R]):
             if num_ready_refs >= 2:
                 # general case: we have some results to reduce
 
-                reduce_shards = shard_list_uniform(ready_refs, self._reduce_shard_size)
+                reduce_shards = list(
+                    shard_list_uniform(ready_refs, self._reduce_shard_size)
+                )
                 size_one_shards = [s for s in reduce_shards if len(s) == 1]
                 usable_shards = [s for s in reduce_shards if len(s) > 1]
                 total_usable = sum(len(s) for s in usable_shards)

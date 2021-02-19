@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import dataclass
 from datetime import timedelta
 from timeit import default_timer as timer
 from typing import List, Tuple
@@ -62,8 +63,7 @@ class TestRayMapReduce(unittest.TestCase):
             input_description="Strings",
             reduction_description="Adds",
         )
-        self.assertEqual(0, rmr.map_reduce([]))
-        self.assertEqual(0, rmr.map_reduce_vararg())
+        self.assertEqual(0, rmr.map_reduce_list([]))
 
     def test_string_map_reduce_simple(self) -> None:
         rmr = RayMapReducer(
@@ -72,8 +72,22 @@ class TestRayMapReduce(unittest.TestCase):
             input_description="Strings",
             reduction_description="Adds",
         )
-        self.assertEqual(10, rmr.map_reduce(["ABC", "DEFGH", "I", "", "J"]))
-        self.assertEqual(10, rmr.map_reduce_vararg("ABC", "DEFGH", "I", "", "J"))
+        self.assertEqual(10, rmr.map_reduce_list(["ABC", "DEFGH", "I", "", "J"]))
+
+    def test_generator_map_reduce(self) -> None:
+        rmr = RayMapReducer(
+            context=StringLengthContext(),
+            use_progressbar=False,
+            input_description="Strings",
+            reduction_description="Adds",
+        )
+        # the (... for x in ...) style yields a lazy generator, which we want to support
+        self.assertEqual(
+            20,
+            rmr.map_reduce_iterable(
+                (f"<{x}>" for x in ["ABC", "DEFGH", "I", "", "J"]), num_inputs=5
+            ),
+        )
 
     @settings(deadline=None)
     @given(lists(text(min_size=0, max_size=20), min_size=0, max_size=50))
@@ -85,7 +99,7 @@ class TestRayMapReduce(unittest.TestCase):
             input_description="Strings",
             reduction_description="Adds",
         )
-        actual_result = rmr.map_reduce(input)
+        actual_result = rmr.map_reduce_list(input)
 
         self.assertEqual(expected_result, actual_result)
 
@@ -192,7 +206,7 @@ class TestRayMapReduce(unittest.TestCase):
             reduce_shard_size=reduce_shard_size,
         )
 
-        actual_sum = rmr.map_reduce(inputs)
+        actual_sum = rmr.map_reduce_list(inputs)
         end_time = timer()
         log_and_print(
             f"Map-reduce version: {len(counters) / (end_time - start_time):0.3f} inputs/sec"

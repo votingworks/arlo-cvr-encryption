@@ -18,6 +18,7 @@ from electionguard.logs import log_error
 from electionguard.serializable import Serializable
 from electionguard.utils import flatmap_optional
 from jsons import DecodeError, UnfulfilledArgumentError
+from more_itertools import peekable
 
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.ray_write_retry import write_file_with_retries
@@ -35,62 +36,114 @@ that take forever to list or interact with.
 """
 
 
-def flatmap(f: Callable[[T], Iterable[U]], li: Iterable[T]) -> Sequence[U]:
+def first_n(input: Iterable[T], n: int) -> Sequence[T]:
+    """
+    Assuming the iterable has at least `n` elements, then that many will be
+    returned and consumed from the `input`. If there are fewer than `n` elements,
+    then that's how many you get. So, an empty input will yield an empty output.
+    """
+
+    # We could ostensibly generate our output lazily, rather than computing
+    # it all at once, but when the underlying input is iterable, that seems
+    # like a recipe for incomprehensible bugs, so we're instead doing this
+    # computation eagerly.
+
+    output: List[T] = []
+    input = iter(input)  # convert Iterable -> Iterator
+
+    while n > 0:
+        try:
+            output.append(next(input))
+        except StopIteration:
+            break
+        n = n - 1
+
+    return output
+
+
+def flatmap(f: Callable[[T], Iterable[U]], li: Iterable[T]) -> Iterable[U]:
     """
     General-purpose flatmapping on sequences/lists/iterables. The lambda is
     expected to return a list of items for each input in the original list `li`,
     and all those lists are concatenated together.
+
+    Note: This computation executes *lazily* on the input, and the output
+    is ephemeral. Convert the output to a list to have a persistent result.
     """
     mapped = map(f, li)
 
-    # This function eagerly computes its result. The below link tries to do it in a
-    # more lazy fashion using Python's yield keyword. Might be worth investigating.
-    # https://stackoverflow.com/questions/53509826/equivalent-to-pyspark-flatmap-in-python
-
-    result: List[U] = []
     for item in mapped:
         for subitem in item:
-            result.append(subitem)
-    return result
+            yield subitem
 
 
-def shard_list(input: Iterable[T], num_per_group: int) -> Sequence[Sequence[T]]:
+def shard_iterable(input: Iterable[T], num_per_group: int) -> Iterable[Sequence[T]]:
     """
     Breaks a list up into a list of lists, with `num_per_group` entries in each group,
     except for the final group which might be smaller. Useful for many things, including
     dividing up work units for parallel dispatch.
+
+    Note: This computation executes *lazily* on the input, and the output
+    is ephemeral. Convert the output to a list to have a persistent result.
+    Also, while the output iterable is generated lazy, each list within it
+    is generated eagerly. This seems to simplify many things.
     """
     assert num_per_group >= 1, "need a positive number of list elements per group"
     input_list = list(input)
     length = len(input_list)
-    return [input_list[i : i + num_per_group] for i in range(0, length, num_per_group)]
+    return (input_list[i : i + num_per_group] for i in range(0, length, num_per_group))
 
 
-def shard_list_uniform(input: Iterable[T], num_per_group: int) -> Sequence[Sequence[T]]:
+def shard_list_uniform(input: Sequence[T], num_per_group: int) -> Iterable[Sequence[T]]:
     """
-    Similar to `shard_list`, but using a error residual propagation technique
+    Similar to `shard_iterable`, but using a error residual propagation technique
     to ensure that the minimum and maximum number of elements per shard differ
     by at most one. The maximum number of elements per group will be less than
     or equal to `num_per_group`.
+
+    Note: This computation executes *lazily* on the input, and the output
+    is ephemeral. Convert the output to a list to have a persistent result.
+    Also, while the output iterable is generated lazy, each list within it
+    is generated eagerly. This seems to simplify many things.
+    """
+
+    return shard_iterable_uniform(input, num_per_group, len(input))
+
+
+def shard_iterable_uniform(
+    input: Iterable[T], num_per_group: int, num_inputs: int
+) -> Iterable[Sequence[T]]:
+    """
+    Similar to `shard_iterable`, but using a error residual propagation technique
+    to ensure that the minimum and maximum number of elements per shard differ
+    by at most one. The maximum number of elements per group will be less than
+    or equal to `num_per_group`. Since the input is an iterable, we don't know
+    its size, which is necessary for the uniform distribution, so you need to
+    pass the size explicitly in `num_inputs`. If you have a list or something
+    else that knows its size, you can use `shard_list_uniform` instead.
+
+    Note: This computation executes *lazily* on the input, and the output
+    is ephemeral. Convert the output to a list to have a persistent result.
+    Also, while the output iterable is generated lazy, each list within it
+    is generated eagerly. This seems to simplify many things.
     """
     assert num_per_group >= 1, "need a positive number of list elements per group"
-    input_list = list(input)
-    length = len(input_list)
-    if length == 0:
+
+    if num_inputs <= 0:
         return []
 
-    num_groups = int(ceil(length / num_per_group))
+    num_groups = int(ceil(num_inputs / num_per_group))
 
     # this will be a floating point number, not an integer
-    num_per_group_revised = length / num_groups
-
-    output = []
+    num_per_group_revised = num_inputs / num_groups
 
     # leftover error, akin to Floyd-Steinberg dithering
     # (https://en.wikipedia.org/wiki/Floyd%E2%80%93Steinberg_dithering)
     residual = 0.0
 
-    while input_list:
+    input = peekable(input)
+
+    while input:
         current_num_per_group_float = num_per_group_revised + residual
         current_num_per_group_int = int(floor(num_per_group_revised + residual))
         residual = current_num_per_group_float - current_num_per_group_int
@@ -101,10 +154,7 @@ def shard_list_uniform(input: Iterable[T], num_per_group: int) -> Sequence[Seque
             current_num_per_group_int += 1
             residual = current_num_per_group_float - current_num_per_group_int
 
-        output.append(input_list[:current_num_per_group_int])
-        input_list = input_list[current_num_per_group_int:]
-
-    return output
+        yield [next(input) for _ in range(0, current_num_per_group_int)]
 
 
 def mkdir_helper(p: Union[str, Path], num_retries: int = 1) -> None:
