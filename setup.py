@@ -56,14 +56,17 @@ setup(
     install_requires=[
         "gmpy2==2.1.0b5",
         "numpy==1.18.2",
-        "pandas==1.0.5",
-        "hypothesis==5.43.3",
+        "pandas==1.2.2",
+        "hypothesis==6.1.1",
         "typish==1.7.0",
         "jsons==1.1.2",
-        "tqdm==4.47.0",
-        "cryptography==3.2",
+        "tqdm==4.56.2",
+        "cryptography==3.3.2",
         "flask==1.1.2",
-        "ray==1.1.0",
+        "ray==1.2.0",
+        "pillow==8.0.1",
+        "qrcode==6.1",
+        "more-itertools==8.7.0",
     ],
     # ElectionGuard is also a requirement, but we're assuming that's being installed elsewhere, since
     # we're using a forked version of it.

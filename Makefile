@@ -5,6 +5,7 @@ WINDOWS_32BIT_GMPY2 ?= packages/gmpy2-2.0.8-cp38-cp38-win32.whl
 WINDOWS_64BIT_GMPY2 ?= packages/gmpy2-2.0.8-cp38-cp38-win_amd64.whl
 OS ?= $(shell python -c 'import platform; print(platform.system())')
 IS_64_BIT ?= $(shell python -c 'from sys import maxsize; print(maxsize > 2**32)')
+PIPENV = python3.8 -m pipenv
 
 all: environment install validate lint coverage
 
@@ -13,8 +14,8 @@ requirements.txt: Pipfile
 
 environment:
 	@echo 🔧 PIPENV SETUP
-	pip install pipenv
-	python -m pipenv install --dev
+	pip3.8 install pipenv
+	$(PIPENV) install --dev
 
 install:
 	@echo 📦 Install Module
@@ -73,6 +74,8 @@ lint:
 	pipenv run python setup.py check --strict --metadata --restructuredtext
 # 	@echo 5.Docstring
 # 	pipenv run pydocstyle
+
+auto-lint: black lint
 
 validate: 
 	@echo ✅ VALIDATE
