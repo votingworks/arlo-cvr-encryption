@@ -79,14 +79,15 @@ def flatmap(f: Callable[[T], Iterable[U]], li: Iterable[T]) -> Iterable[U]:
 
 def shard_iterable(input: Iterable[T], num_per_group: int) -> Iterable[Sequence[T]]:
     """
-    Breaks a list up into a list of lists, with `num_per_group` entries in each group,
-    except for the final group which might be smaller. Useful for many things, including
-    dividing up work units for parallel dispatch.
+    Breaks a list up into a list of lists, with `num_per_group` entries in
+    each group, except for the final group which might be smaller. Useful
+    for many things, including dividing up work units for parallel dispatch.
 
     Note: This computation executes *lazily* on the input, and the output
     is ephemeral. Convert the output to a list to have a persistent result.
     Also, while the output iterable is generated lazy, each list within it
-    is generated eagerly. This seems to simplify many things.
+    is generated eagerly and will be persistent. This hopefully simplifies
+    many things.
     """
     assert num_per_group >= 1, "need a positive number of list elements per group"
     input_list = list(input)
@@ -141,7 +142,7 @@ def shard_iterable_uniform(
     # (https://en.wikipedia.org/wiki/Floyd%E2%80%93Steinberg_dithering)
     residual = 0.0
 
-    input = peekable(input)
+    input = peekable(iter(input))
 
     while input:
         current_num_per_group_float = num_per_group_revised + residual
