@@ -143,9 +143,9 @@ def shard_iterable_uniform(
     # (https://en.wikipedia.org/wiki/Floyd%E2%80%93Steinberg_dithering)
     residual = 0.0
 
-    input = peekable(iter(input))
+    input_iter = peekable(iter(input))
 
-    while input:
+    while input_iter:
         current_num_per_group_float = num_per_group_revised + residual
         current_num_per_group_int = int(floor(num_per_group_revised + residual))
         residual = current_num_per_group_float - current_num_per_group_int
@@ -156,7 +156,7 @@ def shard_iterable_uniform(
             current_num_per_group_int += 1
             residual = current_num_per_group_float - current_num_per_group_int
 
-        yield [next(input) for _ in range(0, current_num_per_group_int)]
+        yield [next(input_iter) for _ in range(0, current_num_per_group_int)]
 
 
 def mkdir_helper(p: Union[str, Path], num_retries: int = 1) -> None:
