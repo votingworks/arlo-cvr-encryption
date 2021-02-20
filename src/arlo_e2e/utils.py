@@ -68,7 +68,8 @@ def flatmap(f: Callable[[T], Iterable[U]], li: Iterable[T]) -> Iterable[U]:
     and all those lists are concatenated together.
 
     Note: This computation executes *lazily* on the input, and the output
-    is ephemeral. Convert the output to a list to have a persistent result.
+    is ephemeral (i.e., you iterate it once and it's gone). Convert the output
+    to a list to have a persistent result.
     """
     mapped = map(f, li)
 
@@ -84,10 +85,9 @@ def shard_iterable(input: Iterable[T], num_per_group: int) -> Iterable[Sequence[
     for many things, including dividing up work units for parallel dispatch.
 
     Note: This computation executes *lazily* on the input, and the output
-    is ephemeral. Convert the output to a list to have a persistent result.
-    Also, while the output iterable is generated lazy, each list within it
-    is generated eagerly and will be persistent. This hopefully simplifies
-    many things.
+    is ephemeral (i.e., you iterate it once and it's gone). Convert the output
+    to a list to have a persistent result. Also, while the output iterable is
+    generated lazily, each list within it is generated eagerly and will be persistent.
     """
     assert num_per_group >= 1, "need a positive number of list elements per group"
     input_list = list(input)
@@ -103,9 +103,9 @@ def shard_list_uniform(input: Sequence[T], num_per_group: int) -> Iterable[Seque
     or equal to `num_per_group`.
 
     Note: This computation executes *lazily* on the input, and the output
-    is ephemeral. Convert the output to a list to have a persistent result.
-    Also, while the output iterable is generated lazy, each list within it
-    is generated eagerly. This seems to simplify many things.
+    is ephemeral (i.e., you iterate it once and it's gone). Convert the output
+    to a list to have a persistent result. Also, while the output iterable is
+    generated lazily, each list within it is generated eagerly and will be persistent.
     """
 
     return shard_iterable_uniform(input, num_per_group, len(input))
@@ -124,11 +124,12 @@ def shard_iterable_uniform(
     else that knows its size, you can use `shard_list_uniform` instead.
 
     Note: This computation executes *lazily* on the input, and the output
-    is ephemeral. Convert the output to a list to have a persistent result.
-    Also, while the output iterable is generated lazy, each list within it
-    is generated eagerly. This seems to simplify many things.
+    is ephemeral (i.e., you iterate it once and it's gone). Convert the output
+    to a list to have a persistent result. Also, while the output iterable is generated
+    lazily, each list within it is generated eagerly and will be persistent.
     """
     assert num_per_group >= 1, "need a positive number of list elements per group"
+    assert num_inputs >= 0, "can't have negative number of inputs"
 
     if num_inputs <= 0:
         return []
