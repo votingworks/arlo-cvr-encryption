@@ -12,7 +12,7 @@ from electionguard.utils import get_optional
 from arlo_e2e.dominion import read_dominion_csv
 from arlo_e2e.ray_helpers import ray_init_cluster, ray_init_localhost
 from arlo_e2e.ray_tally import ray_tally_everything
-from arlo_e2e.ray_write_retry import wait_for_zero_pending_writes
+from arlo_e2e.ray_io import wait_for_zero_pending_writes
 
 
 def run_bench(filename: str, output_dir: Optional[str], use_progressbar: bool) -> None:

@@ -8,8 +8,7 @@ from os import path
 
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.manifest import sha256_hash
-from arlo_e2e.ray_write_retry import write_file_with_retries
-from arlo_e2e.utils import load_file_helper
+from arlo_e2e.ray_io import write_file_with_retries, load_file_helper
 
 # centering is awful: https://css-tricks.com/centering-a-div-that-maintains-aspect-ratio-when-theres-body-margin/
 

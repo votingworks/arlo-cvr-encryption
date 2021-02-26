@@ -26,13 +26,14 @@ from arlo_e2e.html_index import generate_index_html_files
 from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.ray_tally import RayTallyEverythingResults
 from arlo_e2e.tally import FastTallyEverythingResults
-from arlo_e2e.utils import (
-    load_json_helper,
-    write_json_helper,
-    file_exists_helper,
-    BALLOT_FILENAME_PREFIX_DIGITS,
+
+from arlo_e2e.ray_io import (
     mkdir_helper,
+    file_exists_helper,
+    write_json_helper,
+    load_json_helper,
     write_file_with_retries,
+    BALLOT_FILENAME_PREFIX_DIGITS,
 )
 
 

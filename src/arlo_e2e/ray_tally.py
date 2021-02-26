@@ -60,7 +60,8 @@ from arlo_e2e.tally import (
     DecryptOutput,
     DecryptInput,
 )
-from arlo_e2e.utils import shard_iterable_uniform, mkdir_helper, shard_list_uniform
+from arlo_e2e.utils import shard_iterable_uniform, shard_list_uniform
+from arlo_e2e.ray_io import mkdir_helper
 
 # When we're writing files to s3fs, we'll rarely see failures, but with enough files, it's a certainty.
 # This is how many times we'll retry each write until it works.

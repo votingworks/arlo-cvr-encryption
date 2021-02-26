@@ -11,11 +11,7 @@ from typing.io import BinaryIO
 from werkzeug.utils import secure_filename
 
 from arlo_e2e.admin import make_fresh_election_admin, ElectionAdmin
-from arlo_e2e.utils import (
-    write_json_helper,
-    load_json_helper,
-    mkdir_helper,
-)
+from arlo_e2e.ray_io import mkdir_helper, write_json_helper, load_json_helper
 
 # Design note: we're putting as much of the web functionality here, without the actual Flask web
 # server present, to make these methods easier to test. We're prefixing all of these methods

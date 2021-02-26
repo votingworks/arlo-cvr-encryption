@@ -27,7 +27,7 @@ from arlo_e2e.tally import (
     SelectionTally,
     ballot_memos_from_metadata,
 )
-from arlo_e2e.utils import mkdir_helper
+from arlo_e2e.ray_io import mkdir_helper
 
 T = TypeVar("T")
 U = TypeVar("U", bound=Serializable)

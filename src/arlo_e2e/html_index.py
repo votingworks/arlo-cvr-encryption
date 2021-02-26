@@ -3,7 +3,7 @@
 import os
 from stat import S_ISDIR
 
-from arlo_e2e.ray_write_retry import write_file_with_retries
+from arlo_e2e.ray_io import write_file_with_retries
 
 index_start_text = """<!DOCTYPE html>
 <html>

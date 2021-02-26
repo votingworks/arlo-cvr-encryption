@@ -15,8 +15,7 @@ from arlo_e2e.ray_helpers import (
     ray_wait_for_workers,
 )
 from arlo_e2e.ray_tally import ray_tally_everything
-from arlo_e2e.ray_write_retry import wait_for_zero_pending_writes
-from arlo_e2e.utils import load_json_helper
+from arlo_e2e.ray_io import wait_for_zero_pending_writes, load_json_helper
 
 if __name__ == "__main__":
     set_serializers()

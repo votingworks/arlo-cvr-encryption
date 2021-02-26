@@ -5,7 +5,7 @@ from sys import exit
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.admin import make_fresh_election_admin, ElectionAdmin
-from arlo_e2e.utils import load_json_helper, write_json_helper
+from arlo_e2e.ray_io import write_json_helper, load_json_helper
 
 if __name__ == "__main__":
     set_serializers()

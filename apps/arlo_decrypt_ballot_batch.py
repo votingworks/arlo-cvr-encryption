@@ -14,8 +14,7 @@ from arlo_e2e.eg_helpers import log_nothing_to_stdout
 from arlo_e2e.publish import load_ray_tally
 from arlo_e2e.ray_helpers import ray_init_cluster, ray_init_localhost
 from arlo_e2e.ray_tally import RayTallyEverythingResults
-from arlo_e2e.ray_write_retry import wait_for_zero_pending_writes
-from arlo_e2e.utils import load_json_helper
+from arlo_e2e.ray_io import wait_for_zero_pending_writes, load_json_helper
 
 if __name__ == "__main__":
     set_serializers()

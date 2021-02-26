@@ -2,7 +2,7 @@ import os
 import ray
 from time import sleep
 
-from arlo_e2e.ray_write_retry import (
+from arlo_e2e.ray_io import (
     set_failure_probability_for_testing,
     init_status_actor,
 )

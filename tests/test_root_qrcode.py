@@ -3,9 +3,8 @@ import shutil
 import unittest
 
 from arlo_e2e.manifest import sha256_hash
-from arlo_e2e.ray_write_retry import write_file_with_retries
+from arlo_e2e.ray_io import write_file_with_retries, mkdir_helper
 from arlo_e2e.root_qrcode import gen_root_qrcode
-from arlo_e2e.utils import mkdir_helper
 from os import path
 
 

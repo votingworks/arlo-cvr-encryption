@@ -14,7 +14,7 @@ from arlo_e2e.manifest import (
     make_existing_manifest,
     path_to_manifest_name,
 )
-from arlo_e2e.utils import mkdir_helper
+from arlo_e2e.ray_io import mkdir_helper
 from arlo_e2e_testing.manifest_hypothesis import (
     file_name_and_contents,
     FileNameAndContents,

@@ -18,7 +18,7 @@ from arlo_e2e.dominion import read_dominion_csv
 from arlo_e2e.publish import write_fast_tally
 from arlo_e2e.ray_helpers import ray_init_cluster
 from arlo_e2e.ray_tally import ray_tally_everything
-from arlo_e2e.ray_write_retry import wait_for_zero_pending_writes
+from arlo_e2e.ray_io import wait_for_zero_pending_writes
 from arlo_e2e.tally import fast_tally_everything
 
 
