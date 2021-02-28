@@ -8,7 +8,7 @@ from os import path
 
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.manifest import sha256_hash
-from arlo_e2e.ray_io import write_file_with_retries, load_file_helper
+from arlo_e2e.ray_io import ray_write_file_with_retries, ray_load_file
 
 # centering is awful: https://css-tricks.com/centering-a-div-that-maintains-aspect-ratio-when-theres-body-margin/
 
@@ -84,7 +84,7 @@ def gen_root_qrcode(
     :param metadata: dictionary mapping strings to values, rendered out to the QRcode as-is
     :param num_retry_attempts: number of times to attempt a write if it fails
     """
-    manifest_str = load_file_helper(root_dir=tally_dir, file_name="MANIFEST.json")
+    manifest_str = ray_load_file(root_dir=tally_dir, file_name="MANIFEST.json")
     if manifest_str is None:
         log_and_print("MANIFEST.json file not found, cannot generate QRcode")
         return
@@ -114,7 +114,7 @@ def gen_root_qrcode(
     qr_byteio = BytesIO()
     qr_img.save(qr_byteio, "PNG")
     qr_bytes: bytes = qr_byteio.getvalue()
-    write_file_with_retries(
+    ray_write_file_with_retries(
         path.join(tally_dir, "root_hash_qrcode.png"),
         qr_bytes,
         num_attempts=num_retry_attempts,
@@ -123,7 +123,7 @@ def gen_root_qrcode(
     html_text = (
         root_start_text.format(title_text=election_name) + bullet_text + root_end_text
     )
-    write_file_with_retries(
+    ray_write_file_with_retries(
         path.join(tally_dir, "root_hash.html"),
         html_text,
         num_attempts=num_retry_attempts,

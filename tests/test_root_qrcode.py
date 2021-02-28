@@ -3,7 +3,7 @@ import shutil
 import unittest
 
 from arlo_e2e.manifest import sha256_hash
-from arlo_e2e.ray_io import write_file_with_retries, mkdir_helper
+from arlo_e2e.ray_io import ray_write_file_with_retries, mkdir_helper
 from arlo_e2e.root_qrcode import gen_root_qrcode
 from os import path
 
@@ -38,7 +38,7 @@ class TestRootQrCode(unittest.TestCase):
         mkdir_helper("write_output")
         root_hash_text = "Some test text here"
         expected_hash = sha256_hash(root_hash_text)
-        write_file_with_retries(
+        ray_write_file_with_retries(
             path.join("write_output", "MANIFEST.json"), root_hash_text
         )
 

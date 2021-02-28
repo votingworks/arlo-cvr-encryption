@@ -1,4 +1,5 @@
 import random
+import sys
 from asyncio import Event
 from os import stat, walk, path
 from pathlib import PurePath, Path
@@ -7,6 +8,7 @@ from time import sleep
 from typing import Union, AnyStr, Optional, List, Type, TypeVar
 
 import ray
+from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.logs import log_warning, log_error, log_info
 from electionguard.serializable import Serializable
 from electionguard.utils import flatmap_optional
@@ -66,6 +68,13 @@ class WriteRetryStatusActor:  # pragma: no cover
         """
         ONLY USED FOR TESTING. DO NOT USE IN PRODUCTION.
         """
+
+        # clever trick: https://stackoverflow.com/a/44595269/4048276
+        if "pytest" not in sys.modules:
+            raise RuntimeError(
+                "set_failure_probability should only be used during testing!"
+            )
+
         if failure_probability < 0.0 or failure_probability > 1.0:
             log_error(f"totally bogus failure probability: {failure_probability:0.3f}")
         elif failure_probability > 0.0:
@@ -153,7 +162,7 @@ __singleton_name = "WriteRetryStatusActorSingleton"
 __status_actor: Optional[ActorHandle] = None
 
 
-def reset_pending_state() -> None:
+def reset_status_actor() -> None:
     """
     If you've finished one computation and are about to start another, this resets all
     the internal counters. Also, this will remove any actors, which will then be restarted
@@ -201,7 +210,7 @@ def get_status_actor() -> ActorHandle:
         log_and_print(
             "Configuration failure: we should have a status actor, but we don't."
         )
-        exit(1)
+        raise RuntimeError("No status actor")
 
     return __status_actor
 
@@ -213,6 +222,12 @@ def set_failure_probability_for_testing(failure_probability: float) -> None:
     """
     ONLY USE NON-ZERO HERE FOR TESTING.
     """
+
+    # clever trick: https://stackoverflow.com/a/44595269/4048276
+    if "pytest" not in sys.modules:
+        raise RuntimeError(
+            "set_failure_probability_for_testing should only be used during testing!"
+        )
 
     global __failure_probability
     __failure_probability = failure_probability
@@ -262,7 +277,93 @@ def wait_for_zero_pending_writes() -> int:
         return __local_failed_writes
 
 
-def write_file_with_retries(
+def ray_write_json_file(
+    file_name: str,
+    content_obj: Serializable,
+    subdirectories: List[str] = None,
+    root_dir: str = ".",
+    num_retries: int = 1,
+) -> None:
+    """
+    Given a filename, subdirectory, and an ElectionGuard "serializable" object, serializes it and
+    writes the contents out to the file.
+
+    :param subdirectories: paths to be introduced between `root_dir` and the file; empty-list means no subdirectory
+    :param file_name: name of the file, including any suffix
+    :param content_obj: any ElectionGuard "Serializable" object
+    :param root_dir: optional root directory, below which the files are written
+    :param num_retries: how many attempts to make writing the file; works around occasional network filesystem glitches
+    """
+
+    # This used to be called write_json_file, but there's a method of the same exact
+    # name inside ElectionGuard, so it's sensible to give this one a different name,
+    # especially since it's somewhat Ray-specific, dealing with S3 write failures, etc.
+
+    json_txt = content_obj.to_json(strip_privates=True)
+    ray_write_file(
+        file_name, json_txt, subdirectories, root_dir=root_dir, num_retries=num_retries
+    )
+
+
+def ray_write_ciphertext_ballot(
+    ballot: CiphertextAcceptedBallot,
+    root_dir: str = ".",
+    num_retries: int = 1,
+) -> None:
+    """
+    Given a ciphertext ballot, writes the ballot to disk in the "ballots" subdirectory.
+    :param ballot: any "accepted" ballot, ready to be written out
+    :param root_dir: optional root directory, in which the "ballots" subdirectory will appear
+    :param num_retries: how many attempts to make writing the file; works around occasional network filesystem glitches
+    """
+    ballot_name = ballot.object_id
+    ballot_name_prefix = ballot_name[0:BALLOT_FILENAME_PREFIX_DIGITS]
+    ray_write_json_file(
+        ballot_name + ".json",
+        ballot,
+        ["ballots", ballot_name_prefix],
+        root_dir=root_dir,
+        num_retries=num_retries,
+    )
+
+
+def ray_write_file(
+    file_name: str,
+    file_contents: AnyStr,
+    subdirectories: List[str] = None,
+    root_dir: str = ".",
+    num_retries: int = 1,
+) -> None:
+    """
+    Given a filename, subdirectory, and desired contents of the file, writes the contents out to the file.
+
+    :param subdirectories: paths to be introduced between `root_dir` and the file; empty-list means no subdirectory
+    :param file_name: name of the file, including any suffix
+    :param file_contents: string to be written to the file
+    :param root_dir: optional root directory, below which the files are written
+    :param num_retries: how many attempts to make writing the file; works around occasional network filesystem glitches
+    """
+
+    # This used to be called write_file, but that name is used in many other modules,
+    # creating lots of opportunity for confusion.
+
+    if subdirectories is None:
+        subdirectories = []
+
+    mkdir_list_helper(root_dir, subdirectories, num_retries=num_retries)
+
+    if isinstance(file_contents, bytes):
+        file_utf8_bytes = file_contents
+    else:
+        file_utf8_bytes = file_contents.encode("utf-8")
+
+    full_name = compose_filename(root_dir, file_name, subdirectories)
+    ray_write_file_with_retries(
+        full_name, file_utf8_bytes, num_attempts=num_retries, initial_delay=1
+    )
+
+
+def ray_write_file_with_retries(
     full_file_name: Union[str, PurePath],
     contents: AnyStr,  # bytes or str
     num_attempts: int = 1,
@@ -415,7 +516,7 @@ def file_exists_helper(
         return False
 
 
-def load_file_helper(
+def ray_load_file(
     root_dir: str,
     file_name: Union[str, PurePath],
     subdirectories: List[str] = None,
@@ -455,7 +556,7 @@ def load_file_helper(
         return None
 
 
-def decode_json_file_contents(json_str: str, class_handle: Type[S]) -> Optional[S]:
+def _decode_json_file_contents(json_str: str, class_handle: Type[S]) -> Optional[S]:
     """
     Wrapper around JSON deserialization. Given a string of JSON text and a handle to an
     ElectionGuard `Serializable` class, tries to decode the JSON into an instance of that
@@ -478,45 +579,7 @@ def decode_json_file_contents(json_str: str, class_handle: Type[S]) -> Optional[
     return result
 
 
-def write_json_helper(
-    root_dir: str,
-    file_name: Union[str, PurePath],
-    json_obj: Serializable,
-    subdirectories: List[str] = None,
-    num_retries: int = 1,
-) -> int:
-    """
-    Wrapper around JSON serialization that, given a directory name and file name (including
-    the ".json" suffix), or a path-like object, will save the serialized contents
-    of any ElectionGuard `Serializable` object as a JSON file and return the number of bytes written.
-
-    Note: if the file_name is actually a path-like object, the root_dir and subdirectories are ignored,
-    and the path is directly used.
-
-    :param root_dir: top-level directory where we'll be reading files
-    :param file_name: name of the file, including the suffix, excluding any directories leading up to the file
-    :param json_obj: any ElectionGuard serializable object
-    :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
-    :param num_retries: how many attempts to make writing the file; works around occasional network filesystem glitches
-    :returns: the number of bytes written
-    """
-
-    if isinstance(file_name, PurePath):
-        full_name = file_name
-    else:
-        full_name = compose_filename(root_dir, file_name, subdirectories)
-        mkdir_list_helper(root_dir, subdirectories, num_retries=num_retries)
-
-    json_txt = json_obj.to_json(strip_privates=True)
-    json_bytes = json_txt.encode("utf-8")
-    num_bytes = len(json_bytes)
-
-    write_file_with_retries(full_name, json_bytes, num_retries)
-
-    return num_bytes
-
-
-def load_json_helper(
+def ray_load_json_file(
     root_dir: str,
     file_name: Union[str, PurePath],
     class_handle: Type[S],
@@ -538,9 +601,9 @@ def load_json_helper(
     :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
     :returns: the contents of the file, or `None` if there was an error
     """
-    file_contents = load_file_helper(root_dir, file_name, subdirectories)
+    file_contents = ray_load_file(root_dir, file_name, subdirectories)
     return flatmap_optional(
-        file_contents, lambda f: decode_json_file_contents(f, class_handle)
+        file_contents, lambda f: _decode_json_file_contents(f, class_handle)
     )
 
 

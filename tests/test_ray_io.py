@@ -10,9 +10,9 @@ import ray
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.ray_io import (
     set_failure_probability_for_testing,
-    write_file_with_retries,
+    ray_write_file_with_retries,
     wait_for_zero_pending_writes,
-    reset_pending_state,
+    reset_status_actor,
     mkdir_helper,
     all_files_in_directory,
 )
@@ -21,7 +21,7 @@ from arlo_e2e.ray_io import (
 def write_all_files(num_files: int, num_retries: int = 10) -> None:
     for f in range(0, num_files):
         name = f"file{f:03d}"
-        write_file_with_retries(f"write_output/{name}", name, num_retries, 1.0, 0.1)
+        ray_write_file_with_retries(f"write_output/{name}", name, num_retries, 1.0, 0.1)
 
 
 def verify_all_files(num_files: int) -> bool:
@@ -65,7 +65,7 @@ class TestRayWriteRetry(unittest.TestCase):
 
         remove_test_tree()
         ray.shutdown()
-        reset_pending_state()
+        reset_status_actor()
 
     def test_huge_failures(self) -> None:
         ray_init_localhost(num_cpus=cpu_count())
@@ -83,7 +83,7 @@ class TestRayWriteRetry(unittest.TestCase):
         self.assertTrue(verify_all_files(100))
         remove_test_tree()
         ray.shutdown()
-        reset_pending_state()
+        reset_status_actor()
 
     def test_without_ray(self) -> None:
         if ray.is_initialized():
@@ -101,4 +101,4 @@ class TestRayWriteRetry(unittest.TestCase):
         self.assertEqual(num_failures, 0)
         self.assertTrue(verify_all_files(20))
         remove_test_tree()
-        reset_pending_state()
+        reset_status_actor()

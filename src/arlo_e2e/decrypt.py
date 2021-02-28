@@ -30,10 +30,10 @@ from arlo_e2e.tally import FastTallyEverythingResults
 from arlo_e2e.ray_io import (
     mkdir_helper,
     file_exists_helper,
-    write_json_helper,
-    load_json_helper,
-    write_file_with_retries,
+    ray_load_json_file,
+    ray_write_file_with_retries,
     BALLOT_FILENAME_PREFIX_DIGITS,
+    ray_write_json_file,
 )
 
 
@@ -138,15 +138,15 @@ def write_proven_ballot(
     """
     Writes out a `ProvenPlaintextBallot` in the desired directory.
     """
+
+    # letter b plus first few digits
     ballot_object_id = pballot.ballot.object_id
-    ballot_name_prefix = ballot_object_id[
-        0:BALLOT_FILENAME_PREFIX_DIGITS
-    ]  # letter b plus first few digits
-    write_json_helper(
-        decrypted_dir,
-        ballot_object_id + ".json",
-        pballot,
-        [ballot_name_prefix],
+    ballot_name_prefix = ballot_object_id[0:BALLOT_FILENAME_PREFIX_DIGITS]
+
+    ray_write_json_file(
+        file_name=ballot_object_id + ".json",
+        content_obj=pballot,
+        subdirectories=[decrypted_dir, ballot_name_prefix],
         num_retries=num_retries,
     )
 
@@ -158,7 +158,7 @@ def load_proven_ballot(
     Reads a `ProvenPlaintextBallot` from the desired directory. On failure, returns `None`.
     """
 
-    # Special case here because normally load_json_helper would log an error, and we don't
+    # Special case here because normally ray_load_json_file would log an error, and we don't
     # want that, since this case might happen frequently.
     if not exists_proven_ballot(ballot_object_id, decrypted_dir):
         return None
@@ -166,7 +166,7 @@ def load_proven_ballot(
     ballot_name_prefix = ballot_object_id[
         0:BALLOT_FILENAME_PREFIX_DIGITS
     ]  # letter b plus first few digits
-    return load_json_helper(
+    return ray_load_json_file(
         decrypted_dir,
         ballot_object_id + ".json",
         ProvenPlaintextBallot,
@@ -292,7 +292,7 @@ def decrypt_and_write(
     ]
     metadata_filename = os.path.join(decrypted_dir, "cvr_metadata.csv")
     cvr_bytes = cvr_subset.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC)
-    write_file_with_retries(metadata_filename, cvr_bytes, num_attempts=10)
+    ray_write_file_with_retries(metadata_filename, cvr_bytes, num_attempts=10)
 
     generate_index_html_files(
         f"{results.metadata.election_name} (Decrypted Ballots)",

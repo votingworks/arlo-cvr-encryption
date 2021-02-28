@@ -7,13 +7,11 @@ from timeit import default_timer as timer
 from typing import (
     Optional,
     List,
-    Sequence,
     Dict,
     NamedTuple,
     Tuple,
     Any,
     Final,
-    Iterable,
 )
 
 import pandas as pd
@@ -43,9 +41,10 @@ from ray.actor import ActorHandle
 
 from arlo_e2e.dominion import DominionCSV, BallotPlaintextFactory
 from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.manifest import Manifest, make_fresh_manifest, make_existing_manifest
+from arlo_e2e.manifest import Manifest
 from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.ray_helpers import ray_wait_for_workers
+from arlo_e2e.ray_io import mkdir_helper, ray_write_ciphertext_ballot
 from arlo_e2e.ray_map_reduce import MapReduceContext, RayMapReducer
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
@@ -60,8 +59,7 @@ from arlo_e2e.tally import (
     DecryptOutput,
     DecryptInput,
 )
-from arlo_e2e.utils import shard_iterable_uniform, shard_list_uniform
-from arlo_e2e.ray_io import mkdir_helper
+from arlo_e2e.utils import shard_iterable_uniform
 
 # When we're writing files to s3fs, we'll rarely see failures, but with enough files, it's a certainty.
 # This is how many times we'll retry each write until it works.
@@ -83,32 +81,6 @@ PARTIAL_TALLIES_PER_SHARD: Final = 10
 # Even though these will work and do exactly what you want when the problem sizes are small, you
 # end up in a world of hurt once the problem size scales up. Dealing with these problems ultimately
 # shaped a lot of how the code here works.
-
-
-@ray.remote
-class ManifestAggregatorActor:
-    """
-    This is a Ray "actor" to which we'll send all of the partial manifests when doing
-    the encryption and writing to disk. They're aggregated as they show up.
-    """
-
-    aggregate: Manifest
-
-    def __init__(self, root_dir: str) -> None:
-        self.aggregate = make_fresh_manifest(root_dir)
-
-    def add(self, m: Manifest) -> None:
-        """
-        Aggregates this manifest.
-        """
-        self.aggregate.merge_from(m)
-
-    def result(self) -> Manifest:
-        """
-        Gets the aggregate of all the partial manifests.
-        """
-
-        return self.aggregate
 
 
 def partial_tally(
@@ -216,7 +188,6 @@ class BallotTallyContext(MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_T
     _cec: CiphertextElectionContext
     _seed_hash: ElementModQ
     _root_dir: Optional[str]
-    _manifest_aggregator: Optional[ActorHandle]
     _bpf: BallotPlaintextFactory
     _nonces: Nonces
 
@@ -237,10 +208,8 @@ class BallotTallyContext(MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_T
 
         cballot = ciphertext_ballot_to_accepted(cballot_option)
 
-        if self._root_dir is not None and self._manifest_aggregator is not None:
-            manifest = make_fresh_manifest(self._root_dir, delete_existing=False)
-            manifest.write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
-            self._manifest_aggregator.add.remote(manifest)
+        if self._root_dir is not None:
+            ray_write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
 
         return ciphertext_ballot_to_dict(cballot)
 
@@ -260,15 +229,6 @@ class BallotTallyContext(MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_T
     def zero(self) -> Optional[TALLY_TYPE]:
         return {}  # an empty tally dict
 
-    def get_final_manifest(self) -> Optional[Manifest]:
-        if self._manifest_aggregator is None:
-            return None
-        else:
-            manifest_result: Optional[Manifest] = ray.get(
-                self._manifest_aggregator.result.remote()
-            )
-            return manifest_result
-
     def __init__(
         self,
         ied: InternalElectionDescription,
@@ -282,13 +242,6 @@ class BallotTallyContext(MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_T
         self._cec = cec
         self._seed_hash = seed_hash
         self._root_dir = root_dir
-        self._manifest_aggregator = (
-            # Ray actors don't seem to play nice with mypy, generating a spurious warning
-            # for the following line, which we need to suppress. The code is fine.
-            ManifestAggregatorActor.remote(root_dir)  # type: ignore
-            if root_dir is not None
-            else None
-        )
         self._bpf = bpf
         self._nonces = nonces
 
@@ -413,15 +366,6 @@ def ray_tally_everything(
         decryption, proof = decrypted_tally[obj_id]
         assert cvr_sum == decryption, f"decryption failed for {obj_id}"
 
-    final_manifest: Optional[Manifest] = None
-
-    if root_dir is not None:
-        final_manifest = btc.get_final_manifest()
-        assert final_manifest is not None, "manifest should not have been none!"
-        assert isinstance(
-            final_manifest, Manifest
-        ), "type error: bad result from manifest aggregation"
-
     # Assemble the data structure that we're returning. Having nonces in the ciphertext makes these
     # structures sensitive for writing out to disk, but otherwise they're ready to go.
     log_and_print("Constructing results.")
@@ -443,12 +387,14 @@ def ray_tally_everything(
         verbose,
     )
 
+    # TODO: generate manifest
+
     return RayTallyEverythingResults(
         metadata=cvrs.metadata,
         cvr_metadata=cvrs.dataframe_without_selections(),
         election_description=ed,
         num_ballots=rows,
-        manifest=final_manifest,
+        manifest=None,  # TODO
         tally=SelectionTally(reported_tally),
         context=cec,
     )
@@ -501,11 +447,12 @@ class BallotVerifyContext(MapReduceContext[str, Optional[TALLY_TYPE]]):
         self._public_key = public_key
         self._hash_header = hash_header
         self._root_dir = root_dir
-        manifest = make_existing_manifest(root_dir)
+
+        manifest = None  # TODO: make_existing_manifest(root_dir)
         if manifest is None:
             raise RuntimeError("unexpected failure to make a manifest!")
         else:
-            self._manifest = manifest
+            self._manifest = manifest  # TODO
 
 
 @ray.remote
