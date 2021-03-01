@@ -87,7 +87,7 @@ class TestManifestPublishing(unittest.TestCase):
 
         # next up, inducing errors; add a file that's not already there; reading should fail
         ray_write_file(
-            "something-else", "something-not-already-there", [], MANIFEST_TESTING_DIR
+            "something-else", "something-not-already-there", MANIFEST_TESTING_DIR, []
         )
         self.assertIsNone(manifest.read_file("something-else"))
 

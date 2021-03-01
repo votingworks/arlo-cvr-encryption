@@ -210,7 +210,9 @@ class BallotTallyContext(MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_T
         cballot = ciphertext_ballot_to_accepted(cballot_option)
 
         if self._root_dir is not None:
-            ray_write_ciphertext_ballot(cballot, num_retries=NUM_WRITE_RETRIES)
+            ray_write_ciphertext_ballot(
+                cballot, root_dir=self._root_dir, num_retries=NUM_WRITE_RETRIES
+            )
 
         return ciphertext_ballot_to_dict(cballot)
 
@@ -393,6 +395,8 @@ def ray_tally_everything(
         root_hash = build_manifest_for_directory(root_dir, [], True, NUM_WRITE_RETRIES)
         if root_hash is not None:
             manifest = load_existing_manifest(root_dir, [], root_hash)
+        else:
+            log_and_print("failed to load a manifest", verbose=True)
 
     return RayTallyEverythingResults(
         metadata=cvrs.metadata,
@@ -543,6 +547,7 @@ class RayTallyEverythingResults(NamedTuple):
         self, ballot_id: str
     ) -> Optional[CiphertextAcceptedBallot]:
         if self.manifest is None:
+            log_and_print("missing manifest, cannot load ballot", verbose=True)
             return None
         else:
             return self.manifest.load_ciphertext_ballot(ballot_id)

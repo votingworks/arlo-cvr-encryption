@@ -51,14 +51,16 @@ _decrypted_ballot_dir = "audit_decrypted_ballots"
 
 
 class TestArloAudit(unittest.TestCase):
-    def setUp(self) -> None:
+    def removeTrees(self) -> None:
         shutil.rmtree(_encrypted_ballot_dir, ignore_errors=True)
         shutil.rmtree(_decrypted_ballot_dir, ignore_errors=True)
+
+    def setUp(self) -> None:
+        self.removeTrees()
         ray_init_localhost()
 
     def tearDown(self) -> None:
-        shutil.rmtree(_encrypted_ballot_dir, ignore_errors=True)
-        shutil.rmtree(_decrypted_ballot_dir, ignore_errors=True)
+        self.removeTrees()
         ray.shutdown()
 
     @given(ballots_and_context(max_rows=20))
@@ -70,6 +72,7 @@ class TestArloAudit(unittest.TestCase):
         phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
     )
     def test_everything(self, input: DominionBallotsAndContext) -> None:
+        self.removeTrees()
         mkdir_helper(_encrypted_ballot_dir)
         mkdir_helper(_decrypted_ballot_dir)
 
@@ -109,9 +112,11 @@ class TestArloAudit(unittest.TestCase):
         fake_audit_ballots: List[
             ArloSampledBallot
         ] = plaintext_ballots_to_arlo_sampled_ballots(tally, input.ballots)
-        self.assertEqual(
-            [], compare_audit_ballots(tally, decrypted_ballots, fake_audit_ballots)
+
+        comparison_result = compare_audit_ballots(
+            tally, decrypted_ballots, fake_audit_ballots
         )
+        self.assertEqual([], comparison_result)
 
         iid_to_audit_ballot_map: Dict[str, ArloSampledBallot] = {
             x.imprintedId: x for x in fake_audit_ballots
@@ -131,8 +136,7 @@ class TestArloAudit(unittest.TestCase):
                 )
             )
 
-        shutil.rmtree(_encrypted_ballot_dir, ignore_errors=True)
-        shutil.rmtree(_decrypted_ballot_dir, ignore_errors=True)
+        self.removeTrees()
 
     # TODO: flip votes in the audit report, the comparison should fail
 

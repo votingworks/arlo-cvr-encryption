@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
     # This ultimately bottoms out at secrets.randbelow(), which claims to be cryptographically strong.
     admin_state = make_fresh_election_admin()
-    ray_write_json_file(root_dir=".", file_name=args.keys, content_obj=admin_state)
+    ray_write_json_file(file_name=args.keys, content_obj=admin_state, root_dir=".")
 
     # Read it back in, just to make sure we're all good.
     admin_state2 = ray_load_json_file(".", args.keys, ElectionAdmin)

@@ -83,7 +83,8 @@ class TestRayTallies(unittest.TestCase):
         rmanifest = write_ray_tally(rtally, "rtally_output")
 
         # we can't just assert equality of the manifests, because the root_dirs are different
-        self.assertTrue(fmanifest.equivalent(rmanifest))
+        equiv = fmanifest.equivalent(rmanifest)
+        self.assertTrue(equiv)
         self.removeTree()
 
     @given(dominion_cvrs(max_rows=5), elgamal_keypairs())

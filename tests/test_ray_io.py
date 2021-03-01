@@ -19,7 +19,15 @@ from arlo_e2e.ray_io import (
 def write_all_files(num_files: int, num_retries: int = 10) -> None:
     for f in range(0, num_files):
         name = f"file{f:03d}"
-        ray_write_file_with_retries(f"write_output/{name}", name, num_retries, 1.0, 0.1)
+        ray_write_file_with_retries(
+            name,
+            name,
+            root_dir="write_output",
+            subdirectories=[],
+            num_attempts=num_retries,
+            initial_delay=1.0,
+            delta_delay=0.1,
+        )
 
 
 def verify_all_files(num_files: int) -> bool:

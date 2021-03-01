@@ -1,7 +1,6 @@
 from base64 import b64encode
 from dataclasses import dataclass
 from hashlib import sha256
-from os import path
 from typing import (
     Dict,
     Optional,
@@ -21,6 +20,11 @@ from electionguard.serializable import Serializable
 from electionguard.utils import flatmap_optional
 from ray.actor import ActorHandle
 
+from arlo_e2e.constants import (
+    BALLOT_FILENAME_PREFIX_DIGITS,
+    NUM_WRITE_RETRIES,
+    MANIFEST_FILE,
+)
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.ray_helpers import ray_wait_for_workers
 from arlo_e2e.ray_io import (
@@ -29,11 +33,7 @@ from arlo_e2e.ray_io import (
     read_directory_contents,
     ray_write_file,
     unlink_helper,
-)
-from arlo_e2e.constants import (
-    BALLOT_FILENAME_PREFIX_DIGITS,
-    NUM_WRITE_RETRIES,
-    MANIFEST_FILE,
+    compose_filename,
 )
 from arlo_e2e.ray_progress import ProgressBar
 
@@ -232,10 +232,15 @@ class Manifest:
         if not subdirectories:
             file_contents = ray_load_file(self.root_dir, file_name, self.subdirectories)
             if file_contents is None:
+                log_and_print(f"failed to load file: {file_name}", verbose=True)
                 return None
             elif self._validate_contents(file_name, file_contents):
                 return file_contents
             else:
+                log_and_print(
+                    f"failed to validate file: {file_name}, mismatching hashes",
+                    verbose=True,
+                )
                 return None
 
         else:
@@ -243,6 +248,9 @@ class Manifest:
             subdir_tail = subdirectories[1:]
             subdir_manifest = self._get_subdirectory_manifest(subdir_head)
             if subdir_manifest is None:
+                log_and_print(
+                    f"failed to find subdirectory manifest: {subdir_head}", verbose=True
+                )
                 return None
             return subdir_manifest._read_file_recursive(file_name, subdir_tail)
 
@@ -357,6 +365,17 @@ def _r_build_manifest_for_directory(
             verbose=True,
         )
     plain_files, directories = read_directory_contents(root_dir, subdirectories)
+
+    if MANIFEST_FILE in plain_files:
+        # we could just bomb out with an error; instead we're going to
+        # log something, ignore the manifest file, and move onward
+        if logging_enabled:
+            log_and_print(
+                f"Warning: found existing MANIFEST.json in {root_dir}/{'/'.join(subdirectories)}",
+                verbose=True,
+            )
+        del plain_files[MANIFEST_FILE]
+
     if progress_actor:
         progress_actor.update_total.remote("Directories", len(directories))
         progress_actor.update_total.remote("Files", len(plain_files))
@@ -551,10 +570,14 @@ def _write_json_file_get_hash(
     # If a manifest already exists, we're going to remove it; we don't want to
     # do this in general, but it's something that might happen when driving
     # manifest creation from the command-line.
-    unlink_helper(path.join(root_dir, *(subdirectories + [file_name])))
+    unlink_helper(compose_filename(root_dir, file_name, subdirectories))
 
     json_txt = content_obj.to_json(strip_privates=True)
     ray_write_file(
-        file_name, json_txt, subdirectories, root_dir=root_dir, num_retries=num_retries
+        file_name,
+        json_txt,
+        root_dir=root_dir,
+        subdirectories=subdirectories,
+        num_retries=num_retries,
     )
     return sha256_info(json_txt)

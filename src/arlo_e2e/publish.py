@@ -67,26 +67,38 @@ def _write_tally_shared(
 
     log_info("_write_tally_shared: writing election_description")
     ray_write_json_file(
-        ELECTION_DESCRIPTION, election_description, num_retries=num_retries
+        ELECTION_DESCRIPTION,
+        election_description,
+        num_retries=num_retries,
+        root_dir=results_dir,
     )
 
     log_info("_write_tally_shared: writing crypto context")
-    ray_write_json_file(CRYPTO_CONTEXT, context, num_retries=num_retries)
+    ray_write_json_file(
+        CRYPTO_CONTEXT, context, num_retries=num_retries, root_dir=results_dir
+    )
 
     log_info("_write_tally_shared: writing crypto constants")
-    ray_write_json_file(CRYPTO_CONSTANTS, constants, num_retries=num_retries)
+    ray_write_json_file(
+        CRYPTO_CONSTANTS, constants, num_retries=num_retries, root_dir=results_dir
+    )
 
     log_info("_write_tally_shared: writing tally")
-    ray_write_json_file(ENCRYPTED_TALLY, tally, num_retries=num_retries)
+    ray_write_json_file(
+        ENCRYPTED_TALLY, tally, num_retries=num_retries, root_dir=results_dir
+    )
 
     log_info("_write_tally_shared: writing metadata")
-    ray_write_json_file(ELECTION_METADATA, metadata, num_retries=num_retries)
+    ray_write_json_file(
+        ELECTION_METADATA, metadata, num_retries=num_retries, root_dir=results_dir
+    )
 
     log_info("_write_tally_shared: writing cvr metadata")
     ray_write_file(
         CVR_METADATA,
         cvr_metadata.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC),
         num_retries=num_retries,
+        root_dir=results_dir,
     )
 
 
@@ -111,7 +123,7 @@ def write_fast_tally(
     log_info("Writing ballots")
 
     for ballot in results.encrypted_ballots:
-        ray_write_ciphertext_ballot(ballot)
+        ray_write_ciphertext_ballot(ballot, root_dir=results_dir)
 
     log_info("Writing manifests")
 
@@ -146,17 +158,11 @@ def write_ray_tally(
         num_retries=NUM_WRITE_RETRIES,
     )
 
-    log_and_print("Writing manifests")
-    root_hash = build_manifest_for_directory(results_dir, [], True, 1)
-    manifest = flatmap_optional(
-        root_hash, lambda h: load_existing_manifest(results_dir, [], h)
-    )
-
     generate_index_html_files(
         results.metadata.election_name, results_dir, num_retries=NUM_WRITE_RETRIES
     )
 
-    return manifest
+    return results.manifest
 
 
 def _load_tally_shared(

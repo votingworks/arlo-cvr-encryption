@@ -40,7 +40,7 @@ class TestRootQrCode(unittest.TestCase):
         root_hash_text = "Some test text here"
         expected_hash = sha256_hash(root_hash_text)
         ray_write_file_with_retries(
-            path.join("write_output", MANIFEST_FILE), root_hash_text
+            MANIFEST_FILE, root_hash_text, root_dir="write_output"
         )
 
         gen_root_qrcode(

@@ -61,5 +61,10 @@ def generate_index_html_files(
 
     index_text += index_end_text
 
-    file_path = os.path.join(directory_name, "index.html")
-    ray_write_file_with_retries(file_path, index_text, num_retries)
+    ray_write_file_with_retries(
+        "index.html",
+        index_text,
+        root_dir=directory_name,
+        subdirectories=[],
+        num_attempts=num_retries,
+    )

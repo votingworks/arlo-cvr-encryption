@@ -20,7 +20,7 @@ class TestAdmin(unittest.TestCase):
     def test_write_fresh_state(self) -> None:
         admin_state = make_fresh_election_admin()
         ray_write_json_file(
-            root_dir=".", file_name=self.admin_file, content_obj=admin_state
+            file_name=self.admin_file, content_obj=admin_state, root_dir="."
         )
         admin_state2 = ray_load_json_file(".", self.admin_file, ElectionAdmin)
 

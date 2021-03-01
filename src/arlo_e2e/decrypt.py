@@ -145,8 +145,9 @@ def write_proven_ballot(
 
     ray_write_json_file(
         file_name=ballot_object_id + ".json",
+        root_dir=decrypted_dir,
         content_obj=pballot,
-        subdirectories=[decrypted_dir, ballot_name_prefix],
+        subdirectories=[ballot_name_prefix],
         num_retries=num_retries,
     )
 
@@ -290,10 +291,13 @@ def decrypt_and_write(
     cvr_subset = results.cvr_metadata.loc[
         results.cvr_metadata["BallotId"].isin(ballot_ids)
     ]
-    metadata_filename = os.path.join(decrypted_dir, "cvr_metadata.csv")
     cvr_bytes = cvr_subset.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC)
     ray_write_file_with_retries(
-        metadata_filename, cvr_bytes, num_attempts=NUM_WRITE_RETRIES
+        "cvr_metadata.csv",
+        cvr_bytes,
+        root_dir=decrypted_dir,
+        subdirectories=[],
+        num_attempts=NUM_WRITE_RETRIES,
     )
 
     generate_index_html_files(

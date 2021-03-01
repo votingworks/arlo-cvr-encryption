@@ -288,8 +288,8 @@ def wait_for_zero_pending_writes() -> int:
 def ray_write_json_file(
     file_name: str,
     content_obj: Serializable,
+    root_dir: str,
     subdirectories: List[str] = None,
-    root_dir: str = ".",
     num_retries: int = 1,
 ) -> None:
     """
@@ -309,19 +309,23 @@ def ray_write_json_file(
 
     json_txt = content_obj.to_json(strip_privates=True)
     ray_write_file(
-        file_name, json_txt, subdirectories, root_dir=root_dir, num_retries=num_retries
+        file_name,
+        json_txt,
+        root_dir=root_dir,
+        subdirectories=subdirectories,
+        num_retries=num_retries,
     )
 
 
 def ray_write_ciphertext_ballot(
     ballot: CiphertextAcceptedBallot,
-    root_dir: str = ".",
+    root_dir: str,
     num_retries: int = 1,
 ) -> None:
     """
     Given a ciphertext ballot, writes the ballot to disk in the "ballots" subdirectory.
     :param ballot: any "accepted" ballot, ready to be written out
-    :param root_dir: optional root directory, in which the "ballots" subdirectory will appear
+    :param root_dir: mandatory root directory, in which the "ballots" subdirectory will appear
     :param num_retries: how many attempts to make writing the file; works around occasional network filesystem glitches
     """
     ballot_name = ballot.object_id
@@ -329,8 +333,8 @@ def ray_write_ciphertext_ballot(
     ray_write_json_file(
         ballot_name + ".json",
         ballot,
-        ["ballots", ballot_name_prefix],
         root_dir=root_dir,
+        subdirectories=["ballots", ballot_name_prefix],
         num_retries=num_retries,
     )
 
@@ -338,8 +342,8 @@ def ray_write_ciphertext_ballot(
 def ray_write_file(
     file_name: str,
     file_contents: AnyStr,
+    root_dir: str,
     subdirectories: List[str] = None,
-    root_dir: str = ".",
     num_retries: int = 1,
 ) -> None:
     """
@@ -365,15 +369,21 @@ def ray_write_file(
     else:
         file_utf8_bytes = file_contents.encode("utf-8")
 
-    full_name = compose_filename(root_dir, file_name, subdirectories)
     ray_write_file_with_retries(
-        full_name, file_utf8_bytes, num_attempts=num_retries, initial_delay=1
+        file_name,
+        file_utf8_bytes,
+        root_dir=root_dir,
+        subdirectories=subdirectories,
+        num_attempts=num_retries,
+        initial_delay=1,
     )
 
 
 def ray_write_file_with_retries(
-    full_file_name: Union[str, PurePath],
+    file_name: str,
     contents: AnyStr,  # bytes or str
+    root_dir: str,
+    subdirectories: List[str] = None,
     num_attempts: int = 1,
     initial_delay: float = 1.0,
     delta_delay: float = 1.0,
@@ -394,6 +404,11 @@ def ray_write_file_with_retries(
     """
     global __local_failed_writes
     prev_exception = None
+
+    if subdirectories is None:
+        subdirectories = []
+
+    full_file_name = compose_filename(root_dir, file_name, subdirectories)
 
     if ray.is_initialized():
         status_actor = get_status_actor()
@@ -431,12 +446,11 @@ def ray_write_file_with_retries(
             raise prev_exception
 
 
-def unlink_helper(p: Union[str, Path], num_retries: int = 1) -> None:
+def unlink_helper(p: Union[str, PurePath], num_retries: int = 1) -> None:
     """Wrapper around os.unlink, with retries for errors, and won't complain if the file isn't there."""
 
     prev_exception = None
-    if isinstance(p, str):
-        p = Path(p)
+    p = Path(p)
 
     for attempt in range(0, num_retries):
         try:
@@ -458,13 +472,12 @@ def unlink_helper(p: Union[str, Path], num_retries: int = 1) -> None:
         raise prev_exception
 
 
-def mkdir_helper(p: Union[str, Path], num_retries: int = 1) -> None:
+def mkdir_helper(p: Union[str, PurePath], num_retries: int = 1) -> None:
     """
     Wrapper around `os.mkdir` that will work correctly even if the directory already exists.
     """
     prev_exception = None
-    if isinstance(p, str):
-        p = Path(p)
+    p = Path(p)
 
     for attempt in range(0, num_retries):
         try:
@@ -496,9 +509,9 @@ def mkdir_list_helper(
     """
 
     if paths is not None:
-        mkdir_helper(Path(root_dir, *paths), num_retries=num_retries)
+        mkdir_helper(PurePath(root_dir, *paths), num_retries=num_retries)
     else:
-        mkdir_helper(Path(root_dir), num_retries=num_retries)
+        mkdir_helper(PurePath(root_dir), num_retries=num_retries)
 
 
 def compose_filename(

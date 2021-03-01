@@ -99,9 +99,9 @@ def w_initialize_keys(
     # This ultimately bottoms out at secrets.randbelow(), which claims to be cryptographically strong.
     admin_state = make_fresh_election_admin()
     ray_write_json_file(
-        root_dir=".",
         file_name=keyfile_name,
         content_obj=admin_state,
+        root_dir=".",
         num_retries=NUM_WRITE_RETRIES,
     )
 

@@ -116,8 +116,10 @@ def gen_root_qrcode(
     qr_img.save(qr_byteio, "PNG")
     qr_bytes: bytes = qr_byteio.getvalue()
     ray_write_file_with_retries(
-        path.join(tally_dir, "root_hash_qrcode.png"),
+        "root_hash_qrcode.png",
         qr_bytes,
+        root_dir=tally_dir,
+        subdirectories=[],
         num_attempts=num_retry_attempts,
     )
 
@@ -125,7 +127,9 @@ def gen_root_qrcode(
         root_start_text.format(title_text=election_name) + bullet_text + root_end_text
     )
     ray_write_file_with_retries(
-        path.join(tally_dir, "root_hash.html"),
+        "root_hash.html",
         html_text,
+        root_dir=tally_dir,
+        subdirectories=[],
         num_attempts=num_retry_attempts,
     )
