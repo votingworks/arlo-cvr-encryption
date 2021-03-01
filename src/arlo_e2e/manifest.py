@@ -444,11 +444,13 @@ def build_manifest_for_directory(
         pb = ProgressBar({"Files": 0, "Directories": 0})
         pba = pb.actor
 
-    _, root_hash = ray.get(
+    result: Tuple[str, Optional[ManifestFileInfo]] = ray.get(
         _r_build_manifest_for_directory.remote(
             root_dir, subdirectories, pba, num_write_retries, logging_enabled
         )
     )
+
+    _, root_hash = result
 
     return flatmap_optional(root_hash, lambda r: r.hash)
 
