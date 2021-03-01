@@ -5,7 +5,7 @@ from typing import List, Dict
 
 from electionguard.serializable import set_serializers, set_deserializers
 
-from arlo_e2e.publish import MANIFEST_FILE
+from arlo_e2e.manifest import MANIFEST_FILE
 from arlo_e2e.root_qrcode import gen_root_qrcode
 
 # Typical usage, shown with data for Inyo County, 2020 (with arguments split across lines for legibility,

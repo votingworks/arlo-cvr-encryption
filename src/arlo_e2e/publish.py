@@ -44,7 +44,6 @@ ELECTION_DESCRIPTION: Final[str] = "election_description.json"
 ENCRYPTED_TALLY: Final[str] = "encrypted_tally.json"
 CRYPTO_CONSTANTS: Final[str] = "constants.json"
 CRYPTO_CONTEXT: Final[str] = "cryptographic_context.json"
-MANIFEST_FILE: Final[str] = "MANIFEST.json"
 
 
 def _write_tally_shared(

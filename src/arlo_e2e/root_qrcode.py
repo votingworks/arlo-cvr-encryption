@@ -1,14 +1,13 @@
 import json
 from io import BytesIO
+from os import path
 from typing import Dict
 
-import qrcode
 import PIL.Image
-from os import path
+import qrcode
 
 from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.manifest import sha256_hash
-from arlo_e2e.publish import MANIFEST_FILE
+from arlo_e2e.manifest import sha256_hash, MANIFEST_FILE
 from arlo_e2e.ray_io import ray_write_file_with_retries, ray_load_file
 
 # centering is awful: https://css-tricks.com/centering-a-div-that-maintains-aspect-ratio-when-theres-body-margin/

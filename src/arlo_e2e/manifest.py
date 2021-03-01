@@ -1,7 +1,18 @@
 from base64 import b64encode
 from dataclasses import dataclass
 from hashlib import sha256
-from typing import Dict, Optional, Type, List, AnyStr, TypeVar, Tuple, cast, NamedTuple
+from typing import (
+    Dict,
+    Optional,
+    Type,
+    List,
+    AnyStr,
+    TypeVar,
+    Tuple,
+    cast,
+    NamedTuple,
+    Final,
+)
 
 import ray
 from electionguard.ballot import CiphertextAcceptedBallot
@@ -11,7 +22,6 @@ from electionguard.utils import flatmap_optional
 from ray.actor import ActorHandle
 
 from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.publish import MANIFEST_FILE
 from arlo_e2e.ray_helpers import ray_wait_for_workers
 from arlo_e2e.ray_io import (
     ray_load_file,
@@ -24,6 +34,8 @@ from arlo_e2e.ray_progress import ProgressBar
 
 T = TypeVar("T")
 S = TypeVar("S", bound=Serializable)
+
+MANIFEST_FILE: Final[str] = "MANIFEST.json"
 
 
 class ManifestFileInfo(NamedTuple):
