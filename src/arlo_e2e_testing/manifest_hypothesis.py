@@ -1,12 +1,29 @@
 from typing import NamedTuple, List
 from electionguardtest.election import _DrawType
 from hypothesis.strategies import composite, characters, text, lists
+from os import path
+
+from arlo_e2e.ray_io import mkdir_helper, unlink_helper
 
 
 class FileNameAndContents(NamedTuple):
     file_name: str
     file_path: List[str]
     file_contents: str
+
+    def write(self, root_dir: str) -> None:
+        """Write these file contents under the given root directory."""
+        p = path.join(root_dir, *self.file_path)
+        mkdir_helper(p)
+        with open(path.join(p, self.file_name), "w") as f:
+            f.write(self.file_contents)
+
+    def overwrite(self, root_dir: str, contents: str) -> None:
+        """Overwrites the file, under the given root directory."""
+        p = path.join(root_dir, *self.file_path)
+        unlink_helper(path.join(p, self.file_name))
+        with open(path.join(p, self.file_name), "w") as f:
+            f.write(contents)
 
 
 @composite

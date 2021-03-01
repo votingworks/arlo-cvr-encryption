@@ -17,7 +17,7 @@ from electionguard.utils import flatmap_optional
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.html_index import generate_index_html_files
 from arlo_e2e.manifest import (
-    make_existing_manifest,
+    load_existing_manifest,
     Manifest,
     build_manifest_for_directory,
 )
@@ -117,7 +117,7 @@ def write_fast_tally(
 
     root_hash = build_manifest_for_directory(results_dir, [], True, 1)
     manifest = flatmap_optional(
-        root_hash, lambda h: make_existing_manifest(results_dir, [], h)
+        root_hash, lambda h: load_existing_manifest(results_dir, [], h)
     )
 
     generate_index_html_files(results.metadata.election_name, results_dir)
@@ -149,7 +149,7 @@ def write_ray_tally(
     log_and_print("Writing manifests")
     root_hash = build_manifest_for_directory(results_dir, [], True, 1)
     manifest = flatmap_optional(
-        root_hash, lambda h: make_existing_manifest(results_dir, [], h)
+        root_hash, lambda h: load_existing_manifest(results_dir, [], h)
     )
 
     generate_index_html_files(
@@ -184,7 +184,7 @@ def _load_tally_shared(
         log_error(f"Path ({results_dir}) not found, cannot load the fast-tally")
         return None
 
-    manifest = make_existing_manifest(
+    manifest = load_existing_manifest(
         results_dir, subdirectories=None, expected_root_hash=root_hash
     )
     if manifest is None:

@@ -150,8 +150,8 @@ def r_delayed_write_file_with_retries(
     initial_delay: float,
     delta_delay: float,
     counter: int,
-    status_actor: Optional[ActorHandle],  # pragma: no cover
-) -> None:
+    status_actor: Optional[ActorHandle],
+) -> None:  # pragma: no cover
     # actual return type: Optional[ActorHandle[WriteRetryStatusActor]], but type params not supported
 
     for attempt in range(counter, num_attempts):
@@ -431,19 +431,44 @@ def ray_write_file_with_retries(
             raise prev_exception
 
 
+def unlink_helper(p: Union[str, Path], num_retries: int = 1) -> None:
+    """Wrapper around os.unlink, with retries for errors, and won't complain if the file isn't there."""
+
+    prev_exception = None
+    if isinstance(p, str):
+        p = Path(p)
+
+    for attempt in range(0, num_retries):
+        try:
+            p.unlink(missing_ok=True)
+            return
+        except Exception as e:
+            prev_exception = e
+            log_and_print(f"failed to remove file {p} (attempt {attempt}): {str(e)}")
+
+            # S3 failures seem to happen at the same time; sleeping might help.
+            sleep(1)
+
+    if num_retries > 1:
+        log_and_print(
+            f"failed to remove file {p} after {num_retries} attempts, failing"
+        )
+
+    if prev_exception:
+        raise prev_exception
+
+
 def mkdir_helper(p: Union[str, Path], num_retries: int = 1) -> None:
     """
     Wrapper around `os.mkdir` that will work correctly even if the directory already exists.
     """
     prev_exception = None
     if isinstance(p, str):
-        path = Path(p)
-    else:
-        path = p
+        p = Path(p)
 
     for attempt in range(0, num_retries):
         try:
-            path.mkdir(parents=True, exist_ok=True)
+            p.mkdir(parents=True, exist_ok=True)
             return
         except Exception as e:
             prev_exception = e

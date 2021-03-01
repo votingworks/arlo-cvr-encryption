@@ -49,7 +49,7 @@ from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.manifest import (
     Manifest,
     build_manifest_for_directory,
-    make_existing_manifest,
+    load_existing_manifest,
 )
 from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.ray_helpers import ray_wait_for_workers
@@ -392,7 +392,7 @@ def ray_tally_everything(
     if root_dir is not None:
         root_hash = build_manifest_for_directory(root_dir, [], True, NUM_WRITE_RETRIES)
         if root_hash is not None:
-            manifest = make_existing_manifest(root_dir, [], root_hash)
+            manifest = load_existing_manifest(root_dir, [], root_hash)
 
     return RayTallyEverythingResults(
         metadata=cvrs.metadata,
@@ -453,7 +453,7 @@ class BallotVerifyContext(MapReduceContext[str, Optional[TALLY_TYPE]]):
         self._hash_header = hash_header
         self._root_dir = root_dir
 
-        manifest = make_existing_manifest(root_dir, [])
+        manifest = load_existing_manifest(root_dir, [])
         if manifest is None:
             raise RuntimeError("unexpected failure to make a manifest!")
         else:

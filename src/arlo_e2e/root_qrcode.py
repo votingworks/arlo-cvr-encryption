@@ -77,7 +77,7 @@ def gen_root_qrcode(
     * web_prefix
     * web_prefix_decrypted
 
-    See also, `make_existing_manifest` has an optional `expected_root_hash` field,
+    See also, `load_existing_manifest` has an optional `expected_root_hash` field,
     used by `load_ray_tally` and `load_fast_tally`.
 
     :param election_name: Human-readable name of the election, e.g., `Harris County General Election, November 2020`
