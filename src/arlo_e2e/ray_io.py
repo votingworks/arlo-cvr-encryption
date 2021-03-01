@@ -1,11 +1,22 @@
+import os
 import random
 import sys
 from asyncio import Event
-from os import stat, walk, path
+from os import stat, path
 from pathlib import PurePath, Path
 from stat import S_ISREG
 from time import sleep
-from typing import Union, AnyStr, Optional, List, Type, TypeVar
+from typing import (
+    Union,
+    AnyStr,
+    Optional,
+    List,
+    Type,
+    TypeVar,
+    Dict,
+    NamedTuple,
+    Iterator,
+)
 
 import ray
 from electionguard.ballot import CiphertextAcceptedBallot
@@ -26,6 +37,15 @@ When we're writing ballots out to disk, we'll carve out this many characters and
 use that as a directory name. This avoids directories with insane numbers of files
 that take forever to list or interact with.
 """
+
+
+def _fail_if_running_in_production() -> None:
+    # Various stackoverflow posts suggest that looking at sys.modules to detect
+    # the presence of a test framework is the way to go here. Others will set
+    # an environment variable from their test harness or even look at sys.argv.
+
+    if not ("unittest" in sys.modules.keys() or "pytest" in sys.modules.keys()):
+        raise RuntimeError("test-only feature used in production!")
 
 
 @ray.remote
@@ -69,11 +89,7 @@ class WriteRetryStatusActor:  # pragma: no cover
         ONLY USED FOR TESTING. DO NOT USE IN PRODUCTION.
         """
 
-        # clever trick: https://stackoverflow.com/a/44595269/4048276
-        if "pytest" not in sys.modules:
-            raise RuntimeError(
-                "set_failure_probability should only be used during testing!"
-            )
+        _fail_if_running_in_production()
 
         if failure_probability < 0.0 or failure_probability > 1.0:
             log_error(f"totally bogus failure probability: {failure_probability:0.3f}")
@@ -223,11 +239,7 @@ def set_failure_probability_for_testing(failure_probability: float) -> None:
     ONLY USE NON-ZERO HERE FOR TESTING.
     """
 
-    # clever trick: https://stackoverflow.com/a/44595269/4048276
-    if "pytest" not in sys.modules:
-        raise RuntimeError(
-            "set_failure_probability_for_testing should only be used during testing!"
-        )
+    _fail_if_running_in_production()
 
     global __failure_probability
     __failure_probability = failure_probability
@@ -607,13 +619,35 @@ def ray_load_json_file(
     )
 
 
-def all_files_in_directory(root_dir: str) -> List[PurePath]:
+class DirInfo(NamedTuple):
+    plain_files: Dict[str, PurePath]
+    """Mapping from local file names to `PurePath` objects usable to open those files."""
+
+    directories: Dict[str, PurePath]
+    """Mapping from local directory names to `PurePath` objects usable to open those files."""
+
+
+def read_directory_contents(root_dir: str, subdirectories: List[str] = None) -> DirInfo:
     """
-    Given a directory name, returns a list of all the files in that directory. The
-    directory name will be prepended before each filename in the result.
+    Given a directory name, and optional list of subdirectories, returns DirInfo structure
+    with all the files and directories present as dictionary keys mapping to `PurePath` objects.
+    Any file or directory name starting with a dot is ignored.
     """
-    results: List[str] = []
-    for root, dirs, files in walk(root_dir):
-        for file in files:
-            results.append(path.join(root, file))
-    return [PurePath(x) for x in results]
+    startpoint = path.join(root_dir, *subdirectories) if subdirectories else root_dir
+    plain_files: Dict[str, PurePath] = {}
+    directories: Dict[str, PurePath] = {}
+
+    with os.scandir(startpoint) as it:
+        # typecasting here because there isn't an annotation on os.scandir()
+        typed_it: Iterator[os.DirEntry] = it
+        for entry in typed_it:
+            if not entry.name.startswith("."):
+                if entry.is_file():
+                    plain_files[entry.name] = PurePath(entry.path)
+                elif entry.is_dir():
+                    directories[entry.name] = PurePath(entry.path)
+                else:
+                    # something other than a file or directory? ignore for now.
+                    pass
+
+    return DirInfo(plain_files, directories)

@@ -1,8 +1,6 @@
 import shutil
 import unittest
 from os import cpu_count
-from pathlib import PurePath
-from typing import List
 
 import coverage
 import ray
@@ -14,7 +12,7 @@ from arlo_e2e.ray_io import (
     wait_for_zero_pending_writes,
     reset_status_actor,
     mkdir_helper,
-    all_files_in_directory,
+    read_directory_contents,
 )
 
 
@@ -60,8 +58,9 @@ class TestRayWriteRetry(unittest.TestCase):
         self.assertTrue(verify_all_files(10))
 
         # while we're here, we'll throw in a test of a helper function in utils
-        file_paths: List[PurePath] = all_files_in_directory("write_output")
-        self.assertEqual(10, len(file_paths))
+        file_paths = read_directory_contents("write_output")
+        self.assertEqual(10, len(file_paths.plain_files.keys()))
+        self.assertEqual(0, len(file_paths.directories.keys()))
 
         remove_test_tree()
         ray.shutdown()

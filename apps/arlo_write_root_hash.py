@@ -5,6 +5,7 @@ from typing import List, Dict
 
 from electionguard.serializable import set_serializers, set_deserializers
 
+from arlo_e2e.publish import MANIFEST_FILE
 from arlo_e2e.root_qrcode import gen_root_qrcode
 
 # Typical usage, shown with data for Inyo County, 2020 (with arguments split across lines for legibility,
@@ -77,7 +78,7 @@ if __name__ == "__main__":
         print(f"Local root directory ({tally_dir}) not found. Exiting.")
         exit(1)
 
-    if not path.exists(path.join(tally_dir, "MANIFEST.json")):
+    if not path.exists(path.join(tally_dir, MANIFEST_FILE)):
         print(
             f"No MANIFEST.json found in {tally_dir}, cannot generate root hash. Exiting."
         )

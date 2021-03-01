@@ -1,4 +1,5 @@
 import functools
+from dataclasses import dataclass
 from datetime import datetime
 from multiprocessing.pool import Pool
 from timeit import default_timer as timer
@@ -17,7 +18,6 @@ from typing import (
 )
 
 import pandas as pd
-from dataclasses import dataclass
 from electionguard.ballot import (
     PlaintextBallot,
     CiphertextAcceptedBallot,
@@ -64,7 +64,7 @@ from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.manifest import Manifest
 from arlo_e2e.memo import Memo, make_memo_value, make_memo_lambda
 from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.utils import shard_iterable_uniform, shard_list_uniform
+from arlo_e2e.utils import shard_list_uniform
 
 
 def encrypt_ballot_helper(
@@ -421,7 +421,7 @@ class FastTallyEverythingResults(NamedTuple):
     the candidates, the parties, and so forth.
     """
 
-    encrypted_ballot_memos: Dict[str, Memo[CiphertextAcceptedBallot]]
+    encrypted_ballot_memos: Dict[str, Memo[Optional[CiphertextAcceptedBallot]]]
     """
     Dictionary from ballot ids to memoized ballots. (This allows those ballots to
     be loaded lazily, on-demand.)
@@ -890,12 +890,12 @@ def fast_tally_everything(
 
 def ballot_memos_from_metadata(
     cvr_metadata: pd.DataFrame, manifest: Manifest
-) -> Dict[str, Memo[CiphertextAcceptedBallot]]:
+) -> Dict[str, Memo[Optional[CiphertextAcceptedBallot]]]:
     """
     Helper function: given the CVR metadata and a manifest, returns a dict from ballot id's to memos that will
     lazily load the ballots themselves.
     """
-    ballot_memos: Dict[str, Memo[CiphertextAcceptedBallot]] = {}
+    ballot_memos: Dict[str, Memo[Optional[CiphertextAcceptedBallot]]] = {}
 
     for index, row in cvr_metadata.iterrows():
         ballot_id = row["BallotId"]

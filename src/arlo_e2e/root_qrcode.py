@@ -8,6 +8,7 @@ from os import path
 
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.manifest import sha256_hash
+from arlo_e2e.publish import MANIFEST_FILE
 from arlo_e2e.ray_io import ray_write_file_with_retries, ray_load_file
 
 # centering is awful: https://css-tricks.com/centering-a-div-that-maintains-aspect-ratio-when-theres-body-margin/
@@ -84,7 +85,7 @@ def gen_root_qrcode(
     :param metadata: dictionary mapping strings to values, rendered out to the QRcode as-is
     :param num_retry_attempts: number of times to attempt a write if it fails
     """
-    manifest_str = ray_load_file(root_dir=tally_dir, file_name="MANIFEST.json")
+    manifest_str = ray_load_file(root_dir=tally_dir, file_name=MANIFEST_FILE)
     if manifest_str is None:
         log_and_print("MANIFEST.json file not found, cannot generate QRcode")
         return

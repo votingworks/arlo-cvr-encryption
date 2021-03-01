@@ -12,25 +12,27 @@ from electionguard.election import (
 )
 from electionguard.logs import log_error, log_info
 from electionguard.serializable import set_deserializers, Serializable, set_serializers
+from electionguard.utils import flatmap_optional
 
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.html_index import generate_index_html_files
 from arlo_e2e.manifest import (
     make_existing_manifest,
     Manifest,
+    build_manifest_for_directory,
 )
 from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.ray_tally import RayTallyEverythingResults, NUM_WRITE_RETRIES
-from arlo_e2e.tally import (
-    FastTallyEverythingResults,
-    SelectionTally,
-    ballot_memos_from_metadata,
-)
 from arlo_e2e.ray_io import (
     mkdir_helper,
     ray_write_json_file,
     ray_write_file,
     ray_write_ciphertext_ballot,
+)
+from arlo_e2e.ray_tally import RayTallyEverythingResults, NUM_WRITE_RETRIES
+from arlo_e2e.tally import (
+    FastTallyEverythingResults,
+    SelectionTally,
+    ballot_memos_from_metadata,
 )
 
 T = TypeVar("T")
@@ -42,6 +44,7 @@ ELECTION_DESCRIPTION: Final[str] = "election_description.json"
 ENCRYPTED_TALLY: Final[str] = "encrypted_tally.json"
 CRYPTO_CONSTANTS: Final[str] = "constants.json"
 CRYPTO_CONTEXT: Final[str] = "cryptographic_context.json"
+MANIFEST_FILE: Final[str] = "MANIFEST.json"
 
 
 def _write_tally_shared(
@@ -53,7 +56,7 @@ def _write_tally_shared(
     metadata: ElectionMetadata,
     cvr_metadata: pd.DataFrame,
     num_retries: int = 1,
-) -> Manifest:
+) -> None:
     set_serializers()
     set_deserializers()
 
@@ -85,18 +88,16 @@ def _write_tally_shared(
         num_retries=num_retries,
     )
 
-    # TODO: generate the manifest from on-disk ballots and such
 
-    return None
-
-
-def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> Manifest:
+def write_fast_tally(
+    results: FastTallyEverythingResults, results_dir: str
+) -> Optional[Manifest]:
     """
     Writes out a directory with the full contents of the tally structure. Each ciphertext ballot
     will end up in its own file. Everything is JSON. Returns a `Manifest` object that reflects
     everything that was written.
     """
-    manifest = _write_tally_shared(
+    _write_tally_shared(
         results_dir,
         results.election_description,
         results.context,
@@ -106,13 +107,18 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> M
         results.cvr_metadata,
     )
 
-    log_info("write_fast_tally: writing ballots")
+    log_info("Writing ballots")
 
     for ballot in results.encrypted_ballots:
         ray_write_ciphertext_ballot(ballot)
 
-    log_info("write_fast_tally: writing MANIFEST.json")
-    manifest.write_manifest()
+    log_info("Writing manifests")
+
+    root_hash = build_manifest_for_directory(results_dir, [], True, 1)
+    manifest = flatmap_optional(
+        root_hash, lambda h: make_existing_manifest(results_dir, [], h)
+    )
+
     generate_index_html_files(results.metadata.election_name, results_dir)
 
     return manifest
@@ -121,17 +127,14 @@ def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> M
 def write_ray_tally(
     results: RayTallyEverythingResults,
     results_dir: str,
-) -> Manifest:
+) -> Optional[Manifest]:
     """
     Writes out a directory with the full contents of the tally structure. Basically everything
     except for the ballots themselves. Everything is JSON. Returns a `Manifest` object that reflects
-    everything that was written.
-
-    If any ballots have been previously written out, perhaps using the Ray tally, the `prior_manifest`
-    is merged into the final manifest that's returned.
+    everything that was written. Assumes that ciphertext ballots were already written.
     """
     log_and_print("Writing final tally and metadata to storage.")
-    manifest = _write_tally_shared(
+    _write_tally_shared(
         results_dir,
         results.election_description,
         results.context,
@@ -140,6 +143,12 @@ def write_ray_tally(
         results.metadata,
         results.cvr_metadata,
         num_retries=NUM_WRITE_RETRIES,
+    )
+
+    log_and_print("Writing manifests")
+    root_hash = build_manifest_for_directory(results_dir, [], True, 1)
+    manifest = flatmap_optional(
+        root_hash, lambda h: make_existing_manifest(results_dir, [], h)
     )
 
     generate_index_html_files(
@@ -174,7 +183,9 @@ def _load_tally_shared(
         log_error(f"Path ({results_dir}) not found, cannot load the fast-tally")
         return None
 
-    manifest = make_existing_manifest(results_dir, root_hash)
+    manifest = make_existing_manifest(
+        results_dir, subdirectories=None, expected_root_hash=root_hash
+    )
     if manifest is None:
         return None
 
