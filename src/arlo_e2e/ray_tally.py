@@ -11,6 +11,7 @@ from typing import (
     NamedTuple,
     Tuple,
     Any,
+    cast,
 )
 
 import pandas as pd
@@ -25,6 +26,7 @@ from electionguard.election import (
     InternalElectionDescription,
     make_ciphertext_election_context,
     ElectionDescription,
+    ElectionConstants,
 )
 from electionguard.elgamal import (
     elgamal_keypair_random,
@@ -33,8 +35,9 @@ from electionguard.elgamal import (
 )
 from electionguard.encrypt import encrypt_ballot
 from electionguard.group import ElementModQ, rand_q, ElementModP
-from electionguard.logs import log_error
+from electionguard.logs import log_error, log_info
 from electionguard.nonces import Nonces
+from electionguard.utils import flatmap_optional
 from ray import ObjectRef
 from ray.actor import ActorHandle
 
@@ -46,6 +49,7 @@ from arlo_e2e.constants import (
 )
 from arlo_e2e.dominion import DominionCSV, BallotPlaintextFactory
 from arlo_e2e.eg_helpers import log_and_print
+from arlo_e2e.html_index import generate_index_html_files
 from arlo_e2e.manifest import (
     Manifest,
     build_manifest_for_directory,
@@ -67,6 +71,7 @@ from arlo_e2e.tally import (
     ballot_memos_from_metadata,
     DecryptOutput,
     DecryptInput,
+    write_tally_metadata,
 )
 from arlo_e2e.utils import shard_iterable_uniform
 
@@ -273,6 +278,8 @@ def ray_tally_everything(
     the resulting `RayTallyEverythingResults` object will support the methods that allow those
     ballots to be read back in again. Conversely, if `root_dir` is `None`, then nothing is
     written to disk, and the result will not have access to individual ballots.
+
+    Similarly, there will only be a manifest in the results if there was a `root_dir`.
     """
 
     rows, cols = cvrs.data.shape
@@ -391,20 +398,43 @@ def ray_tally_everything(
     )
 
     manifest: Optional[Manifest] = None
+    constants = ElectionConstants()
+    out_tally = SelectionTally(reported_tally)
+    cvr_metadata = cvrs.dataframe_without_selections()
     if root_dir is not None:
-        root_hash = build_manifest_for_directory(root_dir, [], True, NUM_WRITE_RETRIES)
-        if root_hash is not None:
-            manifest = load_existing_manifest(root_dir, [], root_hash)
-        else:
-            log_and_print("failed to load a manifest", verbose=True)
+        log_and_print("Writing final tally and metadata to storage.")
+        write_tally_metadata(
+            results_dir=root_dir,
+            election_description=ed,
+            context=cec,
+            constants=constants,
+            tally=out_tally,
+            metadata=cvrs.metadata,
+            cvr_metadata=cvr_metadata,
+            num_retries=NUM_WRITE_RETRIES,
+        )
+
+        log_info("Writing manifests")
+
+        # Cast from Optional[str] to str is necessary here only because mypy isn't very
+        # smart about flow typing from the if-statement above.
+        root_dir2: str = cast(str, root_dir)
+        root_hash = build_manifest_for_directory(root_dir2, [], True, 1)
+        manifest = flatmap_optional(
+            root_hash, lambda h: load_existing_manifest(root_dir2, [], h)
+        )
+
+        generate_index_html_files(
+            cvrs.metadata.election_name, root_dir2, num_retries=NUM_WRITE_RETRIES
+        )
 
     return RayTallyEverythingResults(
         metadata=cvrs.metadata,
-        cvr_metadata=cvrs.dataframe_without_selections(),
+        cvr_metadata=cvr_metadata,
         election_description=ed,
         num_ballots=rows,
         manifest=manifest,
-        tally=SelectionTally(reported_tally),
+        tally=out_tally,
         context=cec,
     )
 
@@ -660,18 +690,25 @@ class RayTallyEverythingResults(NamedTuple):
 
         return True
 
-    def to_fast_tally(self) -> FastTallyEverythingResults:
+    def to_fast_tally(
+        self, manifest: Optional[Manifest] = None
+    ) -> FastTallyEverythingResults:
         """
         Converts from the "Ray" tally result to the "Fast" tally result used elsewhere. This will create
         make it possible to access individual ballots, but they're only read on-demand. This method
         should return quickly, even though reading the ballots later could be quite slow.
+
+        The optional `manifest` argument is useful when the manifest wasn't yet available, but
+        you want to create a `FastTallyEverythingResults` object with one. Anything but `None`
+        here will cause the resulting object to use that.
         """
 
-        assert (
-            self.manifest is not None
-        ), "cannot convert to fast tally without a manifest"
+        if manifest is None:
+            manifest = self.manifest
 
-        ballot_memos = ballot_memos_from_metadata(self.cvr_metadata, self.manifest)
+        assert manifest is not None, "cannot convert to fast tally without a manifest"
+
+        ballot_memos = ballot_memos_from_metadata(self.cvr_metadata, manifest)
 
         return FastTallyEverythingResults(
             metadata=self.metadata,

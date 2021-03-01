@@ -13,7 +13,7 @@ from hypothesis import settings, given, HealthCheck, Phase
 from hypothesis.strategies import booleans
 
 from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.publish import write_fast_tally, write_ray_tally
+from arlo_e2e.manifest import load_existing_manifest
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.ray_tally import ray_tally_everything
 from arlo_e2e.tally import fast_tally_everything
@@ -73,17 +73,17 @@ class TestRayTallies(unittest.TestCase):
                 cvrs, verbose=True, root_dir="rtally_output", use_progressbar=False
             )
 
+        self.assertTrue(rtally.all_proofs_valid(verbose=False))
+
+        # While we're here, we'll make sure this works with the fast tally version
+        # (which does funky stuff with memos for lazy loading of ballots, and is
+        # sufficiently different that it's worth exercising).
         ftally = rtally.to_fast_tally()
         self.assertTrue(ftally.all_proofs_valid(verbose=False))
 
-        # now, we'll write everything to the filesystem and make sure we get the
-        # same stuff
-
-        fmanifest = write_fast_tally(ftally, "ftally_output")
-        rmanifest = write_ray_tally(rtally, "rtally_output")
-
-        # we can't just assert equality of the manifests, because the root_dirs are different
-        equiv = fmanifest.equivalent(rmanifest)
+        # lastly, we'll compare the manifests to make sure everything went out the same
+        manifest2 = load_existing_manifest("rtally_output")
+        equiv = rtally.manifest.equivalent(manifest2)
         self.assertTrue(equiv)
         self.removeTree()
 
@@ -121,6 +121,7 @@ class TestRayTallies(unittest.TestCase):
             pool=self.pool,
             seed_hash=seed_hash,
             master_nonce=master_nonce,
+            root_dir="ftally_output",
             use_progressbar=False,
         )
         rtally = ray_tally_everything(

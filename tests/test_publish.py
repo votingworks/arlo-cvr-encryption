@@ -23,9 +23,7 @@ from arlo_e2e.decrypt import (
 from arlo_e2e.dominion import read_dominion_csv
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.publish import (
-    write_fast_tally,
     load_fast_tally,
-    write_ray_tally,
     load_ray_tally,
 )
 from arlo_e2e.ray_helpers import ray_init_localhost
@@ -77,18 +75,20 @@ class TestTallyPublishing(unittest.TestCase):
         assert len(ballots) > 0, "can't have zero ballots!"
 
         results = fast_tally_everything(
-            cvrs, self.pool, secret_key=keypair.secret_key, verbose=True
+            cvrs,
+            self.pool,
+            secret_key=keypair.secret_key,
+            verbose=True,
+            root_dir=TALLY_TESTING_DIR,
         )
 
         self.assertTrue(results.all_proofs_valid(self.pool))
 
-        # dump files out to disk
-        write_fast_tally(results, TALLY_TESTING_DIR)
         log_and_print("tally_testing written, proceeding to read it back in again")
 
         # now, read it back again!
         results2 = load_fast_tally(
-            TALLY_TESTING_DIR,
+            results_dir=TALLY_TESTING_DIR,
             check_proofs=check_proofs,
             pool=self.pool,
             verbose=True,
@@ -168,7 +168,6 @@ class TestTallyPublishing(unittest.TestCase):
         self.assertTrue(results.all_proofs_valid())
 
         # dump files out to disk
-        write_ray_tally(results, TALLY_TESTING_DIR)
         log_and_print("tally_testing written, proceeding to read it back in again")
 
         # now, read it back again!
