@@ -3,7 +3,8 @@ import shutil
 import unittest
 from os import path
 
-from arlo_e2e.manifest import sha256_hash, MANIFEST_FILE
+from arlo_e2e.manifest import sha256_hash
+from arlo_e2e.constants import MANIFEST_FILE
 from arlo_e2e.ray_io import ray_write_file_with_retries, mkdir_helper
 from arlo_e2e.root_qrcode import gen_root_qrcode
 

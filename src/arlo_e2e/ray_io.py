@@ -25,17 +25,10 @@ from electionguard.utils import flatmap_optional
 from jsons import DecodeError, UnfulfilledArgumentError
 from ray.actor import ActorHandle
 
+from arlo_e2e.constants import BALLOT_FILENAME_PREFIX_DIGITS
 from arlo_e2e.eg_helpers import log_and_print
 
 S = TypeVar("S", bound=Serializable)
-
-
-BALLOT_FILENAME_PREFIX_DIGITS = 5
-"""
-When we're writing ballots out to disk, we'll carve out this many characters and 
-use that as a directory name. This avoids directories with insane numbers of files
-that take forever to list or interact with.
-"""
 
 
 def _fail_if_running_in_production() -> None:
@@ -165,6 +158,7 @@ def r_delayed_write_file_with_retries(
         sleep(initial_delay)
         success = _write_once(full_file_name, contents, attempt)
         if success:
+            log_and_print(f"attempt #{attempt}: successfully wrote {full_file_name}")
             if status_actor:
                 status_actor.decrement_pending.remote(False)
             return

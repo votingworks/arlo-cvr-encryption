@@ -7,10 +7,11 @@ import PIL.Image
 import qrcode
 
 from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.manifest import sha256_hash, MANIFEST_FILE
+from arlo_e2e.manifest import sha256_hash
 from arlo_e2e.ray_io import ray_write_file_with_retries, ray_load_file
 
 # centering is awful: https://css-tricks.com/centering-a-div-that-maintains-aspect-ratio-when-theres-body-margin/
+from arlo_e2e.constants import NUM_WRITE_RETRIES, MANIFEST_FILE
 
 root_start_text = """<!DOCTYPE html>
 <html>
@@ -58,7 +59,7 @@ def gen_root_qrcode(
     election_name: str,
     tally_dir: str,
     metadata: Dict[str, str],
-    num_retry_attempts: int = 10,
+    num_retry_attempts: int = NUM_WRITE_RETRIES,
 ) -> None:
     """
     Creates and writes a file, `root_hash.html` and its associated image files,

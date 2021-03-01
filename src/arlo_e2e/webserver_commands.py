@@ -16,10 +16,9 @@ from arlo_e2e.ray_io import mkdir_helper, ray_load_json_file, ray_write_json_fil
 # server present, to make these methods easier to test. We're prefixing all of these methods
 # with "w_" so they're a bit easier to integrate with the web server itself.
 
-# How many times we'll attempt to write a file before we give up. Works around transient AWS S3 failures.
-FILE_WRITE_RETRIES = 10
-
 # File extensions that we'll allow for file uploads
+from arlo_e2e.constants import NUM_WRITE_RETRIES
+
 ALLOWED_EXTENSIONS = {"csv"}
 
 # File holding the election's public/private keypair
@@ -103,7 +102,7 @@ def w_initialize_keys(
         root_dir=".",
         file_name=keyfile_name,
         content_obj=admin_state,
-        num_retries=FILE_WRITE_RETRIES,
+        num_retries=NUM_WRITE_RETRIES,
     )
 
     # Read it back in, just to make sure we're all good.

@@ -2,7 +2,7 @@ import csv
 from io import StringIO
 from multiprocessing.pool import Pool
 from os import path
-from typing import Final, Optional, TypeVar, Tuple
+from typing import Optional, TypeVar, Tuple
 
 import pandas as pd
 from electionguard.election import (
@@ -28,7 +28,16 @@ from arlo_e2e.ray_io import (
     ray_write_file,
     ray_write_ciphertext_ballot,
 )
-from arlo_e2e.ray_tally import RayTallyEverythingResults, NUM_WRITE_RETRIES
+from arlo_e2e.ray_tally import RayTallyEverythingResults
+from arlo_e2e.constants import (
+    NUM_WRITE_RETRIES,
+    ELECTION_METADATA,
+    CVR_METADATA,
+    ELECTION_DESCRIPTION,
+    ENCRYPTED_TALLY,
+    CRYPTO_CONSTANTS,
+    CRYPTO_CONTEXT,
+)
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
     SelectionTally,
@@ -37,13 +46,6 @@ from arlo_e2e.tally import (
 
 T = TypeVar("T")
 U = TypeVar("U", bound=Serializable)
-
-ELECTION_METADATA: Final[str] = "election_metadata.json"
-CVR_METADATA: Final[str] = "cvr_metadata.csv"
-ELECTION_DESCRIPTION: Final[str] = "election_description.json"
-ENCRYPTED_TALLY: Final[str] = "encrypted_tally.json"
-CRYPTO_CONSTANTS: Final[str] = "constants.json"
-CRYPTO_CONTEXT: Final[str] = "cryptographic_context.json"
 
 
 def _write_tally_shared(

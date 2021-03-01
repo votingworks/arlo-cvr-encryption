@@ -32,9 +32,9 @@ from arlo_e2e.ray_io import (
     file_exists_helper,
     ray_load_json_file,
     ray_write_file_with_retries,
-    BALLOT_FILENAME_PREFIX_DIGITS,
     ray_write_json_file,
 )
+from arlo_e2e.constants import BALLOT_FILENAME_PREFIX_DIGITS, NUM_WRITE_RETRIES
 
 
 @ray.remote
@@ -213,7 +213,7 @@ def r_decrypt_and_write_one(
         progressbar_actor.update_completed.remote("Ballots", 1)
         return 0
 
-    write_proven_ballot(plaintext, decrypted_dir, num_retries=10)
+    write_proven_ballot(plaintext, decrypted_dir, num_retries=NUM_WRITE_RETRIES)
     progressbar_actor.update_completed.remote("Ballots", 1)
     return 1
 
@@ -292,12 +292,14 @@ def decrypt_and_write(
     ]
     metadata_filename = os.path.join(decrypted_dir, "cvr_metadata.csv")
     cvr_bytes = cvr_subset.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC)
-    ray_write_file_with_retries(metadata_filename, cvr_bytes, num_attempts=10)
+    ray_write_file_with_retries(
+        metadata_filename, cvr_bytes, num_attempts=NUM_WRITE_RETRIES
+    )
 
     generate_index_html_files(
         f"{results.metadata.election_name} (Decrypted Ballots)",
         decrypted_dir,
-        num_retries=10,
+        num_retries=NUM_WRITE_RETRIES,
     )
 
     return True

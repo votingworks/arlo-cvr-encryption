@@ -11,7 +11,6 @@ from typing import (
     Tuple,
     cast,
     NamedTuple,
-    Final,
 )
 
 import ray
@@ -26,16 +25,18 @@ from arlo_e2e.ray_helpers import ray_wait_for_workers
 from arlo_e2e.ray_io import (
     ray_load_file,
     _decode_json_file_contents,
-    BALLOT_FILENAME_PREFIX_DIGITS,
     read_directory_contents,
     ray_write_file,
+)
+from arlo_e2e.constants import (
+    BALLOT_FILENAME_PREFIX_DIGITS,
+    NUM_WRITE_RETRIES,
+    MANIFEST_FILE,
 )
 from arlo_e2e.ray_progress import ProgressBar
 
 T = TypeVar("T")
 S = TypeVar("S", bound=Serializable)
-
-MANIFEST_FILE: Final[str] = "MANIFEST.json"
 
 
 class ManifestFileInfo(NamedTuple):
@@ -138,29 +139,6 @@ class Manifest:
         and writing to disk.
         """
         return ManifestExternal(self.file_hashes, self.directory_hashes)
-
-    def write_manifest(self, num_retries: int = 1) -> ManifestFileInfo:
-        """
-        Writes out `MANIFEST.json` into the appropriate subdirectory.
-        :param num_retries: how many attempts to make writing the file; works around occasional network filesystem glitches
-        :returns: the `ManifestDirInfo`, including the hash of the manifest file, itself
-        """
-
-        # Note that we don't want to have the manifest, itself, inside the manifest, so
-        # we're going to use the skip_manifest flag.
-
-        # TODO: write manifest to disk
-
-        json_txt = self.to_manifest_external().to_json(strip_privates=True)
-        result = sha256_info(json_txt)
-        ray_write_file(
-            file_name=MANIFEST_FILE,
-            file_contents=json_txt,
-            subdirectories=self.subdirectories,
-            root_dir=self.root_dir,
-            num_retries=num_retries,
-        )
-        return result
 
     def _get_file_hash(self, filename: str) -> Optional[ManifestFileInfo]:
         """
@@ -421,14 +399,17 @@ def _r_build_manifest_for_directory(
         progress_actor.update_completed.remote("Directories", 1)
 
     # the final element in the list of subdirectories is the name of "this" subdirectory
-    return subdirectories[-1:][0], manifest_info
+    if subdirectories:
+        return subdirectories[-1:][0], manifest_info
+    else:
+        return "", manifest_info
 
 
 def build_manifest_for_directory(
     root_dir: str,
     subdirectories: List[str] = None,
     show_progressbar: bool = False,
-    num_write_retries: int = 10,
+    num_write_retries: int = NUM_WRITE_RETRIES,
 ) -> Optional[str]:
     """
     Recursively walks down, starting at the requested subdirectory of the root directory,

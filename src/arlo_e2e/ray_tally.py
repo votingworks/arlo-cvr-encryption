@@ -11,7 +11,6 @@ from typing import (
     NamedTuple,
     Tuple,
     Any,
-    Final,
 )
 
 import pandas as pd
@@ -39,9 +38,19 @@ from electionguard.nonces import Nonces
 from ray import ObjectRef
 from ray.actor import ActorHandle
 
+from arlo_e2e.constants import (
+    NUM_WRITE_RETRIES,
+    MAX_CONCURRENT_TASKS,
+    BALLOTS_PER_SHARD,
+    PARTIAL_TALLIES_PER_SHARD,
+)
 from arlo_e2e.dominion import DominionCSV, BallotPlaintextFactory
 from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.manifest import Manifest
+from arlo_e2e.manifest import (
+    Manifest,
+    build_manifest_for_directory,
+    make_existing_manifest,
+)
 from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.ray_helpers import ray_wait_for_workers
 from arlo_e2e.ray_io import mkdir_helper, ray_write_ciphertext_ballot
@@ -61,14 +70,6 @@ from arlo_e2e.tally import (
 )
 from arlo_e2e.utils import shard_iterable_uniform
 
-# When we're writing files to s3fs, we'll rarely see failures, but with enough files, it's a certainty.
-# This is how many times we'll retry each write until it works.
-NUM_WRITE_RETRIES: Final = 10
-
-# These constants define how we shard up the ballot processing for the map-reduce pipeline
-MAX_CONCURRENT_TASKS: Final = 5000
-BALLOTS_PER_SHARD: Final = 4
-PARTIAL_TALLIES_PER_SHARD: Final = 10
 
 # Nomenclature in this file: methods starting with "ray_" are meant to be called from the
 # main node. Methods starting with "r_" are "Ray remote methods". Variables starting with
@@ -387,14 +388,18 @@ def ray_tally_everything(
         verbose,
     )
 
-    # TODO: generate manifest
+    manifest: Optional[Manifest] = None
+    if root_dir is not None:
+        root_hash = build_manifest_for_directory(root_dir, [], True, NUM_WRITE_RETRIES)
+        if root_hash is not None:
+            manifest = make_existing_manifest(root_dir, [], root_hash)
 
     return RayTallyEverythingResults(
         metadata=cvrs.metadata,
         cvr_metadata=cvrs.dataframe_without_selections(),
         election_description=ed,
         num_ballots=rows,
-        manifest=None,  # TODO
+        manifest=manifest,
         tally=SelectionTally(reported_tally),
         context=cec,
     )
@@ -448,11 +453,11 @@ class BallotVerifyContext(MapReduceContext[str, Optional[TALLY_TYPE]]):
         self._hash_header = hash_header
         self._root_dir = root_dir
 
-        manifest = None  # TODO: make_existing_manifest(root_dir)
+        manifest = make_existing_manifest(root_dir, [])
         if manifest is None:
             raise RuntimeError("unexpected failure to make a manifest!")
         else:
-            self._manifest = manifest  # TODO
+            self._manifest = manifest
 
 
 @ray.remote
