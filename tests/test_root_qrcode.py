@@ -12,7 +12,10 @@ from arlo_e2e.manifest import build_manifest_for_directory, load_existing_manife
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.ray_io import mkdir_helper
 from arlo_e2e.root_qrcode import gen_root_qrcode
-from arlo_e2e_testing.manifest_hypothesis import list_file_names_contents, FileNameAndContents
+from arlo_e2e_testing.manifest_hypothesis import (
+    list_file_names_contents,
+    FileNameAndContents,
+)
 
 QRCODE_TESTING_DIR = "qrcode_test"
 
@@ -55,7 +58,9 @@ class TestRootQrCode(unittest.TestCase):
         )
 
         self.assertFalse(path.exists(path.join(QRCODE_TESTING_DIR, "root_hash.html")))
-        self.assertFalse(path.exists(path.join(QRCODE_TESTING_DIR, "root_hash_qrcode.png")))
+        self.assertFalse(
+            path.exists(path.join(QRCODE_TESTING_DIR, "root_hash_qrcode.png"))
+        )
 
         remove_test_tree()
 
@@ -96,7 +101,9 @@ class TestRootQrCode(unittest.TestCase):
         # scan for the hash written to the HTML text.
 
         self.assertTrue(path.exists(path.join(QRCODE_TESTING_DIR, "root_hash.html")))
-        self.assertTrue(path.exists(path.join(QRCODE_TESTING_DIR, "root_hash_qrcode.png")))
+        self.assertTrue(
+            path.exists(path.join(QRCODE_TESTING_DIR, "root_hash_qrcode.png"))
+        )
 
         with open(path.join(QRCODE_TESTING_DIR, "root_hash.html")) as f:
             lines = f.read().splitlines()
