@@ -294,6 +294,9 @@ class Manifest:
         Recursively wanders both this and the other manifest, to ensure that their
         hashes are all identical. The assumption is that the root directories are
         different, but we're testing that everything else is the same.
+
+        Note: this doesn't read the files, themselves, to validate that they
+        match the hashes in the manifests.
         """
 
         if self.subdirectories != other.subdirectories:
@@ -458,6 +461,7 @@ def build_manifest_for_directory(
 
     ray_wait_for_workers()
 
+    pb: Optional[ProgressBar] = None
     pba: Optional[ActorHandle] = None
     if show_progressbar:
         pb = ProgressBar({"Files": 0, "Directories": 0})
@@ -468,6 +472,9 @@ def build_manifest_for_directory(
             root_dir, subdirectories, pba, num_write_retries, logging_enabled
         )
     )
+
+    if pb is not None:
+        pb.close()
 
     _, root_hash = result
 

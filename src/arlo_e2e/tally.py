@@ -927,7 +927,12 @@ def fast_tally_everything(
         # Cast from Optional[str] to str is necessary here only because mypy isn't very
         # smart about flow typing from the if-statement above.
         root_dir2: str = cast(str, root_dir)
-        root_hash = build_manifest_for_directory(root_dir2, [], True, 1)
+        root_hash = build_manifest_for_directory(
+            root_dir=root_dir2,
+            subdirectories=[],
+            show_progressbar=use_progressbar,
+            num_write_retries=1,
+        )
         manifest = flatmap_optional(
             root_hash, lambda h: load_existing_manifest(root_dir2, [], h)
         )
