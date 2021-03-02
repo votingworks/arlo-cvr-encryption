@@ -558,7 +558,7 @@ def _write_json_file_get_hash(
     subdirectories: List[str] = None,
     root_dir: str = ".",
     num_retries: int = 1,
-) -> ManifestFileInfo:
+) -> ManifestFileInfo:  # pragma: no cover
     """
     A wrapper around `ray_write_json_file` that returns a `ManifestInfo` rather
     than nothing.
