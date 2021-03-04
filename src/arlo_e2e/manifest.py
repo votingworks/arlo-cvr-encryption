@@ -359,6 +359,20 @@ def _r_build_manifest_for_directory(
     num_retries: int,
     logging_enabled: bool,
 ) -> Tuple[str, Optional[ManifestFileInfo]]:  # pragma: no cover
+
+    # Engineering note: this design is recursive, so for every directory level, we're
+    # launching another call to this function. This causes various warnings from Ray
+    # about nested tasks, and we end up with many more workers than we have CPU cores.
+    # Nonetheless, this seems to run well, and there's actually a benefit to having
+    # a huge number of tasks, since most of them are going to be blocking on IO, rather
+    # than doing compute.
+
+    # If this ever becomes a bigger problem, then we'll have to ditch all this pretty
+    # recursion, and instead scan for all the filenames and run it through our map-reduce
+    # library, where the map part gives us back [filename, hash] tuples, and the reduce
+    # part perhaps smashes those together into a nested dictionary structure that can
+    # later be written out to the filesystem.
+
     if progress_actor:
         progress_actor.update_num_concurrent.remote("Directories", 1)
 
@@ -467,16 +481,18 @@ def build_manifest_for_directory(
         pb = ProgressBar({"Files": 0, "Directories": 0})
         pba = pb.actor
 
-    result: Tuple[str, Optional[ManifestFileInfo]] = ray.get(
-        _r_build_manifest_for_directory.remote(
-            root_dir, subdirectories, pba, num_write_retries, logging_enabled
-        )
+    task_ref = _r_build_manifest_for_directory.remote(
+        root_dir, subdirectories, pba, num_write_retries, logging_enabled
     )
 
     if pb is not None:
-        pb.close()
+        pb.print_until_ready(task_ref)
 
+    result: Tuple[str, Optional[ManifestFileInfo]] = ray.get(task_ref)
     _, root_hash = result
+
+    if pb is not None:
+        pb.close()
 
     return flatmap_optional(root_hash, lambda r: r.hash)
 
