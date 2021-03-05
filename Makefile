@@ -67,7 +67,7 @@ lint:
 	@echo 1.Pylint
 	pipenv run pylint .
 	@echo 2.Black Formatting
-	pipenv run black --check .
+	pipenv run black --check apps src tests setup.py
 	@echo 3.Mypy Static Typing
 	pipenv run mypy apps src tests setup.py
 	@echo 4.Package Metadata

@@ -248,12 +248,11 @@ class RayMapReducer(Generic[T, R]):
 
             # Next, we'll wait for half a second and see how we're doing.
             tmp: Tuple[List[ObjectRef], List[ObjectRef]] = ray.wait(
-                running_jobs, num_returns=len(running_jobs), timeout=0.5
+                running_jobs,
+                num_returns=len(running_jobs),
+                timeout=0.5,
+                fetch_local=False,
             )
-            # TODO: Ray version 2 (dev builds) add an option here, fetch_local=False,
-            #  which seems like it would be relevant to us. It's not available in the
-            #  version 1.1 release. Unclear whether that fetching is happening in
-            #  the 1.1 release of Ray or not. Hopefully not.
 
             new_ready_refs, pending_refs = tmp
             ready_refs = ready_refs + new_ready_refs

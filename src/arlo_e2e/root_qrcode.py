@@ -2,16 +2,14 @@ import json
 from io import BytesIO
 from typing import Dict
 
-import qrcode
 import PIL.Image
-from os import path
-
-from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.manifest import sha256_hash
-from arlo_e2e.ray_write_retry import write_file_with_retries
-from arlo_e2e.utils import load_file_helper
+import qrcode
 
 # centering is awful: https://css-tricks.com/centering-a-div-that-maintains-aspect-ratio-when-theres-body-margin/
+from arlo_e2e.constants import NUM_WRITE_RETRIES
+from arlo_e2e.eg_helpers import log_and_print
+from arlo_e2e.manifest import load_existing_manifest
+from arlo_e2e.ray_io import ray_write_file_with_retries
 
 root_start_text = """<!DOCTYPE html>
 <html>
@@ -59,7 +57,7 @@ def gen_root_qrcode(
     election_name: str,
     tally_dir: str,
     metadata: Dict[str, str],
-    num_retry_attempts: int = 10,
+    num_retry_attempts: int = NUM_WRITE_RETRIES,
 ) -> None:
     """
     Creates and writes a file, `root_hash.html` and its associated image files,
@@ -77,7 +75,7 @@ def gen_root_qrcode(
     * web_prefix
     * web_prefix_decrypted
 
-    See also, `make_existing_manifest` has an optional `expected_root_hash` field,
+    See also, `load_existing_manifest` has an optional `expected_root_hash` field,
     used by `load_ray_tally` and `load_fast_tally`.
 
     :param election_name: Human-readable name of the election, e.g., `Harris County General Election, November 2020`
@@ -85,12 +83,12 @@ def gen_root_qrcode(
     :param metadata: dictionary mapping strings to values, rendered out to the QRcode as-is
     :param num_retry_attempts: number of times to attempt a write if it fails
     """
-    manifest_str = load_file_helper(root_dir=tally_dir, file_name="MANIFEST.json")
-    if manifest_str is None:
+    manifest = load_existing_manifest(root_dir=tally_dir)
+    if manifest is None:
         log_and_print("MANIFEST.json file not found, cannot generate QRcode")
         return
 
-    data_hash = sha256_hash(manifest_str)
+    data_hash = manifest.manifest_hash.hash
     qr_headers = {
         "election_name": election_name,
         "root_hash": data_hash,
@@ -115,17 +113,21 @@ def gen_root_qrcode(
     qr_byteio = BytesIO()
     qr_img.save(qr_byteio, "PNG")
     qr_bytes: bytes = qr_byteio.getvalue()
-    write_file_with_retries(
-        path.join(tally_dir, "root_hash_qrcode.png"),
+    ray_write_file_with_retries(
+        "root_hash_qrcode.png",
         qr_bytes,
+        root_dir=tally_dir,
+        subdirectories=[],
         num_attempts=num_retry_attempts,
     )
 
     html_text = (
         root_start_text.format(title_text=election_name) + bullet_text + root_end_text
     )
-    write_file_with_retries(
-        path.join(tally_dir, "root_hash.html"),
+    ray_write_file_with_retries(
+        "root_hash.html",
         html_text,
+        root_dir=tally_dir,
+        subdirectories=[],
         num_attempts=num_retry_attempts,
     )

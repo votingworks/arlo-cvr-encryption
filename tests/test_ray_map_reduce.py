@@ -1,9 +1,9 @@
 import unittest
-from dataclasses import dataclass
 from datetime import timedelta
 from timeit import default_timer as timer
 from typing import List, Tuple
 
+import ray
 from electionguard.elgamal import (
     ElGamalKeyPair,
     ElGamalCiphertext,
@@ -55,6 +55,9 @@ class ElGamalEncryptor(MapReduceContext[Tuple[ElementModQ, int], ElGamalCipherte
 class TestRayMapReduce(unittest.TestCase):
     def setUp(self) -> None:
         ray_init_localhost()
+
+    def tearDown(self) -> None:
+        ray.shutdown()
 
     def test_string_map_reduce_empty_list(self) -> None:
         rmr = RayMapReducer(

@@ -26,14 +26,15 @@ from arlo_e2e.html_index import generate_index_html_files
 from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.ray_tally import RayTallyEverythingResults
 from arlo_e2e.tally import FastTallyEverythingResults
-from arlo_e2e.utils import (
-    load_json_helper,
-    write_json_helper,
-    file_exists_helper,
-    BALLOT_FILENAME_PREFIX_DIGITS,
+
+from arlo_e2e.ray_io import (
     mkdir_helper,
-    write_file_with_retries,
+    file_exists_helper,
+    ray_load_json_file,
+    ray_write_file_with_retries,
+    ray_write_json_file,
 )
+from arlo_e2e.constants import BALLOT_FILENAME_PREFIX_DIGITS, NUM_WRITE_RETRIES
 
 
 @ray.remote
@@ -137,15 +138,16 @@ def write_proven_ballot(
     """
     Writes out a `ProvenPlaintextBallot` in the desired directory.
     """
+
+    # letter b plus first few digits
     ballot_object_id = pballot.ballot.object_id
-    ballot_name_prefix = ballot_object_id[
-        0:BALLOT_FILENAME_PREFIX_DIGITS
-    ]  # letter b plus first few digits
-    write_json_helper(
-        decrypted_dir,
-        ballot_object_id + ".json",
-        pballot,
-        [ballot_name_prefix],
+    ballot_name_prefix = ballot_object_id[0:BALLOT_FILENAME_PREFIX_DIGITS]
+
+    ray_write_json_file(
+        file_name=ballot_object_id + ".json",
+        root_dir=decrypted_dir,
+        content_obj=pballot,
+        subdirectories=[ballot_name_prefix],
         num_retries=num_retries,
     )
 
@@ -157,7 +159,7 @@ def load_proven_ballot(
     Reads a `ProvenPlaintextBallot` from the desired directory. On failure, returns `None`.
     """
 
-    # Special case here because normally load_json_helper would log an error, and we don't
+    # Special case here because normally ray_load_json_file would log an error, and we don't
     # want that, since this case might happen frequently.
     if not exists_proven_ballot(ballot_object_id, decrypted_dir):
         return None
@@ -165,7 +167,7 @@ def load_proven_ballot(
     ballot_name_prefix = ballot_object_id[
         0:BALLOT_FILENAME_PREFIX_DIGITS
     ]  # letter b plus first few digits
-    return load_json_helper(
+    return ray_load_json_file(
         decrypted_dir,
         ballot_object_id + ".json",
         ProvenPlaintextBallot,
@@ -212,7 +214,7 @@ def r_decrypt_and_write_one(
         progressbar_actor.update_completed.remote("Ballots", 1)
         return 0
 
-    write_proven_ballot(plaintext, decrypted_dir, num_retries=10)
+    write_proven_ballot(plaintext, decrypted_dir, num_retries=NUM_WRITE_RETRIES)
     progressbar_actor.update_completed.remote("Ballots", 1)
     return 1
 
@@ -289,14 +291,19 @@ def decrypt_and_write(
     cvr_subset = results.cvr_metadata.loc[
         results.cvr_metadata["BallotId"].isin(ballot_ids)
     ]
-    metadata_filename = os.path.join(decrypted_dir, "cvr_metadata.csv")
     cvr_bytes = cvr_subset.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC)
-    write_file_with_retries(metadata_filename, cvr_bytes, num_attempts=10)
+    ray_write_file_with_retries(
+        "cvr_metadata.csv",
+        cvr_bytes,
+        root_dir=decrypted_dir,
+        subdirectories=[],
+        num_attempts=NUM_WRITE_RETRIES,
+    )
 
     generate_index_html_files(
         f"{results.metadata.election_name} (Decrypted Ballots)",
         decrypted_dir,
-        num_retries=10,
+        num_retries=NUM_WRITE_RETRIES,
     )
 
     return True

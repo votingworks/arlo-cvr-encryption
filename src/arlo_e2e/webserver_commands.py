@@ -1,30 +1,24 @@
 import os
-from pathlib import PurePath
+from dataclasses import dataclass
 from shutil import copyfileobj
 from typing import List, Tuple
 
 import flask
-from dataclasses import dataclass
 from electionguard.serializable import set_serializers, set_deserializers
 from flask import get_flashed_messages, flash, Flask
 from typing.io import BinaryIO
 from werkzeug.utils import secure_filename
 
 from arlo_e2e.admin import make_fresh_election_admin, ElectionAdmin
-from arlo_e2e.utils import (
-    write_json_helper,
-    load_json_helper,
-    mkdir_helper,
-)
+from arlo_e2e.ray_io import mkdir_helper, ray_load_json_file, ray_write_json_file
 
 # Design note: we're putting as much of the web functionality here, without the actual Flask web
 # server present, to make these methods easier to test. We're prefixing all of these methods
 # with "w_" so they're a bit easier to integrate with the web server itself.
 
-# How many times we'll attempt to write a file before we give up. Works around transient AWS S3 failures.
-FILE_WRITE_RETRIES = 10
-
 # File extensions that we'll allow for file uploads
+from arlo_e2e.constants import NUM_WRITE_RETRIES
+
 ALLOWED_EXTENSIONS = {"csv"}
 
 # File holding the election's public/private keypair
@@ -101,24 +95,28 @@ def w_initialize_keys(
     """
 
     _initializate_everything()
-    filename = PurePath(keyfile_name)
 
     # This ultimately bottoms out at secrets.randbelow(), which claims to be cryptographically strong.
     admin_state = make_fresh_election_admin()
-    write_json_helper(".", filename, admin_state, num_retries=FILE_WRITE_RETRIES)
+    ray_write_json_file(
+        file_name=keyfile_name,
+        content_obj=admin_state,
+        root_dir=".",
+        num_retries=NUM_WRITE_RETRIES,
+    )
 
     # Read it back in, just to make sure we're all good.
-    admin_state2 = load_json_helper(".", filename, ElectionAdmin)
+    admin_state2 = ray_load_json_file(".", keyfile_name, ElectionAdmin)
 
     if admin_state2 != admin_state:
-        flash_error(f"Something went wrong writing to {filename}")
+        flash_error(f"Something went wrong writing to {keyfile_name}")
         return SimpleResponse(False)
 
     if not admin_state2.is_valid():
         flash_error(f"Admin state wasn't valid (shouldn't ever happen!)")
         return SimpleResponse(False)
 
-    flash_info(f"Admin state written to {filename}")
+    flash_info(f"Admin state written to {keyfile_name}")
     return SimpleResponse(True)
 
 

@@ -1,8 +1,7 @@
-import csv
 from io import StringIO
 from multiprocessing.pool import Pool
 from os import path
-from typing import Final, Optional, TypeVar, Tuple
+from typing import Optional, TypeVar, Tuple
 
 import pandas as pd
 from electionguard.election import (
@@ -10,150 +9,31 @@ from electionguard.election import (
     ElectionDescription,
     CiphertextElectionContext,
 )
-from electionguard.logs import log_error, log_info
+from electionguard.logs import log_error
 from electionguard.serializable import set_deserializers, Serializable, set_serializers
 
-from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.html_index import generate_index_html_files
+from arlo_e2e.constants import (
+    ELECTION_METADATA,
+    CVR_METADATA,
+    ELECTION_DESCRIPTION,
+    ENCRYPTED_TALLY,
+    CRYPTO_CONSTANTS,
+    CRYPTO_CONTEXT,
+)
 from arlo_e2e.manifest import (
-    make_fresh_manifest,
-    make_existing_manifest,
+    load_existing_manifest,
     Manifest,
 )
 from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.ray_tally import RayTallyEverythingResults, NUM_WRITE_RETRIES
+from arlo_e2e.ray_tally import RayTallyEverythingResults
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
     SelectionTally,
     ballot_memos_from_metadata,
 )
-from arlo_e2e.utils import mkdir_helper
 
 T = TypeVar("T")
 U = TypeVar("U", bound=Serializable)
-
-ELECTION_METADATA: Final[str] = "election_metadata.json"
-CVR_METADATA: Final[str] = "cvr_metadata.csv"
-ELECTION_DESCRIPTION: Final[str] = "election_description.json"
-ENCRYPTED_TALLY: Final[str] = "encrypted_tally.json"
-CRYPTO_CONSTANTS: Final[str] = "constants.json"
-CRYPTO_CONTEXT: Final[str] = "cryptographic_context.json"
-
-
-def _write_tally_shared(
-    results_dir: str,
-    election_description: ElectionDescription,
-    context: CiphertextElectionContext,
-    constants: ElectionConstants,
-    tally: SelectionTally,
-    metadata: ElectionMetadata,
-    cvr_metadata: pd.DataFrame,
-    num_retries: int = 1,
-) -> Manifest:
-    set_serializers()
-    set_deserializers()
-
-    results_dir = results_dir
-    log_info("_write_tally_shared: starting!")
-    mkdir_helper(results_dir, num_retries=num_retries)
-
-    manifest = make_fresh_manifest(results_dir)
-
-    log_info("_write_tally_shared: writing election_description")
-    manifest.write_json_file(
-        ELECTION_DESCRIPTION, election_description, num_retries=num_retries
-    )
-
-    log_info("_write_tally_shared: writing crypto context")
-    manifest.write_json_file(CRYPTO_CONTEXT, context, num_retries=num_retries)
-
-    log_info("_write_tally_shared: writing crypto constants")
-    manifest.write_json_file(CRYPTO_CONSTANTS, constants, num_retries=num_retries)
-
-    log_info("_write_tally_shared: writing tally")
-    manifest.write_json_file(ENCRYPTED_TALLY, tally, num_retries=num_retries)
-
-    log_info("_write_tally_shared: writing metadata")
-    manifest.write_json_file(ELECTION_METADATA, metadata, num_retries=num_retries)
-
-    log_info("_write_tally_shared: writing cvr metadata")
-    manifest.write_file(
-        CVR_METADATA,
-        cvr_metadata.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC),
-        num_retries=num_retries,
-    )
-
-    return manifest
-
-
-def write_fast_tally(results: FastTallyEverythingResults, results_dir: str) -> Manifest:
-    """
-    Writes out a directory with the full contents of the tally structure. Each ciphertext ballot
-    will end up in its own file. Everything is JSON. Returns a `Manifest` object that reflects
-    everything that was written.
-    """
-    manifest = _write_tally_shared(
-        results_dir,
-        results.election_description,
-        results.context,
-        ElectionConstants(),
-        results.tally,
-        results.metadata,
-        results.cvr_metadata,
-    )
-
-    log_info("write_fast_tally: writing ballots")
-
-    for ballot in results.encrypted_ballots:
-        manifest.write_ciphertext_ballot(ballot)
-
-    log_info("write_fast_tally: writing MANIFEST.json")
-    manifest.write_manifest()
-    generate_index_html_files(results.metadata.election_name, results_dir)
-
-    return manifest
-
-
-def write_ray_tally(
-    results: RayTallyEverythingResults,
-    results_dir: str,
-) -> Manifest:
-    """
-    Writes out a directory with the full contents of the tally structure. Basically everything
-    except for the ballots themselves. Everything is JSON. Returns a `Manifest` object that reflects
-    everything that was written.
-
-    If any ballots have been previously written out, perhaps using the Ray tally, the `prior_manifest`
-    is merged into the final manifest that's returned.
-    """
-    log_and_print("Writing final tally and metadata to storage.")
-    manifest = _write_tally_shared(
-        results_dir,
-        results.election_description,
-        results.context,
-        ElectionConstants(),
-        results.tally,
-        results.metadata,
-        results.cvr_metadata,
-        num_retries=NUM_WRITE_RETRIES,
-    )
-
-    prior_manifest = results.manifest
-
-    if prior_manifest is not None:
-        # This is slower than merging the new results into the prior_manifest, but we're mutating
-        # a local object rather than something that was passed in. That seems preferable.
-        manifest.merge_from(prior_manifest)
-
-    # ballots were written during the encryption process, so we don't write them here
-
-    log_and_print("Writing manifest to storage.")
-    manifest.write_manifest(num_retries=NUM_WRITE_RETRIES)
-    generate_index_html_files(
-        results.metadata.election_name, results_dir, num_retries=NUM_WRITE_RETRIES
-    )
-
-    return manifest
 
 
 def _load_tally_shared(
@@ -181,7 +61,9 @@ def _load_tally_shared(
         log_error(f"Path ({results_dir}) not found, cannot load the fast-tally")
         return None
 
-    manifest = make_existing_manifest(results_dir, root_hash)
+    manifest = load_existing_manifest(
+        results_dir, subdirectories=None, expected_root_hash=root_hash
+    )
     if manifest is None:
         return None
 

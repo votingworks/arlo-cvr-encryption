@@ -1,9 +1,10 @@
 # Inspiration: https://github.com/honnibal/spacy-ray/pull/1/files#diff-7ede881ddc3e8456b320afb958362b2aR12-R45
 from asyncio import Event
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Tuple, List
 
 import ray
+from ray import ObjectRef
 from ray.actor import ActorHandle
 from tqdm import tqdm
 
@@ -132,11 +133,15 @@ class ProgressBar:
         """
         return self.progress_actor
 
-    def print_update(self, wait_for_update: bool = False) -> bool:
+    def print_update(
+        self, wait_for_update: bool = False, close_when_complete: bool = True
+    ) -> bool:
         """
         If requested via the `wait_for_update` flag, this will wait until there's any update in the
         state of the job. Then, either way, it updates the progress bars and return. If the job is done, this
         will return True and close the progress bars. If not, it returns False.
+
+        The `close_when_complete` flag, when set to `False`, suppresses this call to `self.close()`.
         """
 
         if not self.progress_bars:
@@ -157,18 +162,41 @@ class ProgressBar:
                 p.set_postfix(running=s.num_concurrent)
                 p.refresh()
                 complete = complete and s.counter >= s.total
-            if complete:
+            if complete and close_when_complete:
                 self.close()
             return complete
 
     def print_until_done(self) -> None:
         """
-        Blocking call, runs for a while. Do this after starting a series of remote Ray tasks,
-        to which you've passed the actor handle. Your remote workers might then call the `update` methods
-        on the actor. When the progress meter reaches 100%, this method returns.
+        Blocking call, runs for a while. Do this after starting a series of remote Ray tasks.
+        Your remote workers might then call the `update` methods on the actor. When the progress
+        meter reaches 100%, this method returns.
         """
         while not self.print_update(wait_for_update=True):
             pass
+
+    def print_until_ready(self, *refs: ObjectRef) -> None:
+        """
+        Blocking call, runs for a while. Do this after starting a series of remote Ray tasks.
+        Your remote workers might then call the `update` methods on the actor. When all of the
+        passed objectrefs are ready, this method returns.
+        """
+
+        pending_refs = list(refs)
+        while True:
+            if not self.progress_bars:
+                # somebody already called close(), so we're done
+                return
+
+            self.print_update(wait_for_update=False, close_when_complete=False)
+
+            tmp: Tuple[List[ObjectRef], List[ObjectRef]] = ray.wait(
+                pending_refs, num_returns=1, timeout=0.5, fetch_local=False
+            )
+            ready_refs, pending_refs = tmp
+
+            if len(pending_refs) == 0:
+                return
 
     def close(self) -> None:
         """

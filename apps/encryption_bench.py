@@ -15,10 +15,9 @@ from electionguard.logs import log_info
 from electionguard.utils import get_optional
 
 from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.publish import write_fast_tally
 from arlo_e2e.ray_helpers import ray_init_cluster
+from arlo_e2e.ray_io import wait_for_zero_pending_writes
 from arlo_e2e.ray_tally import ray_tally_everything
-from arlo_e2e.ray_write_retry import wait_for_zero_pending_writes
 from arlo_e2e.tally import fast_tally_everything
 
 
@@ -42,12 +41,12 @@ def run_bench(filename: str, pool: Pool, file_dir: Optional[str]) -> None:
 
     tally_start = timer()
     tally = fast_tally_everything(
-        cvrs, pool, verbose=True, secret_key=keypair.secret_key
+        cvrs,
+        pool,
+        verbose=True,
+        secret_key=keypair.secret_key,
+        root_dir=(file_dir + "_fast") if file_dir else None,
     )
-
-    if file_dir:
-        write_fast_tally(tally, file_dir + "_fast")
-
     tally_end = timer()
     assert tally.all_proofs_valid(verbose=True), "proof failure!"
 

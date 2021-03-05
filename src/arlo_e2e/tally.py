@@ -1,4 +1,6 @@
+import csv
 import functools
+from dataclasses import dataclass
 from datetime import datetime
 from multiprocessing.pool import Pool
 from timeit import default_timer as timer
@@ -14,10 +16,10 @@ from typing import (
     Any,
     Set,
     Iterable,
+    cast,
 )
 
 import pandas as pd
-from dataclasses import dataclass
 from electionguard.ballot import (
     PlaintextBallot,
     CiphertextAcceptedBallot,
@@ -37,6 +39,7 @@ from electionguard.election import (
     CiphertextElectionContext,
     ElectionDescription,
     make_ciphertext_election_context,
+    ElectionConstants,
 )
 from electionguard.elgamal import (
     ElGamalCiphertext,
@@ -53,18 +56,37 @@ from electionguard.group import (
     rand_q,
     int_to_q_unchecked,
 )
-from electionguard.logs import log_error
+from electionguard.logs import log_error, log_info
 from electionguard.nonces import Nonces
-from electionguard.serializable import Serializable
-from electionguard.utils import get_optional
+from electionguard.serializable import Serializable, set_serializers, set_deserializers
+from electionguard.utils import get_optional, flatmap_optional
 from tqdm import tqdm
 
+from arlo_e2e.constants import (
+    ELECTION_DESCRIPTION,
+    CRYPTO_CONTEXT,
+    CRYPTO_CONSTANTS,
+    ENCRYPTED_TALLY,
+    ELECTION_METADATA,
+    CVR_METADATA,
+)
 from arlo_e2e.dominion import DominionCSV
 from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.manifest import Manifest
+from arlo_e2e.html_index import generate_index_html_files
+from arlo_e2e.manifest import (
+    Manifest,
+    build_manifest_for_directory,
+    load_existing_manifest,
+)
 from arlo_e2e.memo import Memo, make_memo_value, make_memo_lambda
 from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.utils import shard_iterable_uniform, shard_list_uniform
+from arlo_e2e.ray_io import (
+    mkdir_helper,
+    ray_write_json_file,
+    ray_write_file,
+    ray_write_ciphertext_ballot,
+)
+from arlo_e2e.utils import shard_list_uniform
 
 
 def encrypt_ballot_helper(
@@ -421,7 +443,7 @@ class FastTallyEverythingResults(NamedTuple):
     the candidates, the parties, and so forth.
     """
 
-    encrypted_ballot_memos: Dict[str, Memo[CiphertextAcceptedBallot]]
+    encrypted_ballot_memos: Dict[str, Memo[Optional[CiphertextAcceptedBallot]]]
     """
     Dictionary from ballot ids to memoized ballots. (This allows those ballots to
     be loaded lazily, on-demand.)
@@ -747,6 +769,7 @@ def fast_tally_everything(
     master_nonce: Optional[ElementModQ] = None,
     secret_key: Optional[ElementModQ] = None,
     use_progressbar: bool = True,
+    root_dir: Optional[str] = None,
 ) -> FastTallyEverythingResults:
     """
     This top-level function takes a collection of Dominion CVRs and produces everything that
@@ -757,6 +780,9 @@ def fast_tally_everything(
 
     For parallelism, a `multiprocessing.pool.Pool` may be provided, and should result in significant
     speedups on multicore computers. If absent, the computation will proceed sequentially.
+
+    If `root_dir` is specified, then the tally is written out to disk, and the result
+    will include a manifest as well.
     """
     rows, cols = cvrs.data.shape
 
@@ -876,6 +902,43 @@ def fast_tally_everything(
     # strips the ballots of their nonces, which is important because those could allow for decryption
     accepted_ballots = [ciphertext_ballot_to_accepted(x) for x in cballots]
 
+    cvr_metadata = cvrs.dataframe_without_selections()
+    tally_out = SelectionTally(reported_tally)
+    manifest: Optional[Manifest] = None
+
+    if root_dir is not None:
+        write_tally_metadata(
+            root_dir,
+            ed,
+            cec,
+            ElectionConstants(),
+            tally_out,
+            cvrs.metadata,
+            cvr_metadata,
+        )
+
+        log_info("Writing ballots")
+
+        for ballot in accepted_ballots:
+            ray_write_ciphertext_ballot(ballot, root_dir=root_dir)
+
+        log_info("Writing manifests")
+
+        # Cast from Optional[str] to str is necessary here only because mypy isn't very
+        # smart about flow typing from the if-statement above.
+        root_dir2: str = cast(str, root_dir)
+        root_hash = build_manifest_for_directory(
+            root_dir=root_dir2,
+            subdirectories=[],
+            show_progressbar=use_progressbar,
+            num_write_retries=1,
+        )
+        manifest = flatmap_optional(
+            root_hash, lambda h: load_existing_manifest(root_dir2, [], h)
+        )
+
+        generate_index_html_files(cvrs.metadata.election_name, root_dir2)
+
     return FastTallyEverythingResults(
         metadata=cvrs.metadata,
         cvr_metadata=cvrs.dataframe_without_selections(),
@@ -890,12 +953,12 @@ def fast_tally_everything(
 
 def ballot_memos_from_metadata(
     cvr_metadata: pd.DataFrame, manifest: Manifest
-) -> Dict[str, Memo[CiphertextAcceptedBallot]]:
+) -> Dict[str, Memo[Optional[CiphertextAcceptedBallot]]]:
     """
     Helper function: given the CVR metadata and a manifest, returns a dict from ballot id's to memos that will
     lazily load the ballots themselves.
     """
-    ballot_memos: Dict[str, Memo[CiphertextAcceptedBallot]] = {}
+    ballot_memos: Dict[str, Memo[Optional[CiphertextAcceptedBallot]]] = {}
 
     for index, row in cvr_metadata.iterrows():
         ballot_id = row["BallotId"]
@@ -905,3 +968,59 @@ def ballot_memos_from_metadata(
         ballot_memos[ballot_id] = ballot_memo
 
     return ballot_memos
+
+
+def write_tally_metadata(
+    results_dir: str,
+    election_description: ElectionDescription,
+    context: CiphertextElectionContext,
+    constants: ElectionConstants,
+    tally: SelectionTally,
+    metadata: ElectionMetadata,
+    cvr_metadata: pd.DataFrame,
+    num_retries: int = 1,
+) -> None:
+    """Helper function used to write tally metadata of all sorts out to disk."""
+
+    set_serializers()
+    set_deserializers()
+
+    results_dir = results_dir
+    log_info("write_tally_metadata: starting!")
+    mkdir_helper(results_dir, num_retries=num_retries)
+
+    log_info("write_tally_metadata: writing election_description")
+    ray_write_json_file(
+        ELECTION_DESCRIPTION,
+        election_description,
+        num_retries=num_retries,
+        root_dir=results_dir,
+    )
+
+    log_info("write_tally_metadata: writing crypto context")
+    ray_write_json_file(
+        CRYPTO_CONTEXT, context, num_retries=num_retries, root_dir=results_dir
+    )
+
+    log_info("write_tally_metadata: writing crypto constants")
+    ray_write_json_file(
+        CRYPTO_CONSTANTS, constants, num_retries=num_retries, root_dir=results_dir
+    )
+
+    log_info("write_tally_metadata: writing tally")
+    ray_write_json_file(
+        ENCRYPTED_TALLY, tally, num_retries=num_retries, root_dir=results_dir
+    )
+
+    log_info("write_tally_metadata: writing metadata")
+    ray_write_json_file(
+        ELECTION_METADATA, metadata, num_retries=num_retries, root_dir=results_dir
+    )
+
+    log_info("write_tally_metadata: writing cvr metadata")
+    ray_write_file(
+        CVR_METADATA,
+        cvr_metadata.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC),
+        num_retries=num_retries,
+        root_dir=results_dir,
+    )

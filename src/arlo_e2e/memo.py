@@ -10,7 +10,7 @@ class Memo(Generic[T]):
     Support for lazy evaluation. See `make_memo_value` and `make_memo_lambda`.
     """
 
-    _func: Optional[Callable[[], Optional[T]]]
+    _func: Optional[Callable[[], T]]
     _value: Optional[T]
 
     @property
@@ -24,8 +24,7 @@ class Memo(Generic[T]):
     def contents(self) -> Optional[T]:
         """
         Will evaluate the internal lambda at most once, caching the resulting value,
-        which is then always returned here. If something went wrong in the lambda,
-        you would then get `None` as a result here.
+        which is then always returned here.
         """
         if self._func is not None:
             self._value = self._func()
@@ -55,7 +54,7 @@ class Memo(Generic[T]):
             return "Memo(?)"
 
 
-def make_memo_value(value: Optional[T]) -> Memo[T]:
+def make_memo_value(value: T) -> Memo[T]:
     """
     Makes a Memo object wrapper around an existing value. The resulting Memo object has a `contents` property,
     which will return the value.
@@ -65,7 +64,7 @@ def make_memo_value(value: Optional[T]) -> Memo[T]:
     return Memo(None, value)
 
 
-def make_memo_lambda(func: Callable[[], Optional[T]]) -> Memo[T]:
+def make_memo_lambda(func: Callable[[], T]) -> Memo[T]:
     """
     Makes a Memo object (for lazy evaluation). The argument is a lambda, which will later return
     the desired value. The resulting Memo object has a `contents` property, which will evaluate

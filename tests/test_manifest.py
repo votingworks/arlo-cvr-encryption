@@ -1,213 +1,101 @@
 import shutil
 import unittest
 from datetime import timedelta
-from os import path, getcwd
-from pathlib import PurePath
 from typing import List
 
+import ray
 from electionguard.logs import log_warning
-from hypothesis import given, settings
-from hypothesis.strategies import integers, booleans
+from hypothesis import given, settings, HealthCheck, Phase
+from hypothesis.strategies import integers
 
-from arlo_e2e.manifest import (
-    make_fresh_manifest,
-    make_existing_manifest,
-    path_to_manifest_name,
-)
-from arlo_e2e.utils import mkdir_helper
+from arlo_e2e.manifest import load_existing_manifest, build_manifest_for_directory
+from arlo_e2e.ray_helpers import ray_init_localhost
+from arlo_e2e.ray_io import ray_write_file
 from arlo_e2e_testing.manifest_hypothesis import (
-    file_name_and_contents,
     FileNameAndContents,
     list_file_names_contents,
 )
 
 MANIFEST_TESTING_DIR = "manifest_testing"
+MANIFEST_TESTING_DIR2 = "manifest_testing2"
 
 
 class TestManifestPublishing(unittest.TestCase):
     def removeTree(self) -> None:
         try:
             shutil.rmtree(MANIFEST_TESTING_DIR, ignore_errors=True)
+            shutil.rmtree(MANIFEST_TESTING_DIR2, ignore_errors=True)
         except FileNotFoundError:
             # okay if it's not there
             pass
 
     def tearDown(self) -> None:
         self.removeTree()
+        ray.shutdown()
 
     def setUp(self) -> None:
         log_warning("EXPECT MANY ERRORS TO BE LOGGED. THIS IS NORMAL.")
         self.removeTree()
+        ray_init_localhost()
 
-    @given(
-        integers(2, 10).flatmap(lambda length: list_file_names_contents(length)),
-        booleans(),
-    )
+    @given(integers(1, 20).flatmap(lambda n: list_file_names_contents(n)))
     @settings(
         deadline=timedelta(milliseconds=50000),
+        suppress_health_check=[HealthCheck.too_slow],
+        max_examples=20,
+        # disabling the "shrink" phase, because it runs very slowly
+        phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
     )
-    def test_manifest(
-        self, files: List[FileNameAndContents], use_absolute_paths: bool
-    ) -> None:
+    def test_manifest_end_to_end(self, contents: List[FileNameAndContents]) -> None:
         self.removeTree()
 
-        manifest_testing_dir = (
-            path.join(getcwd(), MANIFEST_TESTING_DIR)
-            if use_absolute_paths
-            else MANIFEST_TESTING_DIR
+        for c in contents:
+            c.write(MANIFEST_TESTING_DIR)
+
+        # generate the manifest on disk
+        root_hash = build_manifest_for_directory(
+            MANIFEST_TESTING_DIR, num_write_retries=1, logging_enabled=False
         )
-        mkdir_helper(manifest_testing_dir)
+        self.assertIsNotNone(root_hash)
 
-        manifest = make_fresh_manifest(manifest_testing_dir)
-        for file_name, file_path, file_contents in files:
-            manifest.write_file(file_name, file_contents, file_path)
-        manifest_hash = manifest.write_manifest()
-        self.assertTrue(manifest.all_hashes_unique())
+        # now, build an in-memory manifest
+        manifest = load_existing_manifest(
+            MANIFEST_TESTING_DIR, expected_root_hash=root_hash
+        )
+        self.assertIsNotNone(manifest)
 
-        manifest2 = make_existing_manifest(manifest_testing_dir, manifest_hash)
+        for c in contents:
+            bits = manifest.read_file(c.file_name, c.file_path)
+            self.assertIsNotNone(bits)
+            self.assertEqual(c.file_contents, bits)
+
+        # now, write out a second directory, same contents, so we can
+        # check that we get identical hashes
+        for c in contents:
+            c.write(MANIFEST_TESTING_DIR2)
+        root_hash2 = build_manifest_for_directory(
+            MANIFEST_TESTING_DIR2, num_write_retries=1, logging_enabled=False
+        )
+        self.assertIsNotNone(root_hash2)
+
+        # now, build an in-memory manifest
+        manifest2 = load_existing_manifest(
+            MANIFEST_TESTING_DIR2, expected_root_hash=root_hash2
+        )
+        self.assertIsNotNone(manifest2)
+        self.assertEqual(root_hash, root_hash2)
+
         self.assertTrue(manifest.equivalent(manifest2))
 
-        # While we're here, we'll validate that tampered root hashes are rejected.
-        # To keep the hash the same length, we're just substituting some of the initial
-        # characters.
-        manifest3 = make_existing_manifest(
-            manifest_testing_dir, "abcdefgh" + manifest_hash[8:]
+        # next up, inducing errors; add a file that's not already there; reading should fail
+        ray_write_file(
+            "something-else", "something-not-already-there", MANIFEST_TESTING_DIR, []
         )
-        self.assertIsNone(manifest3)
+        self.assertIsNone(manifest.read_file("something-else"))
 
-        file_contents2 = [
-            manifest2.read_file(file_name, file_path)
-            for file_name, file_path, _ in files
-        ]
-        self.assertTrue(None not in file_contents2)
-        self.assertListEqual([f.file_contents for f in files], file_contents2)
-
-        manifest_names = [
-            path_to_manifest_name(
-                manifest_testing_dir,
-                PurePath(
-                    path.join(
-                        path.join(manifest_testing_dir, *f.file_path), f.file_name
-                    )
-                ),
-            )
-            for f in files
-        ]
-        self.assertTrue(
-            manifest2.validate_contents(manifest_names[0], files[0].file_contents)
-        )
-        self.assertTrue(
-            manifest2.validate_contents(manifest_names[1], files[1].file_contents)
-        )
-
-        if files[1].file_contents != files[0].file_contents:
-            self.assertFalse(
-                manifest2.validate_contents(manifest_names[0], files[1].file_contents)
-            )
-            self.assertFalse(
-                manifest2.validate_contents(manifest_names[1], files[0].file_contents)
-            )
-
-        self.removeTree()
-
-    @given(
-        list_file_names_contents(5, file_name_prefix="list1_"),
-        list_file_names_contents(5, file_name_prefix="list2_"),
-    )
-    @settings(
-        deadline=timedelta(milliseconds=50000),
-    )
-    def test_manifest_merge(
-        self, files: List[FileNameAndContents], files2: List[FileNameAndContents]
-    ) -> None:
-        self.removeTree()
-        mkdir_helper(MANIFEST_TESTING_DIR)
-
-        manifest1 = make_fresh_manifest(MANIFEST_TESTING_DIR)
-        for file_name, file_path, file_contents in files:
-            manifest1.write_file(file_name, file_contents, file_path)
-
-        manifest2 = make_fresh_manifest(MANIFEST_TESTING_DIR)
-        for file_name, file_path, file_contents in files2:
-            manifest2.write_file(file_name, file_contents, file_path)
-
-        manifest1.merge_from(manifest2)
-
-        manifest1_keys = set(manifest1.hashes.keys())
-        manifest2_keys = set(manifest1.hashes.keys())
-        intersection_keys = manifest1_keys.intersection(manifest2_keys)
-
-        self.assertEqual(manifest2_keys, intersection_keys)
-
-        self.removeTree()
-
-    @given(
-        list_file_names_contents(5, file_name_prefix="list1_"),
-        list_file_names_contents(5, file_name_prefix="list2_"),
-        file_name_and_contents(),
-    )
-    @settings(
-        deadline=timedelta(milliseconds=50000),
-    )
-    def test_manifest_merge_with_safe_overlap(
-        self,
-        files: List[FileNameAndContents],
-        files2: List[FileNameAndContents],
-        extra: FileNameAndContents,
-    ) -> None:
-        self.removeTree()
-        mkdir_helper(MANIFEST_TESTING_DIR)
-
-        manifest1 = make_fresh_manifest(MANIFEST_TESTING_DIR)
-        for file_name, file_path, file_contents in files:
-            manifest1.write_file(file_name, file_contents, file_path)
-        manifest1.write_file(extra.file_name, extra.file_contents, extra.file_path)
-
-        manifest2 = make_fresh_manifest(MANIFEST_TESTING_DIR)
-        for file_name, file_path, file_contents in files2:
-            manifest2.write_file(file_name, file_contents, file_path)
-        manifest2.write_file(extra.file_name, extra.file_contents, extra.file_path)
-
-        manifest1.merge_from(manifest2)
-
-        manifest1_keys = set(manifest1.hashes.keys())
-        manifest2_keys = set(manifest1.hashes.keys())
-        intersection_keys = manifest1_keys.intersection(manifest2_keys)
-
-        self.assertEqual(manifest2_keys, intersection_keys)
-
-        self.removeTree()
-
-    @given(
-        list_file_names_contents(5, file_name_prefix="list1_"),
-        list_file_names_contents(5, file_name_prefix="list2_"),
-        file_name_and_contents(),
-    )
-    @settings(
-        deadline=timedelta(milliseconds=50000),
-    )
-    def test_manifest_merge_with_unsafe_overlap(
-        self,
-        files: List[FileNameAndContents],
-        files2: List[FileNameAndContents],
-        extra: FileNameAndContents,
-    ) -> None:
-        self.removeTree()
-        mkdir_helper(MANIFEST_TESTING_DIR)
-
-        manifest1 = make_fresh_manifest(MANIFEST_TESTING_DIR)
-        for file_name, file_path, file_contents in files:
-            manifest1.write_file(file_name, file_contents, file_path)
-        manifest1.write_file(extra.file_name, extra.file_contents, extra.file_path)
-
-        manifest2 = make_fresh_manifest(MANIFEST_TESTING_DIR)
-        for file_name, file_path, file_contents in files2:
-            manifest2.write_file(file_name, file_contents, file_path)
-        manifest2.write_file(
-            extra.file_name, extra.file_contents + "something", extra.file_path
-        )
-
-        with self.assertRaises(RuntimeError):
-            manifest1.merge_from(manifest2)
+        # and, lastly, try modifying the existing files; reading should fail
+        for c in contents:
+            c.overwrite(MANIFEST_TESTING_DIR, "something-unexpected")
+            self.assertIsNone(manifest.read_file(c.file_name, c.file_path))
 
         self.removeTree()

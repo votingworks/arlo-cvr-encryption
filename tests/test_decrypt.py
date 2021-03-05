@@ -19,7 +19,7 @@ from arlo_e2e.decrypt import (
 )
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.ray_tally import ray_tally_everything
-from arlo_e2e.utils import mkdir_helper
+from arlo_e2e.ray_io import mkdir_helper
 from arlo_e2e_testing.dominion_hypothesis import (
     ballots_and_context,
     DominionBallotsAndContext,
@@ -50,6 +50,9 @@ class EncryptionAndDecryption(unittest.TestCase):
     )
     def test_everything(self, input: DominionBallotsAndContext) -> None:
         # Something of an end-to-end test of an election RLA!
+
+        shutil.rmtree(_encrypted_ballot_dir, ignore_errors=True)
+        shutil.rmtree(_decrypted_ballot_dir, ignore_errors=True)
 
         mkdir_helper(_encrypted_ballot_dir)
         mkdir_helper(_decrypted_ballot_dir)

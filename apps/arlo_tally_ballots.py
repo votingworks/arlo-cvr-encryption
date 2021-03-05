@@ -8,15 +8,13 @@ from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.admin import ElectionAdmin
 from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.publish import write_ray_tally
 from arlo_e2e.ray_helpers import (
     ray_init_cluster,
     ray_init_localhost,
     ray_wait_for_workers,
 )
+from arlo_e2e.ray_io import wait_for_zero_pending_writes, ray_load_json_file
 from arlo_e2e.ray_tally import ray_tally_everything
-from arlo_e2e.ray_write_retry import wait_for_zero_pending_writes
-from arlo_e2e.utils import load_json_helper
 
 if __name__ == "__main__":
     set_serializers()
@@ -61,7 +59,9 @@ if __name__ == "__main__":
         print(f"Tally directory ({tallydir}) already exists. Exiting.")
         exit(1)
 
-    admin_state: Optional[ElectionAdmin] = load_json_helper(".", keyfile, ElectionAdmin)
+    admin_state: Optional[ElectionAdmin] = ray_load_json_file(
+        ".", keyfile, ElectionAdmin
+    )
     if admin_state is None or not admin_state.is_valid():
         print(f"Election administration key material wasn't valid")
         exit(1)
@@ -94,8 +94,6 @@ if __name__ == "__main__":
     )
     tally_end = timer()
     print(f"Tally rate:    {rows / (tally_end - tally_start): .3f} ballots/sec")
-    write_ray_tally(rtally, tallydir)
-    print(f"Tally written to {tallydir}")
 
     num_failures = wait_for_zero_pending_writes()
     if num_failures > 0:
