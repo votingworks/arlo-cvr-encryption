@@ -146,28 +146,33 @@ def _write_once(
 def r_delayed_write_file_with_retries(
     full_file_name: Union[str, PurePath],
     contents: AnyStr,
-    num_attempts: int,
-    initial_delay: float,
-    delta_delay: float,
-    counter: int,
+    current_attempt: int,
+    total_attempts: int,
     status_actor: Optional[ActorHandle],
 ) -> None:  # pragma: no cover
     # actual return type: Optional[ActorHandle[WriteRetryStatusActor]], but type params not supported
 
-    for attempt in range(counter, num_attempts):
-        sleep(initial_delay)
-        success = _write_once(full_file_name, contents, attempt)
-        if success:
-            log_and_print(f"attempt #{attempt}: successfully wrote {full_file_name}")
-            if status_actor:
-                status_actor.decrement_pending.remote(False)
-            return
+    success = _write_once(full_file_name, contents, current_attempt)
+    if success:
+        log_and_print(
+            f"attempt #{current_attempt}: successfully wrote {full_file_name}"
+        )
+        if status_actor:
+            status_actor.decrement_pending.remote(False)
+        return
 
-        initial_delay += delta_delay
+    if current_attempt < total_attempts:
+        # dispatch a call to another remote task, see if this works any better elsewhere!
+        r_delayed_write_file_with_retries.remote(
+            full_file_name, contents, current_attempt + 1, total_attempts, status_actor
+        )
 
-    log_and_print(f"giving up writing {full_file_name}: failed {num_attempts} times")
-    if status_actor:
-        status_actor.decrement_pending.remote(True)
+    else:
+        log_and_print(
+            f"giving up writing {full_file_name}: failed {current_attempt} times"
+        )
+        if status_actor:
+            status_actor.decrement_pending.remote(True)
 
 
 __singleton_name = "WriteRetryStatusActorSingleton"
@@ -375,7 +380,6 @@ def ray_write_file(
         root_dir=root_dir,
         subdirectories=subdirectories,
         num_attempts=num_retries,
-        initial_delay=1,
     )
 
 
@@ -385,8 +389,6 @@ def ray_write_file_with_retries(
     root_dir: str,
     subdirectories: List[str] = None,
     num_attempts: int = 1,
-    initial_delay: float = 1.0,
-    delta_delay: float = 1.0,
 ) -> None:
     """
     Helper function: given a fully resolved file path, or a path-like object describing
@@ -416,22 +418,15 @@ def ray_write_file_with_retries(
             return
         if status_actor:
             status_actor.increment_pending.remote()
+
         r_delayed_write_file_with_retries.remote(
-            full_file_name,
-            contents,
-            num_attempts,
-            initial_delay,
-            delta_delay,
-            2,
-            status_actor,
+            full_file_name, contents, 2, num_attempts, status_actor
         )
 
     else:
         for retry_number in range(1, num_attempts + 1):
             if _write_once(full_file_name, contents, retry_number):
                 return
-            sleep(initial_delay)
-            initial_delay += delta_delay
 
         if num_attempts > 1:
             log_and_print(

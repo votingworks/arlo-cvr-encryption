@@ -25,8 +25,6 @@ def write_all_files(num_files: int, num_retries: int = 10) -> None:
             root_dir="write_output",
             subdirectories=[],
             num_attempts=num_retries,
-            initial_delay=1.0,
-            delta_delay=0.1,
         )
 
 
@@ -49,15 +47,15 @@ def remove_test_tree() -> None:
 
 class TestRayWriteRetry(unittest.TestCase):
     def setUp(self) -> None:
-        ray_init_localhost(num_cpus=cpu_count())
         remove_test_tree()
 
     def tearDown(self) -> None:
         remove_test_tree()
-        ray.shutdown()
+        if ray.is_initialized():
+            ray.shutdown()
 
     def test_zero_failures(self) -> None:
-        coverage.process_startup()  # necessary for coverage testing to work in parallel
+        ray_init_localhost(num_cpus=cpu_count())
         set_failure_probability_for_testing(0.0)
 
         mkdir_helper("write_output")
@@ -76,7 +74,7 @@ class TestRayWriteRetry(unittest.TestCase):
         reset_status_actor()
 
     def test_huge_failures(self) -> None:
-        coverage.process_startup()  # necessary for coverage testing to work in parallel
+        ray_init_localhost(num_cpus=cpu_count())
         set_failure_probability_for_testing(0.5)
 
         mkdir_helper("write_output")
