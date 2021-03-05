@@ -3,7 +3,7 @@ cluster_name: default
 
 
 # The maximum number of workers nodes to launch in addition to the head node.
-max_workers: 20
+max_workers: 30
 
 # The autoscaler will scale up the cluster faster with higher upscaling speed.
 # E.g., if the task requires adding more nodes then autoscaler will gradually
@@ -50,7 +50,7 @@ available_node_types:
 #                MarketType: spot
         resources: {"CPU": 64}
         max_workers: 100
-        min_workers: 20
+        min_workers: 30
     head_x64:
         node_config:
             InstanceType: m5a.xlarge

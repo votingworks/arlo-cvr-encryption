@@ -10,7 +10,7 @@ BALLOT_FILENAME_PREFIX_DIGITS = 5
 NUM_WRITE_RETRIES: Final = 10
 
 # These constants define how we shard up the ballot processing for the map-reduce pipeline
-MAX_CONCURRENT_TASKS: Final = 5000
+MAX_CONCURRENT_TASKS: Final = 10000
 BALLOTS_PER_SHARD: Final = 4
 PARTIAL_TALLIES_PER_SHARD: Final = 10
 
