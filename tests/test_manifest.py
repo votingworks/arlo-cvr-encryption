@@ -3,6 +3,7 @@ import unittest
 from datetime import timedelta
 from typing import List
 
+import ray
 from electionguard.logs import log_warning
 from hypothesis import given, settings, HealthCheck, Phase
 from hypothesis.strategies import integers
@@ -30,6 +31,7 @@ class TestManifestPublishing(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.removeTree()
+        ray.shutdown()
 
     def setUp(self) -> None:
         log_warning("EXPECT MANY ERRORS TO BE LOGGED. THIS IS NORMAL.")

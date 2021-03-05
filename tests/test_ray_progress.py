@@ -20,6 +20,9 @@ class TestRayProgressBar(unittest.TestCase):
     def setUp(self) -> None:
         ray_init_localhost(num_cpus=2)
 
+    def tearDown(self) -> None:
+        ray.shutdown()
+
     def test_ray_progressbar(self) -> None:
         num_ticks = 6
         pb = ProgressBar({"A": num_ticks, "B": num_ticks})

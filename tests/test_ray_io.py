@@ -49,13 +49,14 @@ def remove_test_tree() -> None:
 
 class TestRayWriteRetry(unittest.TestCase):
     def setUp(self) -> None:
+        ray_init_localhost(num_cpus=cpu_count())
         remove_test_tree()
 
     def tearDown(self) -> None:
         remove_test_tree()
+        ray.shutdown()
 
     def test_zero_failures(self) -> None:
-        ray_init_localhost(num_cpus=cpu_count())
         coverage.process_startup()  # necessary for coverage testing to work in parallel
         set_failure_probability_for_testing(0.0)
 
@@ -75,7 +76,6 @@ class TestRayWriteRetry(unittest.TestCase):
         reset_status_actor()
 
     def test_huge_failures(self) -> None:
-        ray_init_localhost(num_cpus=cpu_count())
         coverage.process_startup()  # necessary for coverage testing to work in parallel
         set_failure_probability_for_testing(0.5)
 
