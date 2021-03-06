@@ -9,7 +9,6 @@ from electionguard.ballot import (
     PlaintextBallotSelection,
     PlaintextBallot,
 )
-from electionguard.election import InternalElectionDescription
 from electionguard.elgamal import ElGamalKeyPair
 from electionguardtest.election import (
     elections_and_ballots,
