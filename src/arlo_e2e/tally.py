@@ -154,12 +154,6 @@ def _interpret_contest(
 def _interpret_ballot(
     ied: InternalElectionDescription, b: PlaintextBallot
 ) -> PlaintextBallot:
-    """
-    Given a ballot, which might be overvoted (depending on what the election description
-    says about the ballot), converts any contests with overvotes into undervotes. This
-    ensures that we never encrypt an overvoted ballot, which cannot be represented
-    by ElectionGuard.
-    """
     return PlaintextBallot(
         object_id=b.object_id,
         ballot_style=b.ballot_style,
@@ -178,7 +172,9 @@ def interpret_and_encrypt_ballot(
     """
     A wrapper around ElectionGuard's encrypt_ballot() function, except any overvoted
     ballot is converted to an undervoted ballot. This ensures that we never encrypt an overvoted
-    ballot, which cannot be represented by ElectionGuard.
+    ballot, which cannot be represented by ElectionGuard. This means, during a post-election
+    audit, that an overvoted raw ballot will decrypt to an undervote, and that's something
+    the human auditors will need to recognize as a match.
 
     :param ballot: the ballot in the valid input form
     :param election_metadata: the `InternalElectionDescription` which defines this ballot's structure
