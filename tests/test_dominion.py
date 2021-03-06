@@ -8,7 +8,7 @@ import pandas as pd
 from electionguard.ballot_box import BallotBox
 from electionguard.decrypt_with_secrets import decrypt_ballot_with_secret
 from electionguard.election import InternalElectionDescription
-from electionguard.encrypt import encrypt_ballot, EncryptionDevice
+from electionguard.encrypt import EncryptionDevice
 from electionguard.group import ElementModQ
 from electionguard.nonces import Nonces
 from electionguard.tally import tally_ballots
@@ -23,6 +23,7 @@ from arlo_e2e.dominion import (
 )
 from arlo_e2e.eg_helpers import decrypt_tally_with_secret, UidMaker
 from arlo_e2e.metadata import SelectionMetadata
+from arlo_e2e.tally import interpret_and_encrypt_ballot
 from arlo_e2e_testing.dominion_hypothesis import (
     dominion_cvrs,
     ballots_and_context,
@@ -261,7 +262,7 @@ class TestDominionHypotheses(unittest.TestCase):
         nonces = Nonces(seed)[0 : len(state.ballots)]
 
         for b, n in zip(state.ballots, nonces):
-            eb = encrypt_ballot(b, ied, state.cec, seed_hash, n)
+            eb = interpret_and_encrypt_ballot(b, ied, state.cec, seed_hash, n)
             self.assertIsNotNone(eb)
 
             pb = decrypt_ballot_with_secret(

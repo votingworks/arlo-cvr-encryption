@@ -27,6 +27,8 @@ from electionguard.ballot import (
     CiphertextBallot,
     from_ciphertext_ballot,
     _list_eq,
+    PlaintextBallotContest,
+    PlaintextBallotSelection,
 )
 from electionguard.chaum_pedersen import ChaumPedersenDecryptionProof
 from electionguard.decrypt_with_secrets import (
@@ -89,6 +91,113 @@ from arlo_e2e.ray_io import (
 from arlo_e2e.utils import shard_list_uniform
 
 
+def _is_overvoted_contest(
+    ied: InternalElectionDescription, c: PlaintextBallotContest
+) -> bool:
+    contest_id = c.object_id
+    contest_desc = ied.contest_for(contest_id)
+    if contest_desc is None:
+        # won't happen?
+        return False
+
+    num_selections = len(contest_desc.ballot_selections)
+    max_number_elected = contest_desc.number_elected
+
+    # Turns out, the is_valid method already checks everything that we need to care
+    # about, with respect to rejecting overvotes.
+    return not c.is_valid(
+        expected_object_id=contest_id,
+        expected_number_selections=num_selections,
+        expected_number_elected=max_number_elected,
+    )
+
+
+def _is_overvoted_ballot(ied: InternalElectionDescription, b: PlaintextBallot) -> bool:
+    return any([_is_overvoted_contest(ied, c) for c in b.contests])
+
+
+def _interpret_contest(
+    ied: InternalElectionDescription, c: PlaintextBallotContest
+) -> PlaintextBallotContest:
+    contest_id = c.object_id
+    contest_desc = ied.contest_for(contest_id)
+    if contest_desc is None:
+        # we have no description for this contest! that should never happen, so
+        # we don't want to force downstream error checking, but we will log it,
+        # and just pass the input through to the output.
+        log_and_print(
+            f"Found a ballot with a contest_id ({contest_id}) not in the ElectionDescription!"
+        )
+        return c
+
+    # Turns out, the is_valid method already checks everything that we need to care
+    # about, with respect to rejecting overvotes.
+    if not _is_overvoted_contest(ied, c):
+        return c
+    else:
+        # when we update to the latest ElectionGuard, the representation for voted
+        # and not voted will probably be integers, not strings like this.
+        return PlaintextBallotContest(
+            object_id=c.object_id,
+            ballot_selections=[
+                PlaintextBallotSelection(
+                    object_id=s.object_id,
+                    vote="False",
+                    is_placeholder_selection=s.is_placeholder_selection,
+                    extended_data=s.extended_data,
+                )
+                for s in c.ballot_selections
+            ],
+        )
+
+
+def _interpret_ballot(
+    ied: InternalElectionDescription, b: PlaintextBallot
+) -> PlaintextBallot:
+    """
+    Given a ballot, which might be overvoted (depending on what the election description
+    says about the ballot), converts any contests with overvotes into undervotes. This
+    ensures that we never encrypt an overvoted ballot, which cannot be represented
+    by ElectionGuard.
+    """
+    return PlaintextBallot(
+        object_id=b.object_id,
+        ballot_style=b.ballot_style,
+        contests=[_interpret_contest(ied, c) for c in b.contests],
+    )
+
+
+def interpret_and_encrypt_ballot(
+    ballot: PlaintextBallot,
+    election_metadata: InternalElectionDescription,
+    context: CiphertextElectionContext,
+    seed_hash: ElementModQ,
+    nonce: Optional[ElementModQ] = None,
+    should_verify_proofs: bool = True,
+) -> Optional[CiphertextBallot]:
+    """
+    A wrapper around ElectionGuard's encrypt_ballot() function, except any overvoted
+    ballot is converted to an undervoted ballot. This ensures that we never encrypt an overvoted
+    ballot, which cannot be represented by ElectionGuard.
+
+    :param ballot: the ballot in the valid input form
+    :param election_metadata: the `InternalElectionDescription` which defines this ballot's structure
+    :param context: all the cryptographic context for the election
+    :param seed_hash: Hash from previous ballot or starting hash from device
+    :param nonce: an optional `int` used to seed the `Nonce` generated for this contest
+                 if this value is not provided, the secret generating mechanism of the OS provides its own
+    :param should_verify_proofs: specify if the proofs should be verified prior to returning (default True)
+    """
+    return encrypt_ballot(
+        _interpret_ballot(election_metadata, ballot),
+        election_metadata,
+        context,
+        seed_hash,
+        nonce,
+        should_verify_proofs,
+    )
+
+
 def encrypt_ballot_helper(
     ied: InternalElectionDescription,
     cec: CiphertextElectionContext,
@@ -111,7 +220,9 @@ def encrypt_ballot_helper(
     # here is in the "would be nice if cycles were free" category, but this is the
     # inner loop of the most performance-sensitive part of our code.
     return get_optional(
-        encrypt_ballot(b, ied, cec, seed_hash, n, should_verify_proofs=False)
+        interpret_and_encrypt_ballot(
+            b, ied, cec, seed_hash, n, should_verify_proofs=False
+        )
     )
 
 

@@ -4,14 +4,77 @@ from io import StringIO
 from multiprocessing import Pool, cpu_count
 
 import coverage
+from electionguard.ballot import (
+    PlaintextBallotContest,
+    PlaintextBallotSelection,
+    PlaintextBallot,
+)
+from electionguard.election import InternalElectionDescription
 from electionguard.elgamal import ElGamalKeyPair
+from electionguardtest.election import (
+    elections_and_ballots,
+    ELECTIONS_AND_BALLOTS_TUPLE_TYPE,
+)
 from electionguardtest.elgamal import elgamal_keypairs
 from hypothesis import settings, given, HealthCheck, Phase
 from hypothesis.strategies import booleans
 
 from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.tally import fast_tally_everything
+from arlo_e2e.tally import (
+    fast_tally_everything,
+    _interpret_ballot,
+    _is_overvoted_ballot,
+)
 from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
+
+
+def _overvote_contest(c: PlaintextBallotContest) -> PlaintextBallotContest:
+    # We'll jam every selection to True!
+    return PlaintextBallotContest(
+        object_id=c.object_id,
+        ballot_selections=[
+            PlaintextBallotSelection(
+                object_id=s.object_id,
+                vote="True",
+                is_placeholder_selection=s.is_placeholder_selection,
+                extended_data=s.extended_data,
+            )
+            for s in c.ballot_selections
+        ],
+    )
+
+
+def _overvote_ballot(b: PlaintextBallot) -> PlaintextBallot:
+    return PlaintextBallot(
+        object_id=b.object_id,
+        ballot_style=b.ballot_style,
+        contests=[_overvote_contest(c) for c in b.contests],
+    )
+
+
+class TestBallotInterpretation(unittest.TestCase):
+    @given(elections_and_ballots(num_ballots=1))
+    @settings(
+        deadline=timedelta(milliseconds=50000),
+        suppress_health_check=[HealthCheck.too_slow],
+        max_examples=5,
+        # disabling the "shrink" phase, because it runs very slowly
+        phases=[Phase.explicit, Phase.reuse, Phase.generate, Phase.target],
+    )
+    def test_interpretation(self, e_and_b: ELECTIONS_AND_BALLOTS_TUPLE_TYPE) -> None:
+        ed, ied, ballots, secret_key, cec = e_and_b
+
+        good_ballot = ballots[0]
+        igood_ballot = _interpret_ballot(ied, good_ballot)
+        self.assertEqual(good_ballot, igood_ballot)
+
+        bad_ballot = _overvote_ballot(good_ballot)
+        if not _is_overvoted_ballot(ied, bad_ballot):
+            # degenerate case, nothing changed
+            return
+
+        ibad_ballot = _interpret_ballot(ied, bad_ballot)
+        self.assertNotEqual(bad_ballot, ibad_ballot)
 
 
 class TestFastTallies(unittest.TestCase):

@@ -33,7 +33,6 @@ from electionguard.elgamal import (
     elgamal_keypair_from_secret,
     ElGamalKeyPair,
 )
-from electionguard.encrypt import encrypt_ballot
 from electionguard.group import ElementModQ, rand_q, ElementModP
 from electionguard.logs import log_error, log_info
 from electionguard.nonces import Nonces
@@ -72,6 +71,7 @@ from arlo_e2e.tally import (
     DecryptOutput,
     DecryptInput,
     write_tally_metadata,
+    interpret_and_encrypt_ballot,
 )
 from arlo_e2e.utils import shard_iterable_uniform
 
@@ -200,7 +200,7 @@ class BallotTallyContext(MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_T
     def map(self, tuple: TALLY_MAP_INPUT_TYPE) -> Optional[TALLY_TYPE]:
         pballot_dict, nonce_index = tuple
         pballot = self._bpf.row_to_plaintext_ballot(pballot_dict)
-        cballot_option = encrypt_ballot(
+        cballot_option = interpret_and_encrypt_ballot(
             pballot,
             self._ied,
             self._cec,
