@@ -128,9 +128,12 @@ setup_commands:
 
     # get any updates that might be newer than what's in the AMI
     - sudo -H pip install boto3==1.15.12
-    # - sudo pip install ray==1.1.0
     - sudo pip install -e 'git+https://github.com/votingworks/electionguard-python.git#egg=electionguard'
     - sudo pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
+
+    # nightly wheel for Ray
+    - sudo pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-2.0.0.dev0-cp38-cp38-manylinux2014_x86_64.whl
+
     - sudo mkdir /mnt/arlo-data
     - sudo s3fs arlo-e2e-denver-demo /mnt/arlo-data -o endpoint=us-east-2 -o iam_role=auto -o allow_other -o storage_class=standard_ia -o complement_stat
 
@@ -149,10 +152,10 @@ worker_setup_commands: []
 head_start_ray_commands:
     - ray stop
 #    - ulimit -n 65536; RAY_ENABLE_MULTI_TENANCY=0 RAY_BACKEND_LOG_LEVEL=debug ray start --num-cpus 0 --head --port=6379 --object-manager-port=8076 --autoscaling-config=~/ray_bootstrap_config.yaml
-    - ulimit -n 65536; ray start --num-cpus 0 --head --port=6379 --object-manager-port=8076 --min-worker-port=10000 --max-worker-port=15000 --autoscaling-config=~/ray_bootstrap_config.yaml
+    - ulimit -n 65536; ray start --num-cpus 0 --head --port=6379 --object-manager-port=8076 --min-worker-port=10002 --max-worker-port=15000 --autoscaling-config=~/ray_bootstrap_config.yaml
 
 # Command to start ray on worker nodes. You don't need to change this.
 worker_start_ray_commands:
     - ray stop
 #    - ulimit -n 65536; RAY_ENABLE_MULTI_TENANCY=0 RAY_BACKEND_LOG_LEVEL=debug ray start --address=$RAY_HEAD_IP:6379 --object-manager-port=8076
-    - ulimit -n 65536; ray start --address=$RAY_HEAD_IP:6379 --object-manager-port=8076 --min-worker-port=10000 --max-worker-port=15000
+    - ulimit -n 65536; ray start --address=$RAY_HEAD_IP:6379 --object-manager-port=8076 --min-worker-port=10002 --max-worker-port=15000
