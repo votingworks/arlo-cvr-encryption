@@ -59,8 +59,8 @@ class MapReduceContext(ABC, Generic[T, R]):
 
     And then run it with::
       rmr = RayMapReducer(context=StringLengthContext())
-      total1 = rmr.map_reduce_iterable(["ABC", "DEFGH", "I", "", "J"]))  # --> 10
-      total2 = rmr.map_reduce_iterable([]))  # --> 0
+      total1 = rmr.map_reduce_list(["ABC", "DEFGH", "I", "", "J"]))  # --> 10
+      total2 = rmr.map_reduce_list([]))  # --> 0
     """
 
     @abstractmethod
