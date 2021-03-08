@@ -154,7 +154,7 @@ def _ray_mr_reduce(
 class RayMapReducer(Generic[T, R]):
     """
     This is the handle for launching a map-reduce computation. You create one of these
-    using the constructor, and afterward you call the `map_reduce_iterable` or `map_reduce_vararg`
+    using the constructor, and afterward you call the `map_reduce_iterable` or `map_reduce_list`
     method with your inputs. All of the parallelism is handled inside, and all the calls
     into your custom code, supplied via the `MapReduceContext` instance you'll create,
     will run in parallel.
