@@ -1,6 +1,3 @@
-# This is an attempt to build a general-purpose Ray map-reduce feature. It tries to limit the number
-# of tasks in flight to be only a small multiple of the number of active workers, and it tries to
-# run reduction tasks quickly to minimize the lifetimes of intermediate results.
 from abc import ABC, abstractmethod
 from typing import TypeVar, Generic, Optional, List, Tuple, Iterable, Sequence
 from more_itertools import peekable
@@ -342,4 +339,3 @@ class RayMapReducer(Generic[T, R]):
         self._map_shard_size = map_shard_size
         self._reduce_shard_size = reduce_shard_size
         self._use_progressbar = use_progressbar
-        self._progressbar = None
