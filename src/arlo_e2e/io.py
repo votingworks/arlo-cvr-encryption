@@ -144,6 +144,53 @@ class FileName:
         else:
             return "/" + "/".join(self.subdirectories + [self.file_name])
 
+    def file_exists(self) -> bool:
+        if self.is_local():
+            s = stat(self.local_file_path())
+            return s.st_size > 0 and S_ISREG(s.st_mode)
+        else:
+            client = _s3_client()
+            s3_bucket = self.s3_bucket()
+            s3_key = self.s3_key_name()
+
+            try:
+                result = client.head_object(Bucket=s3_bucket, Key=s3_key)
+                return result["ContentLength"] > 0
+
+            except ClientError as error:
+                error_dict = error.response["Error"]
+                log_and_print(f"failed to stat {str(self)}: {str(error_dict)}")
+                return False
+
+            except Exception as e:
+                log_and_print(f"failed to stat {str(self): {str(e)}}")
+                return False
+
+    def unlink(self) -> None:
+        """
+        Attempts to remove the file. If the file doesn't exist, nothing happens.
+        """
+        if self.file_name == "":
+            # we're going to ignore directories; this only works on files
+            return
+
+        if self.is_local():
+            self.local_file_path().unlink(missing_ok=True)
+        else:
+            client = _s3_client()
+            s3_bucket = self.s3_bucket()
+            s3_key = self.s3_key_name()
+
+            try:
+                client.delete_object(Bucket=s3_bucket, Key=s3_key)
+
+            except ClientError as error:
+                error_dict = error.response["Error"]
+                log_and_print(f"failed to remove {str(self)}: {str(error_dict)}")
+
+            except Exception as e:
+                log_and_print(f"failed to remove {str(self): {str(e)}}")
+
     def write(self, contents: AnyStr, num_attempts: int = 1) -> bool:
         """
         Attempts to write the requested contents to this FileName, and will make the
@@ -189,7 +236,7 @@ class FileName:
         json_txt = content_obj.to_json(strip_privates=True)
         return self.write(json_txt, num_attempts)
 
-    def _ballot_file_from_ballot_id(self, ballot_id: str) -> 'FileName':
+    def _ballot_file_from_ballot_id(self, ballot_id: str) -> "FileName":
         """
         Internal function: constructs the appropriate FileName for a given ballot
         based on its `ballot_id` (without the ".json" suffix).
@@ -244,7 +291,9 @@ class FileName:
         if self.is_local():
             write_mode = "w" if isinstance(contents, str) else "wb"
             try:
-                with open(self.local_file_path(), write_mode) as f:
+                file_path = self.local_file_path()
+                file_path.mkdir(parents=True, exist_ok=True)
+                with open(file_path / self.file_name, write_mode) as f:
                     f.write(contents)
                 return True
             except Exception as e:
@@ -303,7 +352,9 @@ class FileName:
 
             return True
 
-    def read_ciphertext_ballot(self, ballot_id: str, expected_sha256_hash: Optional[str] = None) -> Optional[CiphertextAcceptedBallot]:
+    def read_ciphertext_ballot(
+        self, ballot_id: str, expected_sha256_hash: Optional[str] = None
+    ) -> Optional[CiphertextAcceptedBallot]:
         """
         Reads the requested ballot, whether on S3 or local, returning its contents as a `CiphertextAcceptedBallot`.
 
@@ -312,12 +363,12 @@ class FileName:
           with any mismatch causing an error to be logged and None to be returned.
         """
         ballot_file_name = self._ballot_file_from_ballot_id(ballot_id)
-        return ballot_file_name.read_json(CiphertextAcceptedBallot, expected_sha256_hash)
+        return ballot_file_name.read_json(
+            CiphertextAcceptedBallot, expected_sha256_hash
+        )
 
     def read_json(
-        self,
-        class_handle: Type[S],
-        expected_sha256_hash: Optional[str] = None
+        self, class_handle: Type[S], expected_sha256_hash: Optional[str] = None
     ) -> Optional[S]:
         """
         Reads the requested file, whether on S3 or local, returning its contents as a Python object for the given class handle.
@@ -352,7 +403,9 @@ class FileName:
             if expected_sha256_hash == actual_sha256_hash:
                 return binary_contents.decode("utf-8")
             else:
-                log_and_print(f"mismatching hash for {str(self)}: expected {expected_sha256_hash}, found {actual_sha256_hash}")
+                log_and_print(
+                    f"mismatching hash for {str(self)}: expected {expected_sha256_hash}, found {actual_sha256_hash}"
+                )
                 return None
         else:
             return binary_contents.decode("utf-8")
@@ -402,18 +455,6 @@ class FileName:
                 return None
 
 
-def _fail_if_running_in_production() -> None:
-    # Various stackoverflow posts suggest that looking at sys.modules to detect
-    # the presence of a test framework is the way to go here. Others will set
-    # an environment variable from their test harness or even look at sys.argv.
-
-    # TODO: figure out why this doesn't work
-
-    # if not ("unittest" in sys.modules.keys() or "pytest" in sys.modules.keys()):
-    #     raise RuntimeError("test-only feature used in production!")
-    pass
-
-
 @ray.remote
 class WriteRetryStatusActor:  # pragma: no cover
     # sadly, code coverage testing can't trace into Ray remote methods and actors
@@ -452,8 +493,6 @@ class WriteRetryStatusActor:  # pragma: no cover
         """
         ONLY USED FOR TESTING. DO NOT USE IN PRODUCTION.
         """
-
-        _fail_if_running_in_production()
 
         if failure_probability < 0.0 or failure_probability > 1.0:
             log_error(f"totally bogus failure probability: {failure_probability:0.3f}")
@@ -546,8 +585,6 @@ def set_failure_probability_for_testing(failure_probability: float) -> None:
     ONLY USE NON-ZERO HERE FOR TESTING.
     """
 
-    _fail_if_running_in_production()
-
     global __failure_probability
     __failure_probability = failure_probability
 
@@ -622,136 +659,6 @@ def unlink_helper(p: Union[str, PurePath], num_retries: int = 1) -> None:
         raise prev_exception
 
 
-def mkdir_helper(p: Union[str, PurePath], num_retries: int = 1) -> None:
-    """
-    Wrapper around `os.mkdir` that will work correctly even if the directory already exists.
-    """
-    prev_exception = None
-    p = Path(p)
-
-    for attempt in range(0, num_retries):
-        try:
-            p.mkdir(parents=True, exist_ok=True)
-            return
-        except Exception as e:
-            prev_exception = e
-            log_and_print(f"failed to make directory {p} (attempt {attempt}): {str(e)}")
-
-            # S3 failures seem to happen at the same time; sleeping might help.
-            sleep(1)
-
-    if num_retries > 1:
-        log_and_print(
-            f"failed to make directory {p} after {num_retries} attempts, failing"
-        )
-
-    if prev_exception:
-        raise prev_exception
-
-
-def mkdir_list_helper(
-    root_dir: str, paths: List[str] = None, num_retries: int = 1
-) -> None:
-    """
-    Like mkdir_helper, but takes a list of strings, each of which corresponds to a directory
-    to make if it doesn't exist, each within the previous. So, `mkdir_list_helper('foo', ['a', 'b', 'c'])`
-    would create `foo`, then `foo/a`, `foo/a/b`, and `foo/a/b/c`.
-    """
-
-    if paths is not None:
-        mkdir_helper(PurePath(root_dir, *paths), num_retries=num_retries)
-    else:
-        mkdir_helper(PurePath(root_dir), num_retries=num_retries)
-
-
-def compose_filename(
-    root_dir: Union[PurePath, str], file_name: str, subdirectories: List[str] = None
-) -> PurePath:
-    """
-    Helper function: given a root directory, a file name, and an optional list of subdirectories
-    might go in between (empty-list implies no subdirectory), returns a string corresponding
-    to the full filename, properly joined, for the local operating system. On Windows,
-    it will have backslashes, while on Unix system it will have forward slashes.
-    """
-
-    if not isinstance(root_dir, PurePath):
-        root_dir = PurePath(root_dir)
-
-    if subdirectories is not None:
-        root_dir = root_dir.joinpath(*subdirectories)
-    return root_dir / file_name
-
-
-def file_exists_helper(
-    root_dir: str,
-    file_name: Union[str, PurePath],
-    subdirectories: List[str] = None,
-) -> bool:
-    """
-    Checks whether the desired file exists.
-
-    Note: if the file_name is a path-like object, the root_dir and subdirectories
-    are ignored and the file is directly loaded.
-
-    :param root_dir: top-level directory where we'll be reading files
-    :param file_name: name of the file, including any suffix
-    :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
-    :returns: True if the file is a regular file with non-zero size, otherwise False
-    """
-    if isinstance(file_name, PurePath):
-        full_name = file_name
-    else:
-        full_name = compose_filename(root_dir, file_name, subdirectories)
-
-    try:
-        s = stat(full_name)
-        return s.st_size > 0 and S_ISREG(s.st_mode)
-    except FileNotFoundError:
-        return False
-    except OSError:
-        return False
-
-
-def ray_load_file(
-    root_dir: str,
-    file_name: Union[str, PurePath],
-    subdirectories: List[str] = None,
-) -> Optional[str]:
-    """
-    Reads the requested file, by name, returning its contents as a Python string.
-
-    Note: if the file_name is a path-like object, the root_dir and subdirectories
-    are ignored and the file is directly loaded.
-
-    :param root_dir: top-level directory where we'll be reading files
-    :param file_name: name of the file, including any suffix
-    :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
-    :returns: the contents of the file, or `None` if there was an error
-    """
-
-    if isinstance(file_name, PurePath):
-        full_name = file_name
-    else:
-        full_name = compose_filename(root_dir, file_name, subdirectories)
-
-    try:
-        s = stat(full_name)
-        if s.st_size == 0:  # pragma: no cover
-            log_error(f"The file ({full_name}) is empty")
-            return None
-
-        with open(full_name, "r") as f:
-            data = f.read()
-
-            return data
-    except FileNotFoundError as e:
-        log_error(f"Error reading file ({full_name}): {e}")
-        return None
-    except OSError as e:
-        log_error(f"Error reading file ({full_name}): {e}")
-        return None
-
-
 def _decode_json_file_contents(json_str: str, class_handle: Type[S]) -> Optional[S]:
     """
     Wrapper around JSON deserialization. Given a string of JSON text and a handle to an
@@ -773,34 +680,6 @@ def _decode_json_file_contents(json_str: str, class_handle: Type[S]) -> Optional
         return None
 
     return result
-
-
-def ray_load_json_file(
-    root_dir: str,
-    file_name: Union[str, PurePath],
-    class_handle: Type[S],
-    subdirectories: List[str] = None,
-) -> Optional[S]:
-    """
-    Wrapper around JSON deserialization that, given a directory name and file name (including
-    the ".json" suffix) as well as an optional handle to the class type, will load the contents
-    of the file and return an instance of the desired class, if it fits. If anything fails, the
-    result should be `None`. No exceptions will be raised outside of this method, but all such
-    errors will be logged as part of the ElectionGuard log.
-
-    Note: if the file_name is actually a path-like object, the root_dir and subdirectories are ignored,
-    and the path is directly loaded.
-
-    :param root_dir: top-level directory where we'll be reading files
-    :param file_name: name of the file, including the suffix, excluding any directories leading up to the file
-    :param class_handle: the class, itself, that we're trying to deserialize to
-    :param subdirectories: path elements to be introduced between `root_dir` and the file; empty-list means no subdirectory
-    :returns: the contents of the file, or `None` if there was an error
-    """
-    file_contents = ray_load_file(root_dir, file_name, subdirectories)
-    return flatmap_optional(
-        file_contents, lambda f: _decode_json_file_contents(f, class_handle)
-    )
 
 
 class DirInfo(NamedTuple):
