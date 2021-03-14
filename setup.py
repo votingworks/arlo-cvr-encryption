@@ -67,7 +67,7 @@ setup(
         "pillow==8.0.1",
         "qrcode==6.1",
         "more-itertools==8.7.0",
-        "boto3==1.17.23",
+        "boto3==1.17.27",
     ],
     # ElectionGuard is also a requirement, but we're assuming that's being installed elsewhere, since
     # we're using a forked version of it.

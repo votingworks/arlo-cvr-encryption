@@ -82,7 +82,7 @@ from arlo_e2e.manifest import (
 )
 from arlo_e2e.memo import Memo, make_memo_value, make_memo_lambda
 from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.ray_io import (
+from arlo_e2e.io import (
     mkdir_helper,
     ray_write_json_file,
     ray_write_file,

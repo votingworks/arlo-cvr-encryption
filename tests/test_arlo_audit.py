@@ -38,7 +38,7 @@ from arlo_e2e.decrypt import (
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.ray_tally import ray_tally_everything
 from arlo_e2e.tally import FastTallyEverythingResults
-from arlo_e2e.ray_io import mkdir_helper
+from arlo_e2e.io import mkdir_helper
 from arlo_e2e_testing.dominion_hypothesis import (
     ballots_and_context,
     DominionBallotsAndContext,

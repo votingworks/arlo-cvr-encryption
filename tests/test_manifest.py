@@ -10,7 +10,7 @@ from hypothesis.strategies import integers
 
 from arlo_e2e.manifest import load_existing_manifest, build_manifest_for_directory
 from arlo_e2e.ray_helpers import ray_init_localhost
-from arlo_e2e.ray_io import ray_write_file
+from arlo_e2e.io import ray_write_file
 from arlo_e2e_testing.manifest_hypothesis import (
     FileNameAndContents,
     list_file_names_contents,

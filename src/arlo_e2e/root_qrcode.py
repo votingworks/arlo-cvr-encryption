@@ -9,7 +9,7 @@ import qrcode
 from arlo_e2e.constants import NUM_WRITE_RETRIES
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.manifest import load_existing_manifest
-from arlo_e2e.ray_io import ray_write_file_with_retries
+from arlo_e2e.io import ray_write_file_with_retries
 
 root_start_text = """<!DOCTYPE html>
 <html>

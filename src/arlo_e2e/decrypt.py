@@ -27,7 +27,7 @@ from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.ray_tally import RayTallyEverythingResults
 from arlo_e2e.tally import FastTallyEverythingResults
 
-from arlo_e2e.ray_io import (
+from arlo_e2e.io import (
     mkdir_helper,
     file_exists_helper,
     ray_load_json_file,

@@ -1,6 +1,9 @@
+import hashlib
 import os
 import random
 from asyncio import Event
+from base64 import b64encode
+from dataclasses import dataclass
 from os import stat, path
 from pathlib import PurePath, Path
 from stat import S_ISREG
@@ -17,18 +20,386 @@ from typing import (
     Iterator,
 )
 
+import boto3
 import ray
+from botocore.exceptions import ClientError
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.logs import log_warning, log_error, log_info
 from electionguard.serializable import Serializable
 from electionguard.utils import flatmap_optional
 from jsons import DecodeError, UnfulfilledArgumentError
+from mypy_boto3_s3 import S3Client
 from ray.actor import ActorHandle
 
 from arlo_e2e.constants import BALLOT_FILENAME_PREFIX_DIGITS
 from arlo_e2e.eg_helpers import log_and_print
+from arlo_e2e.manifest import sha256_hash
 
 S = TypeVar("S", bound=Serializable)
+
+# Mypy / type annotation note: to get all the types to check properly here,
+# you have to follow some steps. Everything in the `typing` directory was
+# auto-generated (via https://pypi.org/project/boto3-stubs/) and then you
+# have to link it into PyCharm (instructions at that URL).
+
+_s3_client_handle: Optional[S3Client] = None
+
+DEFAULT_S3_STORAGE_CLASS = "STANDARD"
+# Twice as expensive per month for storage, but supports immediate deletion,
+# cheaper access. Suitable for testing, when we're creating and nuking these
+# files fairly quickly.
+
+# DEFAULT_S3_STORAGE_CLASS = "STANDARD_IA"
+# Suitable for 'Long-lived, infrequently accessed data'. Half the cost of "STANDARD"
+# for long-term storage, but you pay access charges, and objects have a minimum 30
+# day lifespan. Suitable for production deployment (?). Or maybe we want to use
+# "INTELLIGENT_TIERING" instead, which incurs a monthly cost, and will migrate
+# objects back and forth between these two classes.
+
+# Relevant documentation:
+# https://docs.aws.amazon.com/AmazonS3/latest/userguide/storage-class-intro.html
+# https://aws.amazon.com/s3/pricing/
+
+
+def _s3_client() -> S3Client:
+    """Gets S3 client resource. Initializes and caches as necessary."""
+    global _s3_client_handle
+
+    if _s3_client_handle is None:
+        _s3_client_handle = boto3.client("s3")
+    return _s3_client_handle
+
+
+def _md5_hash(b: bytes) -> str:
+    """Only used for error-checking on S3 put_object calls."""
+    m = hashlib.md5()
+    m.update(b)
+    return b64encode(m.digest()).decode("utf-8")
+
+
+@dataclass(eq=True, unsafe_hash=True)
+class FileName:
+    """
+    Rather than Python Path/PurePath objects, or whatever else, we're going to use this
+    FileName class to capture what we're doing, keeping separate track of the root directory,
+    the list of subdirectories below that, and ultimately the file name. If the root
+    directory happens to be "s3://bucket-name", then `protocol` will become `s3` and
+    `root_dir` will become `bucket-name`. Otherwise, `protocol` will be `file`.
+
+    In the S3 case, `bucket-name` could be any sort of string that `boto3`'s `put_object`
+    method accepts, including an access-point-name or ARN.
+
+    Methods on this class deal with loading and saving files from text strings, arrays
+    of bytes and ElectionGuard `Serializable` objects. There's also special handling
+    for `CiphertextBallot` objects, where the FileName instance should point to the
+    the root, and everything below that (e.g, `ballots/b0000/b00001234.json`) is
+    dealt with internally.
+
+    When the `FileName` is actually naming a directory rather than a file, the `file_name`
+    field will be an empty string.
+    """
+
+    protocol: str
+    root_dir: str
+    subdirectories: List[str]
+    file_name: str
+
+    def __init__(
+        self, file_name: str, root_dir: str = ".", subdirectories: List[str] = None
+    ):
+        self.subdirectories = [] if subdirectories is None else subdirectories
+        self.file_name = file_name
+        if root_dir.startswith("s3://"):
+            self.protocol = "s3"
+            self.root_dir = root_dir[5:]
+        else:
+            self.protocol = "file"
+            self.root_dir = root_dir
+
+    def __str__(self) -> str:
+        if self.protocol == "s3":
+            return f"s3://{self.root_dir}" + self.s3_key_name()
+        else:
+            suffix = "/".join(self.subdirectories + [self.file_name])
+            if self.root_dir.startswith("/"):
+                return f"file:/{self.root_dir}/" + suffix
+            else:
+                return f"file:{self.root_dir}/" + suffix
+
+    def is_local(self) -> bool:
+        return self.protocol == "file"
+
+    def local_file_path(self) -> Path:
+        if self.protocol != "file":
+            raise RuntimeError("can't convert an s3 filename to a local file path")
+        else:
+            return Path(PurePath(self.root_dir, *self.subdirectories))
+
+    def s3_bucket(self) -> str:
+        return self.root_dir
+
+    def s3_key_name(self) -> str:
+        if self.protocol != "s3":
+            raise RuntimeError("can't get an s3 key-name from a non-s3 file path")
+        else:
+            return "/" + "/".join(self.subdirectories + [self.file_name])
+
+    def write(self, contents: AnyStr, num_attempts: int = 1) -> bool:
+        """
+        Attempts to write the requested contents to this FileName, and will make the
+        requested number of attempts, with some sleeping in between to work around
+        failures. Returns True if the write succeeded. Logs an error and returns False
+        if something went wrong.
+        """
+        attempt = 0
+
+        status_actor = get_status_actor() if ray.is_initialized() else None
+
+        while attempt < num_attempts:
+            attempt += 1
+            if self._write_once(contents, attempt):
+                if attempt > 1:
+                    if status_actor:
+                        status_actor.decrement_pending.remote(False)
+                    log_and_print(
+                        f"Successful write for {str(self)} (attempt #{attempt})!"
+                    )
+                return True
+            if status_actor:
+                status_actor.increment_pending.remote()
+            sleep(1)
+
+        log_and_print(f"Failed write for {str(self)}, {attempt} attempt(s), aborting")
+        if status_actor and attempt > 1:
+            status_actor.decrement_pending.remote(True)
+        return False
+
+    def write_json(
+        self,
+        content_obj: Serializable,
+        num_attempts: int = 1,
+    ) -> bool:
+        """
+        Given an ElectionGuard "serializable" object, serializes it and writes the contents
+        out to this FileName, making the requested number of attempts, with some sleeping in
+        between to work around failures. Returns True if the write succeeded. Logs an error
+        and returns False if something went wrong.
+        """
+
+        json_txt = content_obj.to_json(strip_privates=True)
+        return self.write(json_txt, num_attempts)
+
+    def _ballot_file_from_ballot_id(self, ballot_id: str) -> 'FileName':
+        """
+        Internal function: constructs the appropriate FileName for a given ballot
+        based on its `ballot_id` (without the ".json" suffix).
+        """
+        ballot_name_prefix = ballot_id[0:BALLOT_FILENAME_PREFIX_DIGITS]
+
+        return FileName(
+            ballot_id + ".json",
+            self.root_dir,
+            self.subdirectories + ["ballots", ballot_name_prefix],
+        )
+
+    def write_ciphertext_ballot(
+        self,
+        ballot: CiphertextAcceptedBallot,
+        num_attempts: int = 1,
+    ) -> None:
+        """
+        Given a ciphertext ballot, writes the ballot out, in the "ballots" subdirectory,
+        of the current FileName top-level directory. Returns True if the write succeeded.
+        Logs an error and returns False if something went wrong.
+        """
+        assert (
+            self.file_name != ""
+        ), "ciphertext ballots can only be written to FileNames representing directories"
+
+        ballot_file_name = self._ballot_file_from_ballot_id(ballot.object_id)
+        ballot_file_name.write_json(ballot, num_attempts)
+
+    def _write_once(
+        self,
+        contents: AnyStr,
+        counter: int,
+    ) -> bool:
+        """
+        Internal function: returns True if the write succeeds. Logs an error and returns
+        False if something went wrong.
+        """
+        if self.file_name == "":
+            log_and_print(f"Trying to write a file without a filename: {str(self)}")
+            return False
+
+        fp = get_failure_probability_for_testing()
+        if fp > 0.0:
+            r = random.random()  # in the range [0.0, 1.0)
+            if r < fp:
+                log_and_print(
+                    f"test-induced write error: {str(self)} (attempt #{counter})"
+                )
+                return False
+
+        if self.is_local():
+            write_mode = "w" if isinstance(contents, str) else "wb"
+            try:
+                with open(self.local_file_path(), write_mode) as f:
+                    f.write(contents)
+                return True
+            except Exception as e:
+                log_and_print(
+                    f"failed to write {str(self)} (attempt #{counter}): {str(e)}"
+                )
+                return False
+        else:
+            client = _s3_client()
+            s3_bucket = self.s3_bucket()
+            s3_key = self.s3_key_name()
+            if isinstance(contents, str):
+                binary_contents = contents.encode()
+            else:
+                binary_contents = contents
+
+            # This is used as a fancy checksum to detect transmission errors, not for
+            # anything where cryptographic strength is important.
+
+            md5_hash = _md5_hash(binary_contents)
+
+            try:
+                if DEFAULT_S3_STORAGE_CLASS == "STANDARD_IA":
+                    client.put_object(
+                        Bucket=s3_bucket,
+                        Key=s3_key,
+                        Body=binary_contents,
+                        ContentMD5=md5_hash,
+                        StorageClass="STANDARD_IA",
+                    )
+                else:
+                    # This code is redundant because the type declaration for put_object requires a
+                    # "literal" string, which means we can't just directly reference our global variable,
+                    # even if it's final.
+
+                    client.put_object(
+                        Bucket=s3_bucket,
+                        Key=s3_key,
+                        Body=binary_contents,
+                        ContentMD5=md5_hash,
+                        StorageClass="STANDARD",
+                    )
+
+            except ClientError as error:
+                error_dict = error.response["Error"]
+                log_and_print(
+                    f"failed to write {str(self)} (attempt #{counter}): {str(error_dict)}"
+                )
+                return False
+
+            except Exception as e:
+                log_and_print(
+                    f"failed to write {str(self)} (attempt #{counter}): {str(e)}"
+                )
+                return False
+
+            return True
+
+    def read_ciphertext_ballot(self, ballot_id: str, expected_sha256_hash: Optional[str] = None) -> Optional[CiphertextAcceptedBallot]:
+        """
+        Reads the requested ballot, whether on S3 or local, returning its contents as a `CiphertextAcceptedBallot`.
+
+        :param ballot_id: name of the ballot (without the ".json" suffix)
+        :param expected_sha256_hash: If this parameter is not None, then the file bytes must match the specified hash,
+          with any mismatch causing an error to be logged and None to be returned.
+        """
+        ballot_file_name = self._ballot_file_from_ballot_id(ballot_id)
+        return ballot_file_name.read_json(CiphertextAcceptedBallot, expected_sha256_hash)
+
+    def read_json(
+        self,
+        class_handle: Type[S],
+        expected_sha256_hash: Optional[str] = None
+    ) -> Optional[S]:
+        """
+        Reads the requested file, whether on S3 or local, returning its contents as a Python object for the given class handle.
+
+        :param class_handle: The class, itself, that we're trying to deserialize to (if None, then you get back
+          whatever the JSON becomes, e.g., a dict).
+        :param expected_sha256_hash: If this parameter is not None, then the file bytes must match the specified hash,
+          with any mismatch causing an error to be logged and None to be returned.
+        """
+
+        # this loads the file and verifies the hashes
+        file_contents = self.read(expected_sha256_hash)
+        if file_contents is not None:
+            return _decode_json_file_contents(file_contents, class_handle)
+        else:
+            return None
+
+    def read(self, expected_sha256_hash: Optional[str] = None) -> Optional[str]:
+        """
+        Reads the requested file, whether on S3 or local, and returns the bytes,
+        if they exist or None if there's an error.
+
+        :param expected_sha256_hash: If this parameter is not None, then the file bytes must match the specified hash,
+          with any mismatch causing an error to be logged and None to be returned.
+        """
+        binary_contents = self._read()
+        if binary_contents is None:
+            return None
+
+        if expected_sha256_hash is not None:
+            actual_sha256_hash = sha256_hash(binary_contents)
+            if expected_sha256_hash == actual_sha256_hash:
+                return binary_contents.decode("utf-8")
+            else:
+                log_and_print(f"mismatching hash for {str(self)}: expected {expected_sha256_hash}, found {actual_sha256_hash}")
+                return None
+        else:
+            return binary_contents.decode("utf-8")
+
+    def _read(self) -> Optional[bytes]:
+        """
+        Internal function: Reads the requested file, whether on S3 or local, and returns the bytes,
+        if they exist, or None if there's an error.
+        """
+        if self.file_name == "":
+            log_and_print(f"Trying to read a file without a filename: {str(self)}")
+            return None
+
+        if self.is_local():
+            try:
+                with open(self.local_file_path(), "rb") as f:
+                    data = f.read()
+                    return data
+
+            except FileNotFoundError as e:
+                log_error(f"Error reading file ({str(self)}): {e}")
+                return None
+
+            except OSError as e:
+                log_error(f"Error reading file ({str(self)}): {e}")
+                return None
+
+        else:
+            client = _s3_client()
+            s3_bucket = self.s3_bucket()
+            s3_key = self.s3_key_name()
+
+            try:
+                result = client.get_object(Bucket=s3_bucket, Key=s3_key)
+                body = result["Body"]
+                binary_contents: bytes = body.read()
+                body.close()
+                return binary_contents
+
+            except ClientError as error:
+                error_dict = error.response["Error"]
+                log_and_print(f"failed to read {str(self)}: {str(error_dict)}")
+                return None
+
+            except Exception as e:
+                log_and_print(f"failed to read {str(self): {str(e)}}")
+                return None
 
 
 def _fail_if_running_in_production() -> None:
@@ -61,9 +432,7 @@ class WriteRetryStatusActor:  # pragma: no cover
         self.failure_probability = 0.0
 
     def increment_pending(self) -> None:
-        """
-        Increments the internal number of pending writes.
-        """
+        """Increments the internal number of pending writes."""
         self.num_pending += 1
 
     def decrement_pending(self, failure_happened: bool) -> None:
@@ -110,69 +479,6 @@ class WriteRetryStatusActor:  # pragma: no cover
             await self.event.wait()
             self.event.clear()
         return self.num_failures
-
-
-def _write_once(
-    full_file_name: Union[str, PurePath],
-    contents: AnyStr,
-    counter: int,
-) -> bool:
-    """
-    Internal function: returns True if the write succeeds. Logs an error and returns
-    False if something went wrong.
-    """
-    fp = get_failure_probability_for_testing()
-    if fp > 0.0:
-        r = random.random()  # in the range [0.0, 1.0)
-        if r < fp:
-            log_and_print(
-                f"test-induced write error: {full_file_name} (attempt #{counter})"
-            )
-            return False
-
-    write_mode = "w" if isinstance(contents, str) else "wb"
-    try:
-        with open(full_file_name, write_mode) as f:
-            f.write(contents)
-        return True
-    except Exception as e:
-        log_and_print(
-            f"failed to write {full_file_name} (attempt #{counter}): {str(e)}"
-        )
-        return False
-
-
-@ray.remote
-def r_delayed_write_file_with_retries(
-    full_file_name: Union[str, PurePath],
-    contents: AnyStr,
-    current_attempt: int,
-    total_attempts: int,
-    status_actor: Optional[ActorHandle],
-) -> None:  # pragma: no cover
-    # actual return type: Optional[ActorHandle[WriteRetryStatusActor]], but type params not supported
-
-    success = _write_once(full_file_name, contents, current_attempt)
-    if success:
-        log_and_print(
-            f"attempt #{current_attempt}: successfully wrote {full_file_name}"
-        )
-        if status_actor:
-            status_actor.decrement_pending.remote(False)
-        return
-
-    if current_attempt < total_attempts:
-        # dispatch a call to another remote task, see if this works any better elsewhere!
-        r_delayed_write_file_with_retries.remote(
-            full_file_name, contents, current_attempt + 1, total_attempts, status_actor
-        )
-
-    else:
-        log_and_print(
-            f"giving up writing {full_file_name}: failed {current_attempt} times"
-        )
-        if status_actor:
-            status_actor.decrement_pending.remote(True)
 
 
 __singleton_name = "WriteRetryStatusActorSingleton"
@@ -288,157 +594,6 @@ def wait_for_zero_pending_writes() -> int:
         return num_failures
     else:
         return __local_failed_writes
-
-
-def ray_write_json_file(
-    file_name: str,
-    content_obj: Serializable,
-    root_dir: str,
-    subdirectories: List[str] = None,
-    num_retries: int = 1,
-) -> None:
-    """
-    Given a filename, subdirectory, and an ElectionGuard "serializable" object, serializes it and
-    writes the contents out to the file.
-
-    :param subdirectories: paths to be introduced between `root_dir` and the file; empty-list means no subdirectory
-    :param file_name: name of the file, including any suffix
-    :param content_obj: any ElectionGuard "Serializable" object
-    :param root_dir: optional root directory, below which the files are written
-    :param num_retries: how many attempts to make writing the file; works around occasional network filesystem glitches
-    """
-
-    # This used to be called write_json_file, but there's a method of the same exact
-    # name inside ElectionGuard, so it's sensible to give this one a different name,
-    # especially since it's somewhat Ray-specific, dealing with S3 write failures, etc.
-
-    json_txt = content_obj.to_json(strip_privates=True)
-    ray_write_file(
-        file_name,
-        json_txt,
-        root_dir=root_dir,
-        subdirectories=subdirectories,
-        num_retries=num_retries,
-    )
-
-
-def ray_write_ciphertext_ballot(
-    ballot: CiphertextAcceptedBallot,
-    root_dir: str,
-    num_retries: int = 1,
-) -> None:
-    """
-    Given a ciphertext ballot, writes the ballot to disk in the "ballots" subdirectory.
-    :param ballot: any "accepted" ballot, ready to be written out
-    :param root_dir: mandatory root directory, in which the "ballots" subdirectory will appear
-    :param num_retries: how many attempts to make writing the file; works around occasional network filesystem glitches
-    """
-    ballot_name = ballot.object_id
-    ballot_name_prefix = ballot_name[0:BALLOT_FILENAME_PREFIX_DIGITS]
-    ray_write_json_file(
-        ballot_name + ".json",
-        ballot,
-        root_dir=root_dir,
-        subdirectories=["ballots", ballot_name_prefix],
-        num_retries=num_retries,
-    )
-
-
-def ray_write_file(
-    file_name: str,
-    file_contents: AnyStr,
-    root_dir: str,
-    subdirectories: List[str] = None,
-    num_retries: int = 1,
-) -> None:
-    """
-    Given a filename, subdirectory, and desired contents of the file, writes the contents out to the file.
-
-    :param subdirectories: paths to be introduced between `root_dir` and the file; empty-list means no subdirectory
-    :param file_name: name of the file, including any suffix
-    :param file_contents: string to be written to the file
-    :param root_dir: optional root directory, below which the files are written
-    :param num_retries: how many attempts to make writing the file; works around occasional network filesystem glitches
-    """
-
-    # This used to be called write_file, but that name is used in many other modules,
-    # creating lots of opportunity for confusion.
-
-    if subdirectories is None:
-        subdirectories = []
-
-    mkdir_list_helper(root_dir, subdirectories, num_retries=num_retries)
-
-    if isinstance(file_contents, bytes):
-        file_utf8_bytes = file_contents
-    else:
-        file_utf8_bytes = file_contents.encode("utf-8")
-
-    ray_write_file_with_retries(
-        file_name,
-        file_utf8_bytes,
-        root_dir=root_dir,
-        subdirectories=subdirectories,
-        num_attempts=num_retries,
-    )
-
-
-def ray_write_file_with_retries(
-    file_name: str,
-    contents: AnyStr,  # bytes or str
-    root_dir: str,
-    subdirectories: List[str] = None,
-    num_attempts: int = 1,
-) -> None:
-    """
-    Helper function: given a fully resolved file path, or a path-like object describing
-    a file location, writes the given contents to the a file of that name, and if it
-    fails, tries it again and again (based on the `num_attempts` parameter). This works
-    around occasional failures that happen, for no good reason, with s3fs-fuse in big
-    clouds.
-
-    If Ray is in use, this gets a little more interesting. If it fails, it will
-    launch a Ray task to delay a bit and try again, allowing the initial call to
-    return immediately, and the file will *eventually* get written out.
-
-    The delay time, in seconds, starts with the `initial_delay` (default: 1 second)
-    then grows by `delta_delay` (default: 1 second) each time.
-    """
-    global __local_failed_writes
-    prev_exception = None
-
-    if subdirectories is None:
-        subdirectories = []
-
-    full_file_name = compose_filename(root_dir, file_name, subdirectories)
-
-    if ray.is_initialized():
-        status_actor = get_status_actor()
-        if _write_once(full_file_name, contents, 1):
-            return
-        if status_actor:
-            status_actor.increment_pending.remote()
-
-        r_delayed_write_file_with_retries.remote(
-            full_file_name, contents, 2, num_attempts, status_actor
-        )
-
-    else:
-        for retry_number in range(1, num_attempts + 1):
-            if _write_once(full_file_name, contents, retry_number):
-                return
-
-        if num_attempts > 1:
-            log_and_print(
-                f"giving up writing {full_file_name}: failed {num_attempts} times"
-            )
-        else:
-            log_and_print(f"giving up writing {full_file_name}")
-
-        __local_failed_writes += 1
-
-        if prev_exception:
-            raise prev_exception
 
 
 def unlink_helper(p: Union[str, PurePath], num_retries: int = 1) -> None:

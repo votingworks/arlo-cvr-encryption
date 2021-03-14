@@ -3,7 +3,7 @@ from electionguardtest.election import _DrawType
 from hypothesis.strategies import composite, characters, text, lists
 from os import path
 
-from arlo_e2e.ray_io import mkdir_helper, unlink_helper
+from arlo_e2e.io import mkdir_helper, unlink_helper
 
 
 class FileNameAndContents(NamedTuple):

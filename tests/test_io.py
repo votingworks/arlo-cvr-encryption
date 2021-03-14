@@ -6,7 +6,7 @@ import coverage
 import ray
 
 from arlo_e2e.ray_helpers import ray_init_localhost
-from arlo_e2e.ray_io import (
+from arlo_e2e.io import (
     set_failure_probability_for_testing,
     ray_write_file_with_retries,
     wait_for_zero_pending_writes,

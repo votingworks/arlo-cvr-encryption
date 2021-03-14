@@ -27,7 +27,7 @@ from arlo_e2e.constants import (
 )
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.ray_helpers import ray_wait_for_workers
-from arlo_e2e.ray_io import (
+from arlo_e2e.io import (
     ray_load_file,
     _decode_json_file_contents,
     read_directory_contents,

@@ -13,7 +13,7 @@ from arlo_e2e.ray_helpers import (
     ray_init_localhost,
     ray_wait_for_workers,
 )
-from arlo_e2e.ray_io import wait_for_zero_pending_writes, ray_load_json_file
+from arlo_e2e.io import wait_for_zero_pending_writes, ray_load_json_file
 from arlo_e2e.ray_tally import ray_tally_everything
 
 if __name__ == "__main__":

@@ -56,7 +56,7 @@ from arlo_e2e.manifest import (
 )
 from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.ray_helpers import ray_wait_for_workers
-from arlo_e2e.ray_io import mkdir_helper, ray_write_ciphertext_ballot
+from arlo_e2e.io import mkdir_helper, ray_write_ciphertext_ballot
 from arlo_e2e.ray_map_reduce import MapReduceContext, RayMapReducer
 from arlo_e2e.tally import (
     FastTallyEverythingResults,

@@ -4,7 +4,7 @@ import unittest
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.admin import make_fresh_election_admin, ElectionAdmin
-from arlo_e2e.ray_io import ray_load_json_file, ray_write_json_file
+from arlo_e2e.io import ray_load_json_file, ray_write_json_file
 
 
 class TestAdmin(unittest.TestCase):
