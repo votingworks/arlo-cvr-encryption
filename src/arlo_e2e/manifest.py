@@ -29,7 +29,7 @@ from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.ray_helpers import ray_wait_for_workers
 from arlo_e2e.io import (
     ray_load_file,
-    _decode_json_file_contents,
+    decode_json_file_contents,
     read_directory_contents,
     ray_write_file,
     unlink_helper,
@@ -158,7 +158,7 @@ class Manifest:
         # this loads the file and verifies the hashes
         file_contents = self.read_file(file_name, subdirectories)
         return flatmap_optional(
-            file_contents, lambda f: _decode_json_file_contents(f, class_handle)
+            file_contents, lambda f: decode_json_file_contents(f, class_handle)
         )
 
     def _validate_contents(self, filename: str, file_contents: str) -> bool:
@@ -540,7 +540,7 @@ def load_existing_manifest(
             )
             return None
 
-    manifest_ex: Optional[ManifestExternal] = _decode_json_file_contents(
+    manifest_ex: Optional[ManifestExternal] = decode_json_file_contents(
         manifest_str, class_handle=ManifestExternal
     )
     return flatmap_optional(
