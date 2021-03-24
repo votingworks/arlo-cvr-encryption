@@ -12,6 +12,12 @@ all: environment install validate lint coverage
 requirements.txt: Pipfile
 	pip freeze > requirements.txt
 
+# Generates the `typings` directory with boto3 stubs, which we commit as
+# part of the repository, rather than regenerating every time.
+boto3_stubs:
+	pip install mypy_boto3_builder
+	python -m mypy_boto3_builder --installed --skip-services typings -d -s s3 ec2
+
 environment:
 	@echo 🔧 PIPENV SETUP
 	pip3.8 install pipenv

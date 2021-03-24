@@ -1,16 +1,14 @@
-from base64 import b64encode
 from dataclasses import dataclass
-from hashlib import sha256
 from typing import (
     Dict,
     Optional,
     Type,
     List,
-    AnyStr,
     TypeVar,
     Tuple,
     cast,
     NamedTuple,
+    AnyStr,
 )
 
 import ray
@@ -27,15 +25,8 @@ from arlo_e2e.constants import (
 )
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.ray_helpers import ray_wait_for_workers
-from arlo_e2e.io import (
-    ray_load_file,
-    decode_json_file_contents,
-    read_directory_contents,
-    ray_write_file,
-    unlink_helper,
-    compose_filename,
-)
 from arlo_e2e.ray_progress import ProgressBar
+from arlo_e2e.utils import sha256_hash
 
 T = TypeVar("T")
 S = TypeVar("S", bound=Serializable)
@@ -342,7 +333,7 @@ def _r_hash_file(
         )
 
     contents = ray_load_file(root_dir, filename, subdirectories)
-    fileinfo = sha256_info(contents) if contents else None
+    fileinfo = sha256_manifest_info(contents) if contents else None
 
     if progress_actor:
         progress_actor.update_num_concurrent.remote("Files", -1)
@@ -526,7 +517,7 @@ def load_existing_manifest(
     if manifest_str is None:
         return None
 
-    manifest_info = sha256_info(manifest_str)
+    manifest_info = sha256_manifest_info(manifest_str)
     if expected_root_hash is not None:
         data_hash, num_bytes = manifest_info
         if data_hash != expected_root_hash:
@@ -546,33 +537,6 @@ def load_existing_manifest(
     return flatmap_optional(
         manifest_ex, lambda m: m.to_manifest(root_dir, subdirectories, manifest_info)
     )
-
-
-def sha256_hash(input: AnyStr) -> str:
-    """
-    Given a string or array of bytes, returns a base64-encoded representation of the
-    256-bit SHA2-256 hash of that input string, first encoding the input string as UTF8.
-    """
-    return sha256_info(input).hash
-
-
-def sha256_info(input: AnyStr) -> ManifestFileInfo:
-    """
-    Given a string or array of bytes, returns a base64-encoded representation of the
-    256-bit SHA2-256 hash of that input string, first encoding the input string as UTF8,
-    in `ManifestFileInfo` format.
-    """
-    h = sha256()
-    if isinstance(input, str):
-        encoded = input.encode("utf-8")
-        num_bytes = len(encoded)
-        h.update(encoded)
-    else:
-        num_bytes = len(input)
-        h.update(input)
-
-    hash_str = b64encode(h.digest()).decode("utf-8")
-    return ManifestFileInfo(hash_str, num_bytes)
 
 
 def _write_json_file_get_hash(
@@ -603,4 +567,20 @@ def _write_json_file_get_hash(
         subdirectories=subdirectories,
         num_retries=num_retries,
     )
-    return sha256_info(json_txt)
+    return sha256_manifest_info(json_txt)
+
+
+def sha256_manifest_info(input: AnyStr) -> ManifestFileInfo:
+    """
+    Given a string or array of bytes, returns a base64-encoded representation of the
+    256-bit SHA2-256 hash of that input string, first encoding the input string as UTF8,
+    in `ManifestFileInfo` format.
+    """
+    if isinstance(input, str):
+        encoded = input.encode("utf-8")
+        num_bytes = len(encoded)
+    else:
+        num_bytes = len(input)
+        encoded = input
+
+    return ManifestFileInfo(sha256_hash(encoded), num_bytes)

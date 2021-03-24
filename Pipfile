@@ -26,8 +26,14 @@ flask = "==1.1.2"
 pillow = "==8.0.1"
 qrcode = "==6.1"
 more-itertools = "==8.7.0"
-boto3 = "==1.17.27"
-boto3-stubs = {extras = ["essential"], version = "1.17.27"}
+boto3 = "==1.17.35"
+
+# Note: additional work for PyCharm and other IDEs is necessary to use these stubs
+# https://pypi.org/project/boto3-stubs/
+# To make our lives easier, the output of mypy_boto3_builder, written in the `typings`
+# directory, is just committed as part of our main repository.
+boto3-stubs = {extras = ["essential"], version = "1.17.35"}
+
 
 # relevant description and useful links on how to do platform-specific includes for nightly builds:
 # https://dev.to/tomoyukiaota/creating-a-pipfile-which-has-different-installation-instructions-depending-on-operating-systems-pytorch-v041-as-an-example-56i8

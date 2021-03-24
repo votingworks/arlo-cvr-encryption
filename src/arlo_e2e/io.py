@@ -32,16 +32,13 @@ from ray.actor import ActorHandle
 
 from arlo_e2e.constants import BALLOT_FILENAME_PREFIX_DIGITS
 from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.manifest import sha256_hash
+from arlo_e2e.utils import sha256_hash
 
 S = TypeVar("S", bound=Serializable)
 
-# Mypy / type annotation note: to get all the types to check properly here,
-# you have to follow some steps. Everything in the `typing` directory was
-# auto-generated (via https://pypi.org/project/boto3-stubs/) and then you
-# have to link it into PyCharm (instructions at that URL).
-
 _s3_client_handle: Optional[S3Client] = None
+_local_failed_writes: int = 0
+
 
 DEFAULT_S3_STORAGE_CLASS = "STANDARD"
 # Twice as expensive per month for storage, but supports immediate deletion,
@@ -123,7 +120,7 @@ class FileName(ABC):
 
     def is_file(self) -> bool:
         """Returns whether this is a file (True) or a directory (False)."""
-        return self.file_name == ""
+        return self.file_name != ""
 
     def is_dir(self) -> bool:
         """Returns whether this is a directory (True) or a file (False)."""
@@ -197,9 +194,6 @@ class FileName(ABC):
                 if attempt > 1:
                     if status_actor:
                         status_actor.decrement_pending.remote(False)
-                    else:
-                        global __local_failed_writes
-                        __local_failed_writes += 1
                     log_and_print(
                         f"Successful write for {str(self)} (attempt #{attempt})!"
                     )
@@ -211,6 +205,9 @@ class FileName(ABC):
         log_and_print(f"Failed write for {str(self)}, {attempt} attempt(s), aborting")
         if status_actor and attempt > 1:
             status_actor.decrement_pending.remote(True)
+        else:
+            global _local_failed_writes
+            _local_failed_writes += 1
         return False
 
     def write_json(
@@ -769,8 +766,8 @@ class WriteRetryStatusActor:  # pragma: no cover
         return self.num_failures
 
 
-__singleton_name = "WriteRetryStatusActorSingleton"
-__status_actor: Optional[ActorHandle] = None
+_singleton_name = "WriteRetryStatusActorSingleton"
+_status_actor: Optional[ActorHandle] = None
 
 
 def reset_status_actor() -> None:
@@ -781,13 +778,13 @@ def reset_status_actor() -> None:
 
     In a testing scenario, you might call this after a call to `ray.shutdown()`.
     """
-    global __status_actor
+    global _status_actor
     global __failure_probability
-    global __local_failed_writes
+    global _local_failed_writes
 
-    __status_actor = None
+    _status_actor = None
     __failure_probability = None
-    __local_failed_writes = 0
+    _local_failed_writes = 0
 
 
 def init_status_actor() -> None:
@@ -795,8 +792,8 @@ def init_status_actor() -> None:
     Helper function, called by our own ray_init_* routines, exactly once, to make the singleton
     WriteRetryStatusActor. If you want a handle to the actor, call `get_status_actor`.
     """
-    global __status_actor
-    __status_actor = WriteRetryStatusActor.options(name=__singleton_name).remote()  # type: ignore
+    global _status_actor
+    _status_actor = WriteRetryStatusActor.options(name=_singleton_name).remote()  # type: ignore
 
 
 def get_status_actor() -> ActorHandle:
@@ -812,18 +809,18 @@ def get_status_actor() -> ActorHandle:
     # - Next, we see if it's already running somewhere else.
     # - If not, that means that initialization was done wrong.
 
-    global __status_actor
+    global _status_actor
 
-    if __status_actor is None:
-        __status_actor = ray.get_actor(__singleton_name)
+    if _status_actor is None:
+        _status_actor = ray.get_actor(_singleton_name)
 
-    if __status_actor is None:
+    if _status_actor is None:
         log_and_print(
             "Configuration failure: we should have a status actor, but we don't."
         )
         raise RuntimeError("No status actor")
 
-    return __status_actor
+    return _status_actor
 
 
 __failure_probability: Optional[float] = None
@@ -863,9 +860,6 @@ def get_failure_probability_for_testing() -> float:
     return __failure_probability
 
 
-__local_failed_writes = 0
-
-
 def wait_for_zero_pending_writes() -> int:
     """
     Blocking call: waits until all pending writes are complete, then returns
@@ -874,12 +868,12 @@ def wait_for_zero_pending_writes() -> int:
     succeeded, eventually. If it's non-zero, then you should warn the user
     with the number, perhaps suggesting that something really bad happened.
     """
-    global __local_failed_writes
+    global _local_failed_writes
     if ray.is_initialized():
         num_failures: int = ray.get(get_status_actor().wait_for_zero_pending.remote())
         return num_failures
     else:
-        return __local_failed_writes
+        return _local_failed_writes
 
 
 def decode_json_file_contents(json_str: str, class_handle: Type[S]) -> Optional[S]:
