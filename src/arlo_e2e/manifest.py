@@ -24,6 +24,7 @@ from arlo_e2e.constants import (
     MANIFEST_FILE,
 )
 from arlo_e2e.eg_helpers import log_and_print
+from arlo_e2e.io import decode_json_file_contents, make_file_name
 from arlo_e2e.ray_helpers import ray_wait_for_workers
 from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.utils import sha256_hash
@@ -221,7 +222,9 @@ class Manifest:
         something went wrong.
         """
         if not subdirectories:
-            file_contents = ray_load_file(self.root_dir, file_name, self.subdirectories)
+            file_contents = make_file_name(
+                file_name, root_dir=self.root_dir, subdirectories=self.subdirectories
+            ).read()
             if file_contents is None:
                 log_and_print(f"failed to load file: {file_name}", verbose=True)
                 return None
@@ -332,7 +335,9 @@ def _r_hash_file(
             verbose=True,
         )
 
-    contents = ray_load_file(root_dir, filename, subdirectories)
+    contents = make_file_name(
+        filename, root_dir=root_dir, subdirectories=subdirectories
+    ).read()
     fileinfo = sha256_manifest_info(contents) if contents else None
 
     if progress_actor:
@@ -347,7 +352,7 @@ def _r_build_manifest_for_directory(
     root_dir: str,
     subdirectories: List[str],
     progress_actor: Optional[ActorHandle],
-    num_retries: int,
+    num_attempts: int,
     logging_enabled: bool,
 ) -> Tuple[str, Optional[ManifestFileInfo]]:  # pragma: no cover
 
@@ -372,7 +377,9 @@ def _r_build_manifest_for_directory(
             f"_r_build_manifest_for_directory('{root_dir}', {subdirectories})",
             verbose=True,
         )
-    plain_files, directories = read_directory_contents(root_dir, subdirectories)
+    plain_files, directories = make_file_name(
+        "", root_dir=root_dir, subdirectories=subdirectories
+    ).scandir()
 
     if MANIFEST_FILE in plain_files:
         # we could just bomb out with an error; instead we're going to
@@ -400,7 +407,11 @@ def _r_build_manifest_for_directory(
 
     directory_manifests_r = [
         _r_build_manifest_for_directory.remote(
-            root_dir, subdirectories + [d], progress_actor, num_retries, logging_enabled
+            root_dir,
+            subdirectories + [d],
+            progress_actor,
+            num_attempts,
+            logging_enabled,
         )
         for d in directories.keys()
     ]
@@ -427,7 +438,7 @@ def _r_build_manifest_for_directory(
             content_obj=result_ex,
             subdirectories=subdirectories,
             root_dir=root_dir,
-            num_retries=num_retries,
+            num_attempts=num_attempts,
         )
 
     if progress_actor:
@@ -508,11 +519,11 @@ def load_existing_manifest(
     if subdirectories is None:
         subdirectories = []
 
-    manifest_str = ray_load_file(
+    manifest_str = make_file_name(
         root_dir=root_dir,
         subdirectories=subdirectories,
         file_name=MANIFEST_FILE,
-    )
+    ).read()
 
     if manifest_str is None:
         return None
@@ -544,7 +555,7 @@ def _write_json_file_get_hash(
     content_obj: Serializable,
     subdirectories: List[str] = None,
     root_dir: str = ".",
-    num_retries: int = 1,
+    num_attempts: int = 1,
 ) -> ManifestFileInfo:  # pragma: no cover
     """
     A wrapper around `ray_write_json_file` that returns a `ManifestInfo` rather
@@ -557,15 +568,15 @@ def _write_json_file_get_hash(
     # If a manifest already exists, we're going to remove it; we don't want to
     # do this in general, but it's something that might happen when driving
     # manifest creation from the command-line.
-    unlink_helper(compose_filename(root_dir, file_name, subdirectories))
+    fn = make_file_name(
+        file_name=file_name, root_dir=root_dir, subdirectories=subdirectories
+    )
+    fn.unlink()
 
     json_txt = content_obj.to_json(strip_privates=True)
-    ray_write_file(
-        file_name,
+    fn.write(
         json_txt,
-        root_dir=root_dir,
-        subdirectories=subdirectories,
-        num_retries=num_retries,
+        num_attempts=num_attempts,
     )
     return sha256_manifest_info(json_txt)
 

@@ -8,9 +8,9 @@ from electionguard.logs import log_warning
 from hypothesis import given, settings, HealthCheck, Phase
 from hypothesis.strategies import integers
 
+from arlo_e2e.io import make_file_name
 from arlo_e2e.manifest import load_existing_manifest, build_manifest_for_directory
 from arlo_e2e.ray_helpers import ray_init_localhost
-from arlo_e2e.io import ray_write_file
 from arlo_e2e_testing.manifest_hypothesis import (
     FileNameAndContents,
     list_file_names_contents,
@@ -88,10 +88,11 @@ class TestManifestPublishing(unittest.TestCase):
         self.assertTrue(manifest.equivalent(manifest2))
 
         # next up, inducing errors; add a file that's not already there; reading should fail
-        ray_write_file(
-            "something-else", "something-not-already-there", MANIFEST_TESTING_DIR, []
+        make_file_name(file_name="something-else", root_dir=MANIFEST_TESTING_DIR).write(
+            "unexpected content"
         )
         self.assertIsNone(manifest.read_file("something-else"))
+        self.assertIsNone(manifest.read_file("something-else-missing"))
 
         # and, lastly, try modifying the existing files; reading should fail
         for c in contents:

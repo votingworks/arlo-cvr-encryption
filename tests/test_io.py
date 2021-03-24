@@ -67,7 +67,9 @@ class TestBasicReadsAndWrites(unittest.TestCase):
         fn = make_file_name("test1", "write_output")
         fn.write("test contents")
         self.assertEqual("test contents", fn.read())
-        self.assertEqual("test contents", fn.read(expected_sha256_hash=sha256_hash("test contents")))
+        self.assertEqual(
+            "test contents", fn.read(expected_sha256_hash=sha256_hash("test contents"))
+        )
         self.assertIsNone(fn.read(expected_sha256_hash=sha256_hash("wrong contents")))
         remove_test_tree()
 
