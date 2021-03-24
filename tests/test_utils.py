@@ -2,7 +2,6 @@ import unittest
 
 from hypothesis import given
 from hypothesis.strategies import integers
-from more_itertools import peekable
 
 from arlo_e2e.utils import flatmap, shard_iterable_uniform, shard_iterable, first_n
 

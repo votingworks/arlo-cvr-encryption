@@ -24,7 +24,7 @@ from arlo_e2e.constants import (
     MANIFEST_FILE,
 )
 from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.io import decode_json_file_contents, make_file_name
+from arlo_e2e.io import decode_json_file_contents, make_file_ref
 from arlo_e2e.ray_helpers import ray_wait_for_workers
 from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.utils import sha256_hash
@@ -222,7 +222,7 @@ class Manifest:
         something went wrong.
         """
         if not subdirectories:
-            file_contents = make_file_name(
+            file_contents = make_file_ref(
                 file_name, root_dir=self.root_dir, subdirectories=self.subdirectories
             ).read()
             if file_contents is None:
@@ -335,7 +335,7 @@ def _r_hash_file(
             verbose=True,
         )
 
-    contents = make_file_name(
+    contents = make_file_ref(
         filename, root_dir=root_dir, subdirectories=subdirectories
     ).read()
     fileinfo = sha256_manifest_info(contents) if contents else None
@@ -377,7 +377,7 @@ def _r_build_manifest_for_directory(
             f"_r_build_manifest_for_directory('{root_dir}', {subdirectories})",
             verbose=True,
         )
-    plain_files, directories = make_file_name(
+    plain_files, directories = make_file_ref(
         "", root_dir=root_dir, subdirectories=subdirectories
     ).scandir()
 
@@ -519,7 +519,7 @@ def load_existing_manifest(
     if subdirectories is None:
         subdirectories = []
 
-    manifest_str = make_file_name(
+    manifest_str = make_file_ref(
         root_dir=root_dir,
         subdirectories=subdirectories,
         file_name=MANIFEST_FILE,
@@ -568,13 +568,13 @@ def _write_json_file_get_hash(
     # If a manifest already exists, we're going to remove it; we don't want to
     # do this in general, but it's something that might happen when driving
     # manifest creation from the command-line.
-    fn = make_file_name(
+    fr = make_file_ref(
         file_name=file_name, root_dir=root_dir, subdirectories=subdirectories
     )
-    fn.unlink()
+    fr.unlink()
 
     json_txt = content_obj.to_json(strip_privates=True)
-    fn.write(
+    fr.write(
         json_txt,
         num_attempts=num_attempts,
     )

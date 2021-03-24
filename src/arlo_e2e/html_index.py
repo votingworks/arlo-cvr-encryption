@@ -1,9 +1,8 @@
 # inspiration: https://github.com/byjokese/Generate-Index-Files/blob/master/generate-index.py
 
-import os
-from stat import S_ISDIR
+from typing import List
 
-from arlo_e2e.io import ray_write_file_with_retries
+from arlo_e2e.io import make_file_ref, FileRef
 
 index_start_text = """<!DOCTYPE html>
 <html>
@@ -27,44 +26,53 @@ index_end_text = """
 
 
 def generate_index_html_files(
-    title_text: str, directory_name: str, num_retries: int = 1
+    title_text: str,
+    root_dir: str,
+    subdirectories: List[str] = None,
+    num_attempts: int = 1,
 ) -> None:
     """
     Creates index.html files at every level of the directory. Note that this doesn't cause
     anything to be added to the manifest. That's not necessary, and could be messy.
     """
-    files = os.listdir(directory_name)
+    if subdirectories is None:
+        subdirectories = []
+
+    dir_fr = make_file_ref(
+        file_name="", root_dir=root_dir, subdirectories=subdirectories
+    )
+    scan = dir_fr.scandir()
+
     index_text = index_start_text.format(
-        title_text=title_text, path=directory_name if directory_name != "." else "/"
+        title_text=title_text, path="/" + "/".join(subdirectories)
     )
 
-    for file in sorted(files):
-        full_path = os.path.join(directory_name, file)
-
-        if file == "index.html":
-            os.unlink(full_path)  # remove the file, which we'll then regenerate later
+    files_and_dirs: List[FileRef] = sorted(
+        list(scan.files.values()) + list(scan.subdirs.values()), key=lambda fn: str(fn)
+    )
+    for fn in files_and_dirs:
+        if fn.file_name == "index.html":
+            fn.unlink()  # remove the file, which we'll then regenerate later
             continue
 
-        stats = os.stat(full_path)
-        is_dir = S_ISDIR(stats.st_mode)
-        num_bytes = stats.st_size if not is_dir else 0
+        num_bytes = fn.size()
+        is_dir = fn.is_dir()
+
         additional_text = (
             f"<i>{num_bytes} bytes</i>" if not is_dir else "<b>directory</b>"
         )
 
-        index_text += (
-            f"        <li><a href='{file}'>{file}</a> - {additional_text}</li>\n"
-        )
+        file_name_plus_slash = "{fn.file_name}{'/' if is_dir else ''}"
+
+        index_text += f"        <li><a href='{file_name_plus_slash}'>{file_name_plus_slash}</a> - {additional_text}</li>\n"
 
         if is_dir:
-            generate_index_html_files(title_text, full_path, num_retries=num_retries)
+            generate_index_html_files(
+                title_text, root_dir, fn.subdirectories, num_attempts=num_attempts
+            )
 
     index_text += index_end_text
 
-    ray_write_file_with_retries(
-        "index.html",
-        index_text,
-        root_dir=directory_name,
-        subdirectories=[],
-        num_attempts=num_retries,
+    dir_fr.update(new_file_name="index.html").write(
+        index_text, num_attempts=num_attempts
     )

@@ -4,7 +4,7 @@ from sys import exit
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.admin import make_fresh_election_admin, ElectionAdmin
-from arlo_e2e.io import ray_load_json_file, ray_write_json_file
+from arlo_e2e.io import make_file_ref
 
 if __name__ == "__main__":
     set_serializers()
@@ -23,10 +23,11 @@ if __name__ == "__main__":
 
     # This ultimately bottoms out at secrets.randbelow(), which claims to be cryptographically strong.
     admin_state = make_fresh_election_admin()
-    ray_write_json_file(file_name=args.keys, content_obj=admin_state, root_dir=".")
+    fr = make_file_ref(file_name=args.keys, root_dir=".")
+    fr.write_json(admin_state)
 
     # Read it back in, just to make sure we're all good.
-    admin_state2 = ray_load_json_file(".", args.keys, ElectionAdmin)
+    admin_state2 = fr.read_json(ElectionAdmin)
 
     if admin_state2 != admin_state:
         print(f"Something went wrong writing to {args.keys}")

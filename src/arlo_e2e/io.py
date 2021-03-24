@@ -7,7 +7,7 @@ from base64 import b64encode
 from dataclasses import dataclass
 from os import stat
 from pathlib import PurePath, Path
-from stat import S_ISREG
+from stat import S_ISREG, S_ISDIR
 from time import sleep
 from typing import (
     AnyStr,
@@ -18,6 +18,7 @@ from typing import (
     Dict,
     NamedTuple,
     Iterator,
+    Union,
 )
 
 import boto3
@@ -73,25 +74,22 @@ def _md5_hash(b: bytes) -> str:
     return b64encode(m.digest()).decode("utf-8")
 
 
-class FileName(ABC):
+class FileRef(ABC):
     """
-    Base class for LocalFileName and S3FileName. Never create one of these directly.
-    Instead use `make_file_name`.
+    Base class for LocalFileRef and S3FileRef. Never create one of these directly.
+    Instead use `make_file_ref`.
 
     Rather than Python Path/PurePath objects, or whatever else, we're going to use this
-    FileName class to capture what we're doing, keeping separate track of the root directory,
-    the list of subdirectories below that, and ultimately the file name. If the root
-    directory happens to be "s3://bucket-name", then `protocol` will become `s3` and
-    `root_dir` will become `bucket-name`. Otherwise, `protocol` will be `file`.
-
-    In the S3 case, `bucket-name` could be any sort of string that `boto3`'s `put_object`
-    method accepts, including an access-point-name or ARN.
+    FileRef class to capture what we're doing, keeping separate track of the root directory,
+    the list of subdirectories below that, and ultimately the file name.
 
     Methods on this class deal with loading and saving files from text strings, arrays
     of bytes and ElectionGuard `Serializable` objects. There's also special handling
-    for `CiphertextBallot` objects, where the FileName instance should point to the
+    for `CiphertextBallot` objects, where the FileRef instance should point to the
     the root, and everything below that (e.g, `ballots/b0000/b00001234.json`) is
     dealt with internally.
+
+    Subclasses of this will deal with local filesystems or with S3.
     """
 
     root_dir: str
@@ -99,7 +97,7 @@ class FileName(ABC):
     file_name: str
 
     def __init__(self, root_dir: str, subdirectories: List[str], file_name: str):
-        """Don't use this constructor. Use `make_file_name` instead."""
+        """Don't use this constructor. Use `make_file_ref` instead."""
         self.root_dir = root_dir
         self.subdirectories = subdirectories
         self.file_name = file_name
@@ -110,9 +108,9 @@ class FileName(ABC):
         new_file_name: str = None,
         new_root_dir: str = None,
         new_subdirs: List[str] = None,
-    ) -> "FileName":
+    ) -> "FileRef":
         """
-        Makes a copy of the current FileName with the opportunity to update the requested fields
+        Makes a copy of the current FileRef with the opportunity to update the requested fields
         to be a new file name, root directory, and/or subdirectory list. The original doesn't
         mutate.
         """
@@ -172,10 +170,13 @@ class FileName(ABC):
 
     def write(self, contents: AnyStr, num_attempts: int = 1) -> bool:
         """
-        Attempts to write the requested contents to this FileName, and will make the
+        Attempts to write the requested contents to this FileRef, and will make the
         requested number of attempts, with some sleeping in between to work around
         failures. Returns True if the write succeeded. Logs an error and returns False
         if something went wrong.
+
+        Notably, if this FileRef requires subdirectories that don't presently exist,
+        they will be created.
         """
         attempt = 0
 
@@ -217,7 +218,7 @@ class FileName(ABC):
     ) -> bool:
         """
         Given an ElectionGuard "serializable" object, serializes it and writes the contents
-        out to this FileName, making the requested number of attempts, with some sleeping in
+        out to this FileRef, making the requested number of attempts, with some sleeping in
         between to work around failures. Returns True if the write succeeded. Logs an error
         and returns False if something went wrong.
         """
@@ -225,9 +226,9 @@ class FileName(ABC):
         json_txt = content_obj.to_json(strip_privates=True)
         return self.write(json_txt, num_attempts)
 
-    def _ballot_file_from_ballot_id(self, ballot_id: str) -> "FileName":
+    def _ballot_file_from_ballot_id(self, ballot_id: str) -> "FileRef":
         """
-        Internal function: constructs the appropriate FileName for a given ballot
+        Internal function: constructs the appropriate FileRef for a given ballot
         based on its `ballot_id` (without the ".json" suffix).
         """
         ballot_name_prefix = ballot_id[0:BALLOT_FILENAME_PREFIX_DIGITS]
@@ -245,7 +246,7 @@ class FileName(ABC):
     ) -> None:
         """
         Given a ciphertext ballot, writes the ballot out, in the "ballots" subdirectory,
-        of the current FileName top-level directory. Returns True if the write succeeded.
+        of the current FileRef top-level directory. Returns True if the write succeeded.
         Logs an error and returns False if something went wrong.
         """
         assert (
@@ -342,39 +343,81 @@ class FileName(ABC):
         pass
 
     class DirInfo(NamedTuple):
-        files: Dict[str, "FileName"]
-        subdirs: Dict[str, "FileName"]
+        files: Dict[str, "FileRef"]
+        subdirs: Dict[str, "FileRef"]
 
     @abstractmethod
     def scandir(self) -> DirInfo:
         """
         Assuming that we're working with a directory, this will return a `DirInfo`,
         containing two dictionaries. The keys are the file or subdirectory names,
-        and the values are `FileName` instances.
+        and the values are `FileRef` instances.
 
         Any file or directory name starting with a dot is ignored.
         """
         pass
 
+    @abstractmethod
+    def size(self) -> int:
+        """
+        Returns the number of bytes in the file if it exists. Zero on failure.
+        """
+        pass
 
-def make_file_name(
-    file_name: str, root_dir: str = ".", subdirectories: List[str] = None
-) -> FileName:
+
+def make_file_ref_from_path(full_path: Union[Path, str]) -> FileRef:
     """
-    When you want a FileName object, you use this function to do it. If the `root_dir` starts
-    with `s3://`, then you'll get an `S3FileName`, otherwise a `LocalFileName`, both of which
-    respect the APIs in the base `FileName` class.
+    Given something that might show up on the Unix command-line, which might be
+    a relative filename, an absolute filename, or possible a S3 URL, converts
+    that input to a FileRef. *This function assumes that the path ends in a file
+    name, not a directory name.*
+    """
+    if isinstance(full_path, str):
+        if full_path.startswith("s3://"):
+            parts = Path(full_path[5:]).parts
+            root_dir = parts[0]
+            file_name = parts[-1]
+            subdirs = list(parts[1:-1])
+            return make_file_ref(
+                root_dir=f"s3://{root_dir}", file_name=file_name, subdirectories=subdirs
+            )
+        else:
+            full_path = Path(full_path)
+
+    parts = full_path.parts
+    root_dir = parts[0]
+    file_name = parts[-1]
+    subdirs = list(parts[1:-1])
+    return make_file_ref(root_dir=root_dir, file_name=file_name, subdirectories=subdirs)
+
+
+def make_file_ref(
+    file_name: str, root_dir: str = ".", subdirectories: List[str] = None
+) -> FileRef:
+    """
+    When you want a FileRef object, you use this function to do it. If the `root_dir` starts
+    with `s3://`, then you'll get an `S3FileRef`, otherwise a `LocalFileRef`, both of which
+    respect the APIs in the base `FileRef` class.
+
+    In the S3 case, `root_dir` is expected to have the `s3://` prefix, followed by the S3
+    bucket name. This could be in any form that boto3 understands bucket names (ARN or whatever
+    else). The subdirectories are simply concatenated together with forward slashes, with
+    the `file_name` at the end to construct the S3 key.
+
+    In the local case, `root_dir` could be an arbitrary file path. The subdirectories are
+    concatenated using the proper rules for the local operating system (backslashes for
+    Windows, forward slashes for Unix).
     """
     subdirectories = [] if subdirectories is None else subdirectories
     if root_dir.startswith("s3://"):
         root_dir = root_dir[5:]
-        return S3FileName(root_dir, subdirectories, file_name)
+        return S3FileRef(root_dir, subdirectories, file_name)
     else:
-        return LocalFileName(root_dir, subdirectories, file_name)
+        return LocalFileRef(root_dir, subdirectories, file_name)
 
 
 @dataclass(eq=True, unsafe_hash=True)
-class S3FileName(FileName):
+class S3FileRef(FileRef):
     def __init__(self, root_dir: str, subdirectories: List[str], file_name: str):
         super().__init__(root_dir, subdirectories, file_name)
 
@@ -387,8 +430,8 @@ class S3FileName(FileName):
         new_file_name: str = None,
         new_root_dir: str = None,
         new_subdirs: List[str] = None,
-    ) -> FileName:
-        return S3FileName(
+    ) -> FileRef:
+        return S3FileRef(
             file_name=self.file_name if new_file_name is None else new_file_name,
             root_dir=self.root_dir if new_root_dir is None else new_root_dir,
             subdirectories=self.subdirectories if new_subdirs is None else new_subdirs,
@@ -429,7 +472,7 @@ class S3FileName(FileName):
             return False
 
         except Exception as e:
-            log_and_print(f"failed to stat {str(self): {str(e)}}")
+            log_and_print(f"failed to stat {str(self)}: {str(e)}")
             return False
 
     def unlink(self) -> None:
@@ -448,7 +491,7 @@ class S3FileName(FileName):
             log_and_print(f"failed to remove {str(self)}: {str(error_dict)}")
 
         except Exception as e:
-            log_and_print(f"failed to remove {str(self): {str(e)}}")
+            log_and_print(f"failed to remove {str(self)}: {str(e)}")
 
     def _write_internal(
         self,
@@ -528,10 +571,10 @@ class S3FileName(FileName):
             return None
 
         except Exception as e:
-            log_and_print(f"failed to read {str(self): {str(e)}}")
+            log_and_print(f"failed to read {str(self)}: {str(e)}")
             return None
 
-    def scandir(self) -> FileName.DirInfo:
+    def scandir(self) -> FileRef.DirInfo:
         if not self.is_dir():
             raise RuntimeError("scandir only works on directories, not files")
 
@@ -539,8 +582,8 @@ class S3FileName(FileName):
         s3_bucket = self.s3_bucket()
         s3_key = self.s3_key_name()
 
-        plain_files: Dict[str, FileName] = {}
-        directories: Dict[str, FileName] = {}
+        plain_files: Dict[str, FileRef] = {}
+        directories: Dict[str, FileRef] = {}
 
         files_left = True
 
@@ -572,14 +615,36 @@ class S3FileName(FileName):
                 break
 
             except Exception as e:
-                log_and_print(f"failed to list_objects {str(self): {str(e)}}")
+                log_and_print(f"failed to list_objects {str(self)}: {str(e)}")
                 break
 
-        return FileName.DirInfo(plain_files, directories)
+        return FileRef.DirInfo(plain_files, directories)
+
+    def size(self) -> int:
+        if self.is_dir():
+            return 0
+
+        client = _s3_client()
+        s3_bucket = self.s3_bucket()
+        s3_key = self.s3_key_name()
+
+        try:
+            result = client.head_object(Bucket=s3_bucket, Key=s3_key)
+            if "ContentLength" in result:
+                return result["ContentLength"]
+
+        except ClientError as error:
+            error_dict = error.response["Error"]
+            log_and_print(f"failed to head_object {str(self)}: {str(error_dict)}")
+
+        except Exception as e:
+            log_and_print(f"failed to head_object {str(self)}: {str(e)}")
+
+        return 0
 
 
 @dataclass(eq=True, unsafe_hash=True)
-class LocalFileName(FileName):
+class LocalFileRef(FileRef):
     def __init__(self, root_dir: str, subdirectories: List[str], file_name: str):
         super().__init__(root_dir, subdirectories, file_name)
 
@@ -595,8 +660,8 @@ class LocalFileName(FileName):
         new_file_name: str = None,
         new_root_dir: str = None,
         new_subdirs: List[str] = None,
-    ) -> FileName:
-        return LocalFileName(
+    ) -> FileRef:
+        return LocalFileRef(
             file_name=self.file_name if new_file_name is None else new_file_name,
             root_dir=self.root_dir if new_root_dir is None else new_root_dir,
             subdirectories=self.subdirectories if new_subdirs is None else new_subdirs,
@@ -669,13 +734,13 @@ class LocalFileName(FileName):
             log_error(f"Error reading file ({str(self)}): {e}")
             return None
 
-    def scandir(self) -> FileName.DirInfo:
+    def scandir(self) -> FileRef.DirInfo:
         if not self.is_dir():
             raise RuntimeError("scandir only works on directories, not files")
 
         startpoint = self.local_file_path()
-        plain_files: Dict[str, "FileName"] = {}
-        directories: Dict[str, "FileName"] = {}
+        plain_files: Dict[str, "FileRef"] = {}
+        directories: Dict[str, "FileRef"] = {}
 
         with os.scandir(startpoint) as it:
             # typecasting here because there isn't an annotation on os.scandir()
@@ -698,7 +763,17 @@ class LocalFileName(FileName):
                         # something other than a file or directory? ignore for now.
                         pass
 
-        return FileName.DirInfo(plain_files, directories)
+        return FileRef.DirInfo(plain_files, directories)
+
+    def size(self) -> int:
+        try:
+            stats = os.stat(self.local_file_path())
+        except Exception:
+            return 0
+
+        is_dir = S_ISDIR(stats.st_mode)
+        num_bytes = stats.st_size if not is_dir else 0
+        return num_bytes
 
 
 @ray.remote

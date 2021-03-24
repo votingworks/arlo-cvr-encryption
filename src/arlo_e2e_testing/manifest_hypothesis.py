@@ -3,7 +3,7 @@ from typing import NamedTuple, List
 from electionguardtest.election import _DrawType
 from hypothesis.strategies import composite, characters, text, lists
 
-from arlo_e2e.io import make_file_name
+from arlo_e2e.io import make_file_ref
 
 
 class FileNameAndContents(NamedTuple):
@@ -13,18 +13,18 @@ class FileNameAndContents(NamedTuple):
 
     def write(self, root_dir: str) -> None:
         """Write these file contents under the given root directory."""
-        fn = make_file_name(
+        fr = make_file_ref(
             file_name=self.file_name, root_dir=root_dir, subdirectories=self.file_path
         )
-        fn.write(self.file_contents)
+        fr.write(self.file_contents)
 
     def overwrite(self, root_dir: str, contents: str) -> None:
         """Overwrites the file, under the given root directory."""
-        fn = make_file_name(
+        fr = make_file_ref(
             file_name=self.file_name, root_dir=root_dir, subdirectories=self.file_path
         )
-        fn.unlink()
-        fn.write(contents)
+        fr.unlink()
+        fr.write(contents)
 
 
 @composite

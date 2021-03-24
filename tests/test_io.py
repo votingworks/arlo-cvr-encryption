@@ -8,25 +8,25 @@ from arlo_e2e.io import (
     set_failure_probability_for_testing,
     wait_for_zero_pending_writes,
     reset_status_actor,
-    make_file_name,
+    make_file_ref,
 )
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.utils import sha256_hash
 
 
-def write_all_files(num_files: int, num_retries: int = 10) -> None:
+def write_all_files(num_files: int, num_attempts: int = 10) -> None:
     for f in range(0, num_files):
         name = f"file{f:03d}"
-        fn = make_file_name(name, "write_output")
-        fn.write(name, num_attempts=num_retries)
+        fr = make_file_ref(name, "write_output")
+        fr.write(name, num_attempts=num_attempts)
 
 
 def verify_all_files(num_files: int) -> bool:
     failure = False
     for f in range(0, num_files):
         name = f"file{f:03d}"
-        fn = make_file_name(name, "write_output")
-        contents = fn.read(expected_sha256_hash=sha256_hash(name))
+        fr = make_file_ref(name, "write_output")
+        contents = fr.read(expected_sha256_hash=sha256_hash(name))
         if contents is None:
             print(f"file {name} is missing!")
             failure = True
@@ -53,24 +53,34 @@ class TestBasicReadsAndWrites(unittest.TestCase):
     def tearDown(self) -> None:
         remove_test_tree()
 
+    def test_file_sizes(self) -> None:
+        fr = make_file_ref("testfile", root_dir="write_output")
+        fr.write("123456789")
+        self.assertEqual(9, fr.size())
+
+        self.assertEqual(0, make_file_ref("testfile2", root_dir="write_output").size())
+        self.assertEqual(0, make_file_ref("", root_dir="write_output").size())
+        self.assertEqual(0, make_file_ref("", root_dir="write_output2").size())
+        remove_test_tree()
+
     def test_basics(self) -> None:
         write_all_files(10)
         self.assertTrue(verify_all_files(10))
 
-        dir_info = make_file_name("", "write_output").scandir()
+        dir_info = make_file_ref("", "write_output").scandir()
         self.assertEqual(10, len(dir_info.files))
         self.assertEqual(0, len(dir_info.subdirs))
 
         remove_test_tree()
 
     def test_hash_verification(self) -> None:
-        fn = make_file_name("test1", "write_output")
-        fn.write("test contents")
-        self.assertEqual("test contents", fn.read())
+        fr = make_file_ref("test1", "write_output")
+        fr.write("test contents")
+        self.assertEqual("test contents", fr.read())
         self.assertEqual(
-            "test contents", fn.read(expected_sha256_hash=sha256_hash("test contents"))
+            "test contents", fr.read(expected_sha256_hash=sha256_hash("test contents"))
         )
-        self.assertIsNone(fn.read(expected_sha256_hash=sha256_hash("wrong contents")))
+        self.assertIsNone(fr.read(expected_sha256_hash=sha256_hash("wrong contents")))
         remove_test_tree()
 
 

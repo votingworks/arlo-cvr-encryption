@@ -10,7 +10,6 @@ from hypothesis.strategies import integers
 
 from arlo_e2e.manifest import build_manifest_for_directory, load_existing_manifest
 from arlo_e2e.ray_helpers import ray_init_localhost
-from arlo_e2e.io import mkdir_helper
 from arlo_e2e.root_qrcode import gen_root_qrcode
 from arlo_e2e_testing.manifest_hypothesis import (
     list_file_names_contents,
@@ -48,8 +47,6 @@ class TestRootQrCode(unittest.TestCase):
         remove_test_tree()
 
     def test_failures(self) -> None:
-        mkdir_helper(QRCODE_TESTING_DIR)
-
         # no MANIFEST written
         gen_root_qrcode(
             election_name="Test Election 2020",

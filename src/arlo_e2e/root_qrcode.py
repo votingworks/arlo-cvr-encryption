@@ -9,7 +9,7 @@ import qrcode
 from arlo_e2e.constants import NUM_WRITE_RETRIES
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.manifest import load_existing_manifest
-from arlo_e2e.io import ray_write_file_with_retries
+from arlo_e2e.io import make_file_ref
 
 root_start_text = """<!DOCTYPE html>
 <html>
@@ -113,21 +113,15 @@ def gen_root_qrcode(
     qr_byteio = BytesIO()
     qr_img.save(qr_byteio, "PNG")
     qr_bytes: bytes = qr_byteio.getvalue()
-    ray_write_file_with_retries(
+    make_file_ref(
         "root_hash_qrcode.png",
-        qr_bytes,
         root_dir=tally_dir,
-        subdirectories=[],
-        num_attempts=num_retry_attempts,
-    )
+    ).write(qr_bytes, num_attempts=num_retry_attempts)
 
     html_text = (
         root_start_text.format(title_text=election_name) + bullet_text + root_end_text
     )
-    ray_write_file_with_retries(
-        "root_hash.html",
+    make_file_ref("root_hash.html", root_dir=tally_dir).write(
         html_text,
-        root_dir=tally_dir,
-        subdirectories=[],
         num_attempts=num_retry_attempts,
     )

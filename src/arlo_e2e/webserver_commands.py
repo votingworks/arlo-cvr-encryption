@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from shutil import copyfileobj
 from typing import List, Tuple
 
@@ -10,28 +11,31 @@ from typing.io import BinaryIO
 from werkzeug.utils import secure_filename
 
 from arlo_e2e.admin import make_fresh_election_admin, ElectionAdmin
-from arlo_e2e.io import mkdir_helper, ray_load_json_file, ray_write_json_file
+
+# File extensions that we'll allow for file uploads
+from arlo_e2e.constants import NUM_WRITE_RETRIES
+from arlo_e2e.io import make_file_ref
 
 # Design note: we're putting as much of the web functionality here, without the actual Flask web
 # server present, to make these methods easier to test. We're prefixing all of these methods
 # with "w_" so they're a bit easier to integrate with the web server itself.
-
-# File extensions that we'll allow for file uploads
-from arlo_e2e.constants import NUM_WRITE_RETRIES
 
 ALLOWED_EXTENSIONS = {"csv"}
 
 # File holding the election's public/private keypair
 DEFAULT_ADMIN_STATE_FILENAME = "secret_election_keys.json"
 
+# Location where administration state is written on the local filesystem
+DEFAULT_ADMIN_DIRECTORY = "."
+
 app = Flask(__name__)
-app.config["UPLOAD_FOLDER"] = "uploads"
+app.config["UPLOAD_FOLDER"] = f"{DEFAULT_ADMIN_DIRECTORY}/uploads"
 
 
 def _initializate_everything() -> None:
     set_serializers()
     set_deserializers()
-    mkdir_helper(app.config["UPLOAD_FOLDER"])
+    Path(app.config["UPLOAD_FOLDER"]).mkdir(parents=True, exist_ok=True)
 
 
 def flash_info(text: str) -> None:
@@ -98,15 +102,15 @@ def w_initialize_keys(
 
     # This ultimately bottoms out at secrets.randbelow(), which claims to be cryptographically strong.
     admin_state = make_fresh_election_admin()
-    ray_write_json_file(
+    admin_fr = make_file_ref(
         file_name=keyfile_name,
-        content_obj=admin_state,
-        root_dir=".",
-        num_retries=NUM_WRITE_RETRIES,
+        root_dir=DEFAULT_ADMIN_DIRECTORY,
     )
 
+    admin_fr.write_json(content_obj=admin_state, num_attempts=NUM_WRITE_RETRIES)
+
     # Read it back in, just to make sure we're all good.
-    admin_state2 = ray_load_json_file(".", keyfile_name, ElectionAdmin)
+    admin_state2 = admin_fr.read_json(ElectionAdmin)
 
     if admin_state2 != admin_state:
         flash_error(f"Something went wrong writing to {keyfile_name}")

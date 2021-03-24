@@ -49,6 +49,7 @@ from arlo_e2e.constants import (
 from arlo_e2e.dominion import DominionCSV, BallotPlaintextFactory
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.html_index import generate_index_html_files
+from arlo_e2e.io import make_file_ref
 from arlo_e2e.manifest import (
     Manifest,
     build_manifest_for_directory,
@@ -56,7 +57,6 @@ from arlo_e2e.manifest import (
 )
 from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.ray_helpers import ray_wait_for_workers
-from arlo_e2e.io import mkdir_helper, ray_write_ciphertext_ballot
 from arlo_e2e.ray_map_reduce import MapReduceContext, RayMapReducer
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
@@ -215,9 +215,9 @@ class BallotTallyContext(MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_T
         cballot = ciphertext_ballot_to_accepted(cballot_option)
 
         if self._root_dir is not None:
-            ray_write_ciphertext_ballot(
-                cballot, root_dir=self._root_dir, num_retries=NUM_WRITE_RETRIES
-            )
+            make_file_ref(
+                file_name="", root_dir=self._root_dir
+            ).write_ciphertext_ballot(cballot, num_attempts=NUM_WRITE_RETRIES)
 
         return ciphertext_ballot_to_dict(cballot)
 
@@ -288,9 +288,6 @@ def ray_tally_everything(
 
     if date is None:
         date = datetime.now()
-
-    if root_dir is not None:
-        mkdir_helper(root_dir, num_retries=NUM_WRITE_RETRIES)
 
     start_time = timer()
 
@@ -411,7 +408,7 @@ def ray_tally_everything(
             tally=out_tally,
             metadata=cvrs.metadata,
             cvr_metadata=cvr_metadata,
-            num_retries=NUM_WRITE_RETRIES,
+            num_attempts=NUM_WRITE_RETRIES,
         )
 
         log_info("Writing manifests")
@@ -430,7 +427,7 @@ def ray_tally_everything(
         )
 
         generate_index_html_files(
-            cvrs.metadata.election_name, root_dir2, num_retries=NUM_WRITE_RETRIES
+            cvrs.metadata.election_name, root_dir2, num_attempts=NUM_WRITE_RETRIES
         )
 
     return RayTallyEverythingResults(

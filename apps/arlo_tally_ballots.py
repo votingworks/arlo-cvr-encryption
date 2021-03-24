@@ -8,12 +8,15 @@ from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.admin import ElectionAdmin
 from arlo_e2e.dominion import read_dominion_csv
+from arlo_e2e.io import (
+    wait_for_zero_pending_writes,
+    make_file_ref_from_path,
+)
 from arlo_e2e.ray_helpers import (
     ray_init_cluster,
     ray_init_localhost,
     ray_wait_for_workers,
 )
-from arlo_e2e.io import wait_for_zero_pending_writes, ray_load_json_file
 from arlo_e2e.ray_tally import ray_tally_everything
 
 if __name__ == "__main__":
@@ -59,8 +62,8 @@ if __name__ == "__main__":
         print(f"Tally directory ({tallydir}) already exists. Exiting.")
         exit(1)
 
-    admin_state: Optional[ElectionAdmin] = ray_load_json_file(
-        ".", keyfile, ElectionAdmin
+    admin_state: Optional[ElectionAdmin] = make_file_ref_from_path(keyfile).read_json(
+        ElectionAdmin
     )
     if admin_state is None or not admin_state.is_valid():
         print(f"Election administration key material wasn't valid")

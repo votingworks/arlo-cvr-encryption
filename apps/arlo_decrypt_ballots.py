@@ -10,7 +10,7 @@ from arlo_e2e.eg_helpers import log_nothing_to_stdout
 from arlo_e2e.publish import load_ray_tally
 from arlo_e2e.ray_helpers import ray_init_cluster, ray_init_localhost
 from arlo_e2e.ray_tally import RayTallyEverythingResults
-from arlo_e2e.io import wait_for_zero_pending_writes, ray_load_json_file
+from arlo_e2e.io import wait_for_zero_pending_writes, make_file_ref_from_path
 
 if __name__ == "__main__":
     set_serializers()
@@ -78,8 +78,8 @@ if __name__ == "__main__":
     else:
         ray_init_localhost()
 
-    admin_state: Optional[ElectionAdmin] = ray_load_json_file(
-        ".", keyfile, ElectionAdmin
+    admin_state: Optional[ElectionAdmin] = make_file_ref_from_path(keyfile).read_json(
+        ElectionAdmin
     )
     if admin_state is None or not admin_state.is_valid():
         print(f"Election administration key material wasn't valid")
