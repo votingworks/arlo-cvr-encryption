@@ -611,6 +611,8 @@ class S3FileRef(FileRef):
                     #     }
                     # },
                     k = obj["Key"]
+                    assert not k.endswith("/"), "file keys should not end with a slash"
+
                     fr = make_file_ref_from_path(f"s3://{s3_bucket}/{k}")
                     plain_files[fr.file_name] = fr
                 for d in page["CommonPrefixes"]:
@@ -621,10 +623,8 @@ class S3FileRef(FileRef):
                     assert prefix.endswith(
                         "/"
                     ), "expecting an S3 `prefix` to act like a directory name"
+
                     path = prefix.split("/")
-                    assert (
-                        path[-1] == ""
-                    ), "expecting an empty string at the end of the path"
 
                     fr = make_file_ref_from_path(f"s3://{s3_bucket}/{prefix}")
                     directory_name = path[-2]
