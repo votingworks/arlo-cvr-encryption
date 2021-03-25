@@ -182,25 +182,19 @@ class FileRef(ABC):
 
         status_actor = get_status_actor() if ray.is_initialized() else None
 
-        # An earlier version of this code uses ray.remote methods to retry failed writes
-        # by launching new tasks, allowing the original to return immediately. This could
-        # potentially yield slightly higher throughput, and by moving the task to a
-        # different node could potentially work around weird failures with a specific
-        # source node. Half the time, the "remote" task landed on the same physical node,
-        # so all that extra complexity didn't really help.
+        if status_actor:
+            status_actor.increment_pending.remote()
 
         while attempt < num_attempts:
             attempt += 1
             if self._write_internal(contents, attempt):
+                if status_actor:
+                    status_actor.decrement_pending.remote(False)
                 if attempt > 1:
-                    if status_actor:
-                        status_actor.decrement_pending.remote(False)
                     log_and_print(
                         f"Successful write for {str(self)} (attempt #{attempt})!"
                     )
                 return True
-            if status_actor:
-                status_actor.increment_pending.remote()
             sleep(1)
 
         log_and_print(f"Failed write for {str(self)}, {attempt} attempt(s), aborting")
@@ -250,7 +244,7 @@ class FileRef(ABC):
         Logs an error and returns False if something went wrong.
         """
         assert (
-            self.is_file()
+            self.is_dir()
         ), "ciphertext ballots can only be written to FileNames representing directories"
 
         ballot_file_name = self._ballot_file_from_ballot_id(ballot.object_id)
@@ -690,8 +684,11 @@ class LocalFileRef(FileRef):
         if self.is_dir():
             raise RuntimeError("file_exists doesn't work on directories")
 
-        s = stat(self.local_file_path())
-        return s.st_size > 0 and S_ISREG(s.st_mode)
+        try:
+            s = stat(self.local_file_path())
+            return s.st_size > 0 and S_ISREG(s.st_mode)
+        except FileNotFoundError:
+            return False
 
     def unlink(self) -> None:
         if not self.is_dir():
@@ -785,6 +782,7 @@ class WriteRetryStatusActor:  # pragma: no cover
     failure_probability: float
 
     def __init__(self) -> None:
+        log_and_print("WriteRetryStatusActor: starting!", verbose=True)
         self.event = Event()
         self.reset_to_zero()
 
@@ -793,9 +791,11 @@ class WriteRetryStatusActor:  # pragma: no cover
         self.num_pending = 0
         self.failure_probability = 0.0
 
-    def increment_pending(self) -> None:
-        """Increments the internal number of pending writes."""
+    def increment_pending(self) -> int:
+        """Increments the internal number of pending writes, returns the
+        total number of pending writes."""
         self.num_pending += 1
+        return self.num_pending
 
     def decrement_pending(self, failure_happened: bool) -> None:
         """
@@ -807,6 +807,7 @@ class WriteRetryStatusActor:  # pragma: no cover
             self.num_failures += 1
 
         self.num_pending -= 1
+
         if self.num_pending == 0:
             self.event.set()
 
