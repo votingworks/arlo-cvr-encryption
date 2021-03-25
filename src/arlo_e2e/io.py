@@ -182,14 +182,21 @@ class FileRef(ABC):
 
         status_actor = get_status_actor() if ray.is_initialized() else None
 
+        # Careful engineering hack: we're calling ray.get() on the calls to increment or
+        # decrement the number of pending writes, making them *synchronous* calls. This
+        # slows us down, but it avoids a race condition where we've made it all the way
+        # through the write method, but the increment and decrement operations haven't
+        # even happened yet, which might cause the ultimate wait_for_zero_pending call
+        # to complete prematurely.
+
         if status_actor:
-            status_actor.increment_pending.remote()
+            num_pending = ray.get(status_actor.increment_pending.remote())
 
         while attempt < num_attempts:
             attempt += 1
             if self._write_internal(contents, attempt):
                 if status_actor:
-                    status_actor.decrement_pending.remote(False)
+                    num_pending = ray.get(status_actor.decrement_pending.remote(False))
                 if attempt > 1:
                     log_and_print(
                         f"Successful write for {str(self)} (attempt #{attempt})!"
@@ -199,7 +206,7 @@ class FileRef(ABC):
 
         log_and_print(f"Failed write for {str(self)}, {attempt} attempt(s), aborting")
         if status_actor and attempt > 1:
-            status_actor.decrement_pending.remote(True)
+            num_pending = ray.get(status_actor.decrement_pending.remote(True))
         else:
             global _local_failed_writes
             _local_failed_writes += 1
@@ -797,11 +804,11 @@ class WriteRetryStatusActor:  # pragma: no cover
         self.num_pending += 1
         return self.num_pending
 
-    def decrement_pending(self, failure_happened: bool) -> None:
+    def decrement_pending(self, failure_happened: bool) -> int:
         """
         Decrements the internal number of pending writes and also tracks whether
         the write ultimately succeeded (pass `failure_happened=False`) or failed
-        (pass `failure_happened=True`).
+        (pass `failure_happened=True`). Returns the total number of pending writes.
         """
         if failure_happened:
             self.num_failures += 1
@@ -810,6 +817,8 @@ class WriteRetryStatusActor:  # pragma: no cover
 
         if self.num_pending == 0:
             self.event.set()
+
+        return self.num_pending
 
     def set_failure_probability(self, failure_probability: float) -> None:
         """
