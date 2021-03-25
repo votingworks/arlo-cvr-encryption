@@ -50,6 +50,7 @@ def verify_all_files(num_files: int) -> bool:
 
 def cleanup_between_tests() -> None:
     if ray.is_initialized():
+        ray.shutdown()
         reset_status_actor()
 
     try:
@@ -83,7 +84,6 @@ class TestBasicReadsAndWrites(unittest.TestCase):
         dir_info = make_file_ref("", "write_output").scandir()
         self.assertEqual(10, len(dir_info.files))
         self.assertEqual(0, len(dir_info.subdirs))
-
         cleanup_between_tests()
 
     def test_hash_verification(self) -> None:
@@ -103,8 +103,6 @@ class TestRayWriteRetry(unittest.TestCase):
 
     def tearDown(self) -> None:
         cleanup_between_tests()
-        if ray.is_initialized():
-            ray.shutdown()
 
     def test_zero_failures(self) -> None:
         cleanup_between_tests()
@@ -115,10 +113,7 @@ class TestRayWriteRetry(unittest.TestCase):
         num_failures = wait_for_zero_pending_writes()
         self.assertEqual(num_failures, 0)
         self.assertTrue(verify_all_files(10))
-
         cleanup_between_tests()
-        ray.shutdown()
-        reset_status_actor()
 
     def test_huge_failures(self) -> None:
         cleanup_between_tests()
@@ -133,14 +128,9 @@ class TestRayWriteRetry(unittest.TestCase):
         self.assertEqual(num_failures, 0)
         self.assertTrue(verify_all_files(100))
         cleanup_between_tests()
-        ray.shutdown()
-        reset_status_actor()
 
     def test_without_ray(self) -> None:
         cleanup_between_tests()
-        if ray.is_initialized():
-            ray.shutdown()
-
         set_failure_probability_for_testing(0.2)
 
         # up to 100 retries, driving odds of total failure to zero
@@ -151,4 +141,3 @@ class TestRayWriteRetry(unittest.TestCase):
         self.assertEqual(num_failures, 0)
         self.assertTrue(verify_all_files(20))
         cleanup_between_tests()
-        reset_status_actor()
