@@ -29,6 +29,7 @@ from electionguard.logs import log_warning, log_error, log_info
 from electionguard.serializable import Serializable
 from jsons import DecodeError, UnfulfilledArgumentError
 from mypy_boto3_s3 import S3Client
+from mypy_boto3_s3.type_defs import ListObjectsV2OutputTypeDef
 from ray.actor import ActorHandle
 
 from arlo_e2e.constants import BALLOT_FILENAME_PREFIX_DIGITS
@@ -586,38 +587,55 @@ class S3FileRef(FileRef):
         plain_files: Dict[str, FileRef] = {}
         directories: Dict[str, FileRef] = {}
 
-        files_left = True
+        try:
+            # When there are more 1000 results to a query, you need to issue continuation
+            # requests, or you can just wrap that into one of these paginator things.
+            # https://stackoverflow.com/a/59816089/4048276
 
-        while files_left:
-            try:
-                # TODO: understand delimeter and prefix properly
-                result = client.list_objects_v2(
-                    Bucket=s3_bucket, Delimiter="/", Prefix=s3_key
-                )
-                files_left = not result["IsTruncated"]
-                for c in result["Contents"]:
-                    #         {
-                    #             'Key': 'string',
-                    #             'LastModified': datetime(2015, 1, 1),
-                    #             'ETag': 'string',
-                    #             'Size': 123,
-                    #             'StorageClass': 'STANDARD'|'REDUCED_REDUNDANCY'|'GLACIER'|'STANDARD_IA'|'ONEZONE_IA'|'INTELLIGENT_TIERING'|'DEEP_ARCHIVE'|'OUTPOSTS',
-                    #             'Owner': {
-                    #                 'DisplayName': 'string',
-                    #                 'ID': 'string'
-                    #             }
-                    #         },
-                    k = c["Key"]
-                    is_file = int(c["Size"]) > 0
+            paginator = client.get_paginator("list_objects_v2")
+            pages: Iterator[ListObjectsV2OutputTypeDef] = paginator.paginate(
+                Bucket=s3_bucket, Prefix=s3_key, Delimiter="/"
+            )
 
-            except ClientError as error:
-                error_dict = error.response["Error"]
-                log_and_print(f"failed to list_objects {str(self)}: {str(error_dict)}")
-                break
+            for page in pages:
+                for obj in page["Contents"]:
+                    # {
+                    #     'Key': 'string',
+                    #     'LastModified': datetime(2015, 1, 1),
+                    #     'ETag': 'string',
+                    #     'Size': 123,
+                    #     'StorageClass': 'STANDARD'|'REDUCED_REDUNDANCY'|'GLACIER'|'STANDARD_IA'|'ONEZONE_IA'|'INTELLIGENT_TIERING'|'DEEP_ARCHIVE'|'OUTPOSTS',
+                    #     'Owner': {
+                    #         'DisplayName': 'string',
+                    #         'ID': 'string'
+                    #     }
+                    # },
+                    k = obj["Key"]
+                    fr = make_file_ref_from_path(f"s3://{s3_bucket}/{k}")
+                    plain_files[fr.file_name] = fr
+                for d in page["CommonPrefixes"]:
+                    # {
+                    #      'Prefix': 'string'
+                    # }
+                    prefix: str = d["Prefix"]
+                    assert prefix.endswith(
+                        "/"
+                    ), "expecting an S3 `prefix` to act like a directory name"
+                    path = prefix.split("/")
+                    assert (
+                        path[-1] == ""
+                    ), "expecting an empty string at the end of the path"
 
-            except Exception as e:
-                log_and_print(f"failed to list_objects {str(self)}: {str(e)}")
-                break
+                    fr = make_file_ref_from_path(f"s3://{s3_bucket}/{prefix}")
+                    directory_name = path[-2]
+                    directories[directory_name] = fr
+
+        except ClientError as error:
+            error_dict = error.response["Error"]
+            log_and_print(f"failed to list_objects {str(self)}: {str(error_dict)}")
+
+        except Exception as e:
+            log_and_print(f"failed to list_objects {str(self)}: {str(e)}")
 
         return FileRef.DirInfo(plain_files, directories)
 
