@@ -18,7 +18,6 @@ from typing import (
     Dict,
     NamedTuple,
     Iterator,
-    Union,
 )
 
 import boto3
