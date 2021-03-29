@@ -10,6 +10,7 @@ from arlo_e2e.io import (
     reset_status_actor,
     make_file_ref,
     FileRef,
+    make_file_ref_from_path,
 )
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.utils import sha256_hash
@@ -95,6 +96,58 @@ class TestBasicReadsAndWrites(unittest.TestCase):
         )
         self.assertIsNone(fr.read(expected_sha256_hash=sha256_hash("wrong contents")))
         cleanup_between_tests()
+
+    def test_make_file_ref_from_path_local(self) -> None:
+        f0 = make_file_ref_from_path("foo/bar.txt")
+        self.assertEqual("file:./foo/bar.txt", str(f0))
+        self.assertTrue(f0.is_file())
+
+        f1 = make_file_ref_from_path("foo.txt")
+        self.assertEqual("file:./foo.txt", str(f1))
+        self.assertTrue(f1.is_file())
+
+        f2 = make_file_ref_from_path("./foo.txt")
+        self.assertEqual("file:./foo.txt", str(f2))
+        self.assertTrue(f2.is_file())
+
+        f3 = make_file_ref_from_path("foo/bar/baz.txt")
+        self.assertEqual("file:./foo/bar/baz.txt", str(f3))
+        self.assertEqual(".", f3.root_dir)
+        self.assertEqual(["foo", "bar"], f3.subdirectories)
+        self.assertEqual("baz.txt", f3.file_name)
+        self.assertTrue(f3.is_file())
+
+        f4 = make_file_ref_from_path("/foo/bar/baz.txt")
+        self.assertEqual("file:/foo/bar/baz.txt", str(f4))
+        self.assertEqual("/", f4.root_dir)
+        self.assertEqual(["foo", "bar"], f4.subdirectories)
+        self.assertEqual("baz.txt", f4.file_name)
+        self.assertTrue(f4.is_file())
+
+    def test_make_file_ref_from_path_s3(self) -> None:
+        f0 = make_file_ref_from_path("s3://foo/bar.txt")
+        self.assertEqual("s3://foo/bar.txt", str(f0))
+        self.assertEqual("foo", f0.s3_bucket())
+        self.assertEqual("bar.txt", f0.s3_key_name())
+        self.assertTrue(f0.is_file())
+
+        f1 = make_file_ref_from_path("s3://foo/bar/baz.txt")
+        self.assertEqual("s3://foo/bar/baz.txt", str(f1))
+        self.assertEqual("foo", f1.root_dir)
+        self.assertEqual(["bar"], f1.subdirectories)
+        self.assertEqual("baz.txt", f1.file_name)
+        self.assertEqual("foo", f1.s3_bucket())
+        self.assertEqual("bar/baz.txt", f1.s3_key_name())
+        self.assertTrue(f1.is_file())
+
+        d1 = make_file_ref_from_path("s3://foo/bar/baz/")
+        self.assertEqual("s3://foo/bar/baz/", str(d1))
+        self.assertEqual("foo", d1.root_dir)
+        self.assertEqual(["bar", "baz"], d1.subdirectories)
+        self.assertEqual("", d1.file_name)
+        self.assertEqual("foo", d1.s3_bucket())
+        self.assertEqual("bar/baz/", d1.s3_key_name())
+        self.assertTrue(d1.is_dir())
 
 
 class TestRayWriteRetry(unittest.TestCase):

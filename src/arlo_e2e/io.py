@@ -28,7 +28,7 @@ from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.logs import log_warning, log_error, log_info
 from electionguard.serializable import Serializable
 from jsons import DecodeError, UnfulfilledArgumentError
-from mypy_boto3_s3 import S3Client
+from mypy_boto3_s3 import S3Client, ListObjectsV2Paginator
 from mypy_boto3_s3.type_defs import ListObjectsV2OutputTypeDef
 from ray.actor import ActorHandle
 
@@ -329,7 +329,7 @@ class FileRef(ABC):
             if expected_sha256_hash == actual_sha256_hash:
                 return binary_contents.decode("utf-8")
             else:
-                log_and_print(
+                log_error(
                     f"mismatching hash for {str(self)}: expected {expected_sha256_hash}, found {actual_sha256_hash}"
                 )
                 return None
@@ -367,30 +367,69 @@ class FileRef(ABC):
         pass
 
 
-def make_file_ref_from_path(full_path: Union[Path, str]) -> FileRef:
+def make_file_ref_from_path(full_path: str) -> FileRef:
     """
     Given something that might show up on the Unix command-line, which might be
     a relative filename, an absolute filename, or possible a S3 URL, converts
-    that input to a FileRef. *This function assumes that the path ends in a file
-    name, not a directory name.*
+    that input to a FileRef.
     """
-    if isinstance(full_path, str):
-        if full_path.startswith("s3://"):
-            parts = Path(full_path[5:]).parts
+
+    if full_path.startswith("s3://"):
+        parts = list(Path(full_path[5:]).parts)
+        if len(parts) < 2:
+            # we're dealing with the name a bucket, alone, so we're treating
+            # it as a directory reference to the root of the bucket
+            root_dir = parts[0]
+            file_name = ""
+            subdirs = []
+        elif full_path.endswith("/"):
+            # we're naming a directory rather than a file
+            root_dir = parts[0]
+            file_name = ""
+            subdirs = parts[1:]
+        else:
             root_dir = parts[0]
             file_name = parts[-1]
-            subdirs = list(parts[1:-1])
-            return make_file_ref(
-                root_dir=f"s3://{root_dir}", file_name=file_name, subdirectories=subdirs
-            )
-        else:
-            full_path = Path(full_path)
+            subdirs = parts[1:-1]
+        return make_file_ref(
+            root_dir=f"s3://{root_dir}",
+            file_name=file_name,
+            subdirectories=list(subdirs),
+        )
+    else:
+        path = Path(full_path)
+        parts = list(path.parts)
+        num_parts = len(parts)
+        is_dir = path.is_dir()
 
-    parts = full_path.parts
-    root_dir = parts[0]
-    file_name = parts[-1]
-    subdirs = list(parts[1:-1])
-    return make_file_ref(root_dir=root_dir, file_name=file_name, subdirectories=subdirs)
+        if num_parts == 0:
+            # this happens if the input is "."
+            root_dir = "."
+            file_name = ""
+            subdirs = []
+        elif is_dir:
+            if parts[0] == "/":
+                root_dir = "/"
+                file_name = ""
+                subdirs = parts[1:]
+            else:
+                root_dir = "."
+                file_name = ""
+                subdirs = parts
+        else:
+            # it's most likely a file
+            if parts[0] == "/":
+                root_dir = "/"
+                file_name = parts[-1]
+                subdirs = parts[1:-1]
+            else:
+                root_dir = "."
+                file_name = parts[-1]
+                subdirs = parts[0:-1]
+
+        return make_file_ref(
+            root_dir=root_dir, file_name=file_name, subdirectories=list(subdirs)
+        )
 
 
 def make_file_ref(
@@ -425,7 +464,7 @@ class S3FileRef(FileRef):
 
     def __str__(self) -> str:
         # the key name starts with a forward slash, corresponding to the root of the bucket
-        return f"s3://{self.s3_bucket()}" + self.s3_key_name()
+        return f"s3://{self.s3_bucket()}/" + self.s3_key_name()
 
     def update(
         self,
@@ -454,7 +493,7 @@ class S3FileRef(FileRef):
     def s3_key_name(self) -> str:
         # If the file_name is the empty-string, then the key-name will have a trailing
         # slash, which is exactly what we want for a directory as distinct from a file.
-        return "/" + "/".join(self.subdirectories + [self.file_name])
+        return "/".join(self.subdirectories + [self.file_name])
 
     def file_exists(self) -> bool:
         if self.is_dir():
@@ -470,11 +509,11 @@ class S3FileRef(FileRef):
 
         except ClientError as error:
             error_dict = error.response["Error"]
-            log_and_print(f"failed to stat {str(self)}: {str(error_dict)}")
+            log_error(f"failed to stat {str(self)}: {str(error_dict)}")
             return False
 
         except Exception as e:
-            log_and_print(f"failed to stat {str(self)}: {str(e)}")
+            log_error(f"failed to stat {str(self)}: {str(e)}")
             return False
 
     def unlink(self) -> None:
@@ -490,10 +529,10 @@ class S3FileRef(FileRef):
 
         except ClientError as error:
             error_dict = error.response["Error"]
-            log_and_print(f"failed to remove {str(self)}: {str(error_dict)}")
+            log_error(f"failed to remove {str(self)}: {str(error_dict)}")
 
         except Exception as e:
-            log_and_print(f"failed to remove {str(self)}: {str(e)}")
+            log_error(f"failed to remove {str(self)}: {str(e)}")
 
     def _write_internal(
         self,
@@ -528,7 +567,7 @@ class S3FileRef(FileRef):
             else:
                 # This code is redundant because the type declaration for put_object requires a
                 # "literal" string, which means we can't just directly reference our global variable,
-                # even if it's final.
+                # even if it's final. Who thought this was a good idea?
 
                 client.put_object(
                     Bucket=s3_bucket,
@@ -553,7 +592,7 @@ class S3FileRef(FileRef):
 
     def _read_internal(self) -> Optional[bytes]:
         if self.is_dir():
-            log_and_print(f"Trying to read a file without a filename: {str(self)}")
+            log_error(f"Trying to read a file without a filename: {str(self)}")
             return None
 
         client = _s3_client()
@@ -569,11 +608,11 @@ class S3FileRef(FileRef):
 
         except ClientError as error:
             error_dict = error.response["Error"]
-            log_and_print(f"failed to read {str(self)}: {str(error_dict)}")
+            log_error(f"failed to read {str(self)}: {str(error_dict)}")
             return None
 
         except Exception as e:
-            log_and_print(f"failed to read {str(self)}: {str(e)}")
+            log_error(f"failed to read {str(self)}: {str(e)}")
             return None
 
     def scandir(self) -> FileRef.DirInfo:
@@ -592,7 +631,7 @@ class S3FileRef(FileRef):
             # requests, or you can just wrap that into one of these paginator things.
             # https://stackoverflow.com/a/59816089/4048276
 
-            paginator = client.get_paginator("list_objects_v2")
+            paginator: ListObjectsV2Paginator = client.get_paginator("list_objects_v2")
             pages: Iterator[ListObjectsV2OutputTypeDef] = paginator.paginate(
                 Bucket=s3_bucket, Prefix=s3_key, Delimiter="/"
             )
@@ -611,7 +650,10 @@ class S3FileRef(FileRef):
                     #     }
                     # },
                     k = obj["Key"]
-                    assert not k.endswith("/"), "file keys should not end with a slash"
+                    if k.endswith("/"):
+                        # we'll get back an entry corresponding to the directory prefix that we're
+                        # actually searching for, which we just need to ignore
+                        continue
 
                     fr = make_file_ref_from_path(f"s3://{s3_bucket}/{k}")
                     plain_files[fr.file_name] = fr
@@ -632,10 +674,10 @@ class S3FileRef(FileRef):
 
         except ClientError as error:
             error_dict = error.response["Error"]
-            log_and_print(f"failed to list_objects {str(self)}: {str(error_dict)}")
+            log_error(f"failed to list_objects {str(self)}: {str(error_dict)}")
 
         except Exception as e:
-            log_and_print(f"failed to list_objects {str(self)}: {str(e)}")
+            log_error(f"failed to list_objects {str(self)}: {str(e)}")
 
         return FileRef.DirInfo(plain_files, directories)
 
@@ -654,10 +696,10 @@ class S3FileRef(FileRef):
 
         except ClientError as error:
             error_dict = error.response["Error"]
-            log_and_print(f"failed to head_object {str(self)}: {str(error_dict)}")
+            log_error(f"failed to head_object {str(self)}: {str(error_dict)}")
 
         except Exception as e:
-            log_and_print(f"failed to head_object {str(self)}: {str(e)}")
+            log_error(f"failed to head_object {str(self)}: {str(e)}")
 
         return 0
 
@@ -669,8 +711,8 @@ class LocalFileRef(FileRef):
 
     def __str__(self) -> str:
         suffix = "/".join(self.subdirectories + [self.file_name])
-        if self.root_dir.startswith("/"):
-            return f"file:/{self.root_dir}/" + suffix
+        if self.root_dir.endswith("/"):
+            return f"file:{self.root_dir}" + suffix
         else:
             return f"file:{self.root_dir}/" + suffix
 
@@ -690,11 +732,11 @@ class LocalFileRef(FileRef):
         return True
 
     def local_file_path(self) -> Path:
+        dir_path = self.local_dir_path()
         if self.file_name:
-            full_path: List[str] = self.subdirectories + [self.file_name]
-            return Path(PurePath(self.root_dir, *full_path))
+            return dir_path / self.file_name
         else:
-            return Path(PurePath(self.root_dir, *self.subdirectories))
+            return dir_path
 
     def local_dir_path(self) -> Path:
         return Path(PurePath(self.root_dir, *self.subdirectories))
@@ -740,7 +782,7 @@ class LocalFileRef(FileRef):
 
     def _read_internal(self) -> Optional[bytes]:
         if self.is_dir():
-            log_and_print(f"Trying to read a file without a filename: {str(self)}")
+            log_error(f"Trying to read a file without a filename: {str(self)}")
             return None
 
         try:
@@ -807,7 +849,7 @@ class WriteRetryStatusActor:  # pragma: no cover
     failure_probability: float
 
     def __init__(self) -> None:
-        log_and_print("WriteRetryStatusActor: starting!", verbose=True)
+        log_info("WriteRetryStatusActor: starting!", verbose=True)
         self.event = Event()
         self.reset_to_zero()
 
@@ -918,9 +960,7 @@ def get_status_actor() -> ActorHandle:
         _status_actor = ray.get_actor(_singleton_name)
 
     if _status_actor is None:
-        log_and_print(
-            "Configuration failure: we should have a status actor, but we don't."
-        )
+        log_error("Configuration failure: we should have a status actor, but we don't.")
         raise RuntimeError("No status actor")
 
     return _status_actor
