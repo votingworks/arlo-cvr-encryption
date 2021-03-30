@@ -17,19 +17,40 @@ from arlo_e2e.utils import sha256_hash
 
 
 @ray.remote
-def r_write_file(fr: FileRef, contents: bytes, num_attempts: int) -> None:
-    fr.write(contents, num_attempts=num_attempts)
+def r_write_file(fr: FileRef, contents: bytes, num_attempts: int) -> bool:
+    return fr.write(contents, num_attempts=num_attempts)
 
 
-def write_all_files(num_files: int, num_attempts: int = 10) -> None:
-    for f in range(0, num_files):
-        name = f"file{f:03d}"
-        contents = name.encode("utf-8")
-        fr = make_file_ref(file_name=name, root_dir="write_output")
-        if ray.is_initialized():
-            r_write_file.remote(fr, contents, num_attempts)
-        else:
-            fr.write(contents, num_attempts=num_attempts)
+def write_all_files(num_files: int, num_attempts: int = 10) -> int:
+    """Returns the number of failures."""
+    file_refs = [
+        make_file_ref(file_name=f"file{f:03d}", root_dir="write_output")
+        for f in range(0, num_files)
+    ]
+
+    if ray.is_initialized():
+        # Engineering note: we could skip the call to ray.get here, launching all
+        # these write calls asynchronously without bothering to wait for them
+        # to complete, but this seems to break the calls to wait_for_zero_pending_writes().
+        # Perhaps this is a consequence of having no pending writes that have even
+        # *started* by the time control flow gets there. Our workaround here is to
+        # wait for all the remote writes to complete. We'll need a separate test to
+        # really exercise the concurrency aspects of wait_for_zero_pending_writes().
+
+        results = ray.get(
+            [
+                r_write_file.remote(fr, fr.file_name.encode("utf-8"), num_attempts)
+                for fr in file_refs
+            ]
+        )
+    else:
+        results = [
+            fr.write(fr.file_name.encode("utf-8"), num_attempts=num_attempts)
+            for fr in file_refs
+        ]
+
+    # True = success, False = failure, so we want to sum up the failures
+    return sum([not x for x in results])
 
 
 def verify_all_files(num_files: int) -> bool:
@@ -79,7 +100,7 @@ class TestBasicReadsAndWrites(unittest.TestCase):
         cleanup_between_tests()
 
     def test_basics(self) -> None:
-        write_all_files(10)
+        self.assertEquals(0, write_all_files(10))
         self.assertTrue(verify_all_files(10))
 
         dir_info = make_file_ref("", "write_output").scandir()
@@ -162,7 +183,7 @@ class TestRayWriteRetry(unittest.TestCase):
         ray_init_localhost(num_cpus=cpu_count())
         set_failure_probability_for_testing(0.0)
 
-        write_all_files(10)
+        self.assertEqual(0, write_all_files(10))
         num_failures = wait_for_zero_pending_writes()
         self.assertEqual(num_failures, 0)
         self.assertTrue(verify_all_files(10))
@@ -174,7 +195,7 @@ class TestRayWriteRetry(unittest.TestCase):
         set_failure_probability_for_testing(0.2)
 
         # up to 100 retries, driving odds of total failure to zero
-        write_all_files(100, 100)
+        self.assertEqual(0, write_all_files(100, 100))
         num_failures = wait_for_zero_pending_writes()
 
         # our retries should guarantee everything succeeds!
@@ -187,7 +208,7 @@ class TestRayWriteRetry(unittest.TestCase):
         set_failure_probability_for_testing(0.2)
 
         # up to 100 retries, driving odds of total failure to zero
-        write_all_files(20, 100)
+        self.assertEquals(0, write_all_files(20, 100))
         num_failures = wait_for_zero_pending_writes()
 
         # our retries should guarantee everything succeeds!
