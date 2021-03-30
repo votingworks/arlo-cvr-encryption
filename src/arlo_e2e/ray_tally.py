@@ -215,9 +215,14 @@ class BallotTallyContext(MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_T
         cballot = ciphertext_ballot_to_accepted(cballot_option)
 
         if self._root_dir is not None:
-            make_file_ref(
+            if not make_file_ref(
                 file_name="", root_dir=self._root_dir
-            ).write_ciphertext_ballot(cballot, num_attempts=NUM_WRITE_RETRIES)
+            ).write_ciphertext_ballot(cballot, num_attempts=NUM_WRITE_RETRIES):
+                # Interesting engineering question: if the write fails, but we have
+                # the value in memory, do we just return it because we're happy, or
+                # do we pass the failure along? Passing the failure along seems to
+                # be the right answer, but it's not obvious.
+                return None
 
         return ciphertext_ballot_to_dict(cballot)
 

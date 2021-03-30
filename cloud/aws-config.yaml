@@ -134,8 +134,9 @@ setup_commands:
     # nightly wheel for Ray
     - sudo pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-2.0.0.dev0-cp38-cp38-manylinux2014_x86_64.whl
 
-    - sudo mkdir /mnt/arlo-data
-    - sudo s3fs arlo-e2e-denver-demo /mnt/arlo-data -o endpoint=us-east-2 -o iam_role=auto -o allow_other -o storage_class=standard_ia -o complement_stat
+    # no longer mounting this via s3fs: instead it's all happening with our built-in boto3 support!
+    # - sudo mkdir /mnt/arlo-data
+    # - sudo s3fs arlo-e2e-denver-demo /mnt/arlo-data -o endpoint=us-east-2 -o iam_role=auto -o allow_other -o storage_class=standard_ia -o complement_stat
 
 # Custom commands that will be run on the head node after common setup.
 head_setup_commands: []

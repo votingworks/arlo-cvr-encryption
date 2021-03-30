@@ -114,7 +114,7 @@ class FileRef(ABC):
         to be a new file name, root directory, and/or subdirectory list. The original doesn't
         mutate.
         """
-        pass
+        ...
 
     def is_file(self) -> bool:
         """Returns whether this is a file (True) or a directory (False)."""
@@ -127,12 +127,12 @@ class FileRef(ABC):
     @abstractmethod
     def is_local(self) -> bool:
         """Returns whether this is a local file (True) or an S3 file (False)."""
-        pass
+        ...
 
     @abstractmethod
     def local_file_path(self) -> Path:
         """For local files or directories, returns a `Path` to the file or directory."""
-        pass
+        ...
 
     @abstractmethod
     def local_dir_path(self) -> Path:
@@ -140,17 +140,17 @@ class FileRef(ABC):
         For local files, returns a `Path` to the directory containing the file.
         For local directories, returns a `Path` to the directory itself.
         """
-        pass
+        ...
 
     @abstractmethod
     def s3_bucket(self) -> str:
         """For s3 files, returns the bucket name."""
-        pass
+        ...
 
     @abstractmethod
     def s3_key_name(self) -> str:
         """For s3 files, returns the key name."""
-        pass
+        ...
 
     @abstractmethod
     def file_exists(self) -> bool:
@@ -158,7 +158,7 @@ class FileRef(ABC):
         Checks whether the file exists with non-zero size (True) or not (False).
         Doesn't work for directories.
         """
-        pass
+        ...
 
     @abstractmethod
     def unlink(self) -> None:
@@ -166,7 +166,7 @@ class FileRef(ABC):
         Attempts to remove the file. If the file doesn't exist, nothing happens.
         Directories are silently ignored.
         """
-        pass
+        ...
 
     def write(self, contents: AnyStr, num_attempts: int = 1) -> bool:
         """
@@ -244,7 +244,7 @@ class FileRef(ABC):
         self,
         ballot: CiphertextAcceptedBallot,
         num_attempts: int = 1,
-    ) -> None:
+    ) -> bool:
         """
         Given a ciphertext ballot, writes the ballot out, in the "ballots" subdirectory,
         of the current FileRef top-level directory. Returns True if the write succeeded.
@@ -252,20 +252,20 @@ class FileRef(ABC):
         """
         assert (
             self.is_dir()
-        ), "ciphertext ballots can only be written to FileNames representing directories"
+        ), "ciphertext ballots can only be written to FileRefs representing directories"
 
         ballot_file_name = self._ballot_file_from_ballot_id(ballot.object_id)
-        ballot_file_name.write_json(ballot, num_attempts)
+        return ballot_file_name.write_json(ballot, num_attempts)
 
     @abstractmethod
     def _write_internal(self, contents: AnyStr, counter: int) -> bool:
-        pass
+        ...
 
     def _write_failure_for_testing(
         self,
         counter: int,
     ) -> bool:
-        """Returns False if there was a test-induced failure. True if everything is good."""
+        """Returns False if there should be a test-induced failure. True if everything is good."""
         fp = get_failure_probability_for_testing()
         if fp > 0.0:
             r = random.random()  # in the range [0.0, 1.0)
@@ -341,7 +341,7 @@ class FileRef(ABC):
         Internal function: Reads the requested file and returns the bytes,
         if they exist, or None if there's an error.
         """
-        pass
+        ...
 
     class DirInfo(NamedTuple):
         files: Dict[str, "FileRef"]
@@ -356,14 +356,14 @@ class FileRef(ABC):
 
         Any file or directory name starting with a dot is ignored.
         """
-        pass
+        ...
 
     @abstractmethod
     def size(self) -> int:
         """
         Returns the number of bytes in the file if it exists. Zero on failure.
         """
-        pass
+        ...
 
 
 def make_file_ref_from_path(full_path: str) -> FileRef:
@@ -462,8 +462,17 @@ class S3FileRef(FileRef):
         super().__init__(root_dir, subdirectories, file_name)
 
     def __str__(self) -> str:
-        # the key name starts with a forward slash, corresponding to the root of the bucket
-        return f"s3://{self.s3_bucket()}/" + self.s3_key_name()
+        # Normally, a key doesn't start with a slash, but when we're dealing with
+        # a reference to a "directory", which isn't really a thing in S3 anyway,
+        # we want to stringify our FileRef with a trailing slash. This code needs
+        # a special case to deal with a reference to the "root" of the bucket,
+        # where the key_name will just be "/".
+        bucket_name = f"s3://{self.s3_bucket()}/"
+        key_name = self.s3_key_name()
+        if key_name == "/":
+            return bucket_name
+        else:
+            return bucket_name + self.s3_key_name()
 
     def update(
         self,
@@ -490,9 +499,13 @@ class S3FileRef(FileRef):
         return self.root_dir
 
     def s3_key_name(self) -> str:
-        # If the file_name is the empty-string, then the key-name will have a trailing
-        # slash, which is exactly what we want for a directory as distinct from a file.
-        return "/".join(self.subdirectories + [self.file_name])
+        if not self.subdirectories and not self.file_name:
+            # special case for a FileRef to the root of a bucket.
+            return "/"
+        else:
+            # If the file_name is the empty-string, then the key-name will have a trailing
+            # slash, which is exactly what we want for a directory as distinct from a file.
+            return "/".join(self.subdirectories + [self.file_name])
 
     def file_exists(self) -> bool:
         if self.is_dir():
