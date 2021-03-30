@@ -38,7 +38,6 @@ from electionguard.logs import log_error, log_info
 from electionguard.nonces import Nonces
 from electionguard.utils import flatmap_optional
 from ray import ObjectRef
-from ray.actor import ActorHandle
 
 from arlo_e2e.constants import (
     NUM_WRITE_RETRIES,
@@ -87,42 +86,6 @@ from arlo_e2e.utils import shard_iterable_uniform
 # Even though these will work and do exactly what you want when the problem sizes are small, you
 # end up in a world of hurt once the problem size scales up. Dealing with these problems ultimately
 # shaped a lot of how the code here works.
-
-
-def partial_tally(
-    progressbar_actor: Optional[ActorHandle],
-    *ptallies: Optional[TALLY_TYPE],
-) -> Optional[TALLY_TYPE]:
-    """
-    This is a front-end for `sequential_tally`, which can be called locally
-    (for remote: see `r_partial_tally`).
-
-    The input is a sequence of TALLY_TYPE and the result is also TALLY_TYPE.
-
-    If any of the partial tallies is `None`, the result is an empty dict,
-    but still `TALLY_TYPE`.
-    """
-    assert not isinstance(
-        ptallies, Dict
-    ), "type failure: got a dict when we should have gotten a sequence"
-
-    if None in ptallies:
-        return None
-    if progressbar_actor:
-        progressbar_actor.update_num_concurrent.remote("Tallies", 1)
-
-    num_ptallies = len(ptallies)
-
-    if num_ptallies > 0:
-        assert isinstance(
-            ptallies[0], Dict
-        ), "type failure: we were expecting a dict (TALLY_TYPE), not an objectref"
-
-    result: TALLY_TYPE = sequential_tally(ptallies)
-    if progressbar_actor:
-        progressbar_actor.update_completed.remote("Tallies", num_ptallies)
-        progressbar_actor.update_num_concurrent.remote("Tallies", -1)
-    return result
 
 
 @ray.remote
@@ -189,7 +152,9 @@ def ray_decrypt_tally(
 TALLY_MAP_INPUT_TYPE = Tuple[Dict[str, Any], int]
 
 
-class BallotTallyContext(MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_TYPE]]):
+class BallotTallyContext(
+    MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_TYPE]]
+):  # pragma: no cover
     _ied: InternalElectionDescription
     _cec: CiphertextElectionContext
     _seed_hash: ElementModQ
@@ -446,7 +411,9 @@ def ray_tally_everything(
     )
 
 
-class BallotVerifyContext(MapReduceContext[str, Optional[TALLY_TYPE]]):
+class BallotVerifyContext(
+    MapReduceContext[str, Optional[TALLY_TYPE]]
+):  # pragma: no cover
     _public_key: ElementModP
     _hash_header: ElementModQ
     _cec: CiphertextElectionContext

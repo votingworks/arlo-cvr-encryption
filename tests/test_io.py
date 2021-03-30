@@ -128,7 +128,7 @@ class TestBasicReadsAndWrites(unittest.TestCase):
         cleanup_between_tests()
 
     def test_basics(self) -> None:
-        self.assertEquals(0, write_all_files(10))
+        self.assertEqual(0, write_all_files(10))
         self.assertTrue(verify_all_files(10))
 
         dir_info = make_file_ref("", "write_output").scandir()
@@ -279,7 +279,7 @@ class TestRayWriteRetry(unittest.TestCase):
         set_failure_probability_for_testing(0.2)
 
         # up to 100 retries, driving odds of total failure to zero
-        self.assertEquals(0, write_all_files(20, 100))
+        self.assertEqual(0, write_all_files(20, 100))
         num_failures = wait_for_zero_pending_writes()
 
         # our retries should guarantee everything succeeds!

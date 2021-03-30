@@ -293,16 +293,12 @@ class Manifest:
         match the hashes in the manifests.
         """
 
-        if self.subdirectories != other.subdirectories:
-            return False
-
-        if self.file_hashes != other.file_hashes:
-            return False
-
-        if self.directory_hashes != other.directory_hashes:
-            return False
-
-        if self.manifest_hash != other.manifest_hash:
+        if not (
+            self.subdirectories == other.subdirectories
+            and self.file_hashes == other.file_hashes
+            and self.directory_hashes == other.directory_hashes
+            and self.manifest_hash == other.manifest_hash
+        ):
             return False
 
         for d in self.directory_hashes.keys():

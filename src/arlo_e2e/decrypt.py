@@ -35,7 +35,7 @@ def r_verify_proven_ballot_proofs(
     public_key: ElementModP,
     ciphertext_ballot: CiphertextAcceptedBallot,
     pballot: ProvenPlaintextBallot,
-) -> bool:
+) -> bool:  # pragma: no cover
     return verify_proven_ballot_proofs(
         extended_base_hash, public_key, ciphertext_ballot, pballot
     )
