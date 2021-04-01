@@ -492,8 +492,12 @@ def validate_directory_input(
     the desired checks for you. An empty directory is considered as if it's absent.
 
     For testing purposes, you can set `raise_exception_dont_exit`, which will cause
-    a `FileExistsError` to be raised.
+    a `FileExistsError` to be raised, rather than `exit(1)` to be called.
     """
+
+    # Input-checking logic like this was repeating in all of the apps, so it made
+    # sense to pull it all together in one place, where it's testable, etc.
+
     dir_ref = make_file_ref_from_path(directory_name)
     if dir_ref.is_file():
         directory_name = directory_name + "/"
