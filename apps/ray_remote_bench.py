@@ -10,9 +10,9 @@ from electionguard.group import int_to_q_unchecked
 from electionguard.utils import get_optional
 
 from arlo_e2e.dominion import read_dominion_csv
+from arlo_e2e.io import wait_for_zero_pending_writes, validate_directory_input
 from arlo_e2e.ray_helpers import ray_init_cluster, ray_init_localhost
 from arlo_e2e.ray_tally import ray_tally_everything
-from arlo_e2e.io import wait_for_zero_pending_writes
 
 
 def run_bench(filename: str, output_dir: Optional[str], use_progressbar: bool) -> None:
@@ -89,6 +89,8 @@ if __name__ == "__main__":
     files = args.cvr_file
     file_dir = args.dir[0] if args.dir else None
     use_progressbar = args.progress
+
+    file_dir = validate_directory_input(file_dir, "tally", error_if_absent=True)
 
     if args.local:
         print("Using Ray locally")

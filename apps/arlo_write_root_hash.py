@@ -6,6 +6,7 @@ from typing import List, Dict
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.constants import MANIFEST_FILE
+from arlo_e2e.io import validate_directory_input
 from arlo_e2e.root_qrcode import gen_root_qrcode
 
 # Typical usage, shown with data for Inyo County, 2020 (with arguments split across lines for legibility,
@@ -64,6 +65,8 @@ if __name__ == "__main__":
     election_name: str = args.election_name
     tally_dir: str = args.tallies
     metadata_strs: List[str] = args.metadata
+
+    tally_dir = validate_directory_input(tally_dir, "tally", error_if_absent=True)
 
     metadata: Dict[str, str] = {}
     for s in metadata_strs:

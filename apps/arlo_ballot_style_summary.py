@@ -4,6 +4,7 @@ from typing import Optional
 
 from electionguard.serializable import set_serializers, set_deserializers
 
+from arlo_e2e.io import validate_directory_input
 from arlo_e2e.publish import load_fast_tally
 from arlo_e2e.tally import FastTallyEverythingResults
 
@@ -25,6 +26,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     tallydir = args.directory
+
+    tallydir = validate_directory_input(tallydir, "tally", error_if_absent=True)
 
     results: Optional[FastTallyEverythingResults] = load_fast_tally(
         tallydir, check_proofs=False

@@ -10,7 +10,11 @@ from arlo_e2e.eg_helpers import log_nothing_to_stdout
 from arlo_e2e.publish import load_ray_tally
 from arlo_e2e.ray_helpers import ray_init_cluster, ray_init_localhost
 from arlo_e2e.ray_tally import RayTallyEverythingResults
-from arlo_e2e.io import wait_for_zero_pending_writes, make_file_ref_from_path
+from arlo_e2e.io import (
+    wait_for_zero_pending_writes,
+    make_file_ref_from_path,
+    validate_directory_input,
+)
 
 if __name__ == "__main__":
     set_serializers()
@@ -72,6 +76,9 @@ if __name__ == "__main__":
     ballot_ids: List[str] = args.ballot_id
     use_cluster = args.cluster
     root_hash = args.root_hash
+
+    tally_dir = validate_directory_input(tally_dir, "tally", error_if_absent=True)
+    decrypted_dir = validate_directory_input(decrypted_dir, "decryption")
 
     if use_cluster:
         ray_init_cluster()

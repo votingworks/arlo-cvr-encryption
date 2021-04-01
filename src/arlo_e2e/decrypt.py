@@ -175,7 +175,7 @@ def exists_proven_ballot(ballot_object_id: str, decrypted_dir: str) -> bool:
         root_dir=decrypted_dir,
         file_name=ballot_object_id + ".json",
         subdirectories=[ballot_name_prefix],
-    ).file_exists()
+    ).exists()
 
 
 @ray.remote

@@ -1,10 +1,14 @@
 import shutil
 import unittest
 from dataclasses import dataclass
+from datetime import timedelta
 from os import cpu_count
+from typing import List
 
 import ray
 from electionguard.serializable import Serializable
+from hypothesis import given, settings, HealthCheck, Phase
+from hypothesis.strategies import integers
 
 from arlo_e2e.io import (
     set_failure_probability_for_testing,
@@ -13,9 +17,14 @@ from arlo_e2e.io import (
     make_file_ref,
     FileRef,
     make_file_ref_from_path,
+    validate_directory_input,
 )
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.utils import sha256_hash
+from arlo_e2e_testing.manifest_hypothesis import (
+    list_file_names_contents,
+    FileNameAndContents,
+)
 
 poop_emoji = "💩"  # used for testing encoding/decoding
 
@@ -78,7 +87,7 @@ def verify_all_files(num_files: int) -> bool:
             TestSerializable, expected_sha256_hash=sha256_hash(expected_json)
         )
         length = fr.size()
-        exists = fr.file_exists()
+        exists = fr.exists()
         if not exists or contents is None:
             print(f"file {name} is missing!")
             failure = True
@@ -118,9 +127,9 @@ class TestBasicReadsAndWrites(unittest.TestCase):
         fr = make_file_ref("testfile", root_dir="write_output")
         fr.write("123456789")
         self.assertEqual(9, fr.size())
-        self.assertTrue(fr.file_exists())
+        self.assertTrue(fr.exists())
         fr.unlink()
-        self.assertFalse(fr.file_exists())
+        self.assertFalse(fr.exists())
 
         self.assertEqual(0, make_file_ref("testfile2", root_dir="write_output").size())
         self.assertEqual(0, make_file_ref("", root_dir="write_output").size())
@@ -178,30 +187,121 @@ class TestBasicReadsAndWrites(unittest.TestCase):
         self.assertTrue(f4.is_file())
         self.assertTrue(f4.is_local())
 
-        f5 = make_file_ref_from_path("/")
-        self.assertEqual("file:/", str(f5))
-        self.assertEqual("/", f5.root_dir)
-        self.assertEqual([], f5.subdirectories)
-        self.assertEqual("", f5.file_name)
-        self.assertTrue(f5.is_dir())
-        self.assertTrue(f5.is_local())
+        d1 = make_file_ref_from_path("/")
+        self.assertEqual("file:/", str(d1))
+        self.assertEqual("/", d1.root_dir)
+        self.assertEqual([], d1.subdirectories)
+        self.assertEqual("", d1.file_name)
+        self.assertTrue(d1.is_dir())
+        self.assertTrue(d1.is_local())
 
-        f6 = make_file_ref_from_path(".")
-        self.assertEqual("file:./", str(f6))
-        self.assertEqual(".", f6.root_dir)
-        self.assertEqual([], f6.subdirectories)
-        self.assertEqual("", f6.file_name)
-        self.assertTrue(f6.is_dir())
-        self.assertTrue(f6.is_local())
+        d2 = make_file_ref_from_path(".")
+        self.assertEqual("file:./", str(d2))
+        self.assertEqual(".", d2.root_dir)
+        self.assertEqual([], d2.subdirectories)
+        self.assertEqual("", d2.file_name)
+        self.assertTrue(d2.is_dir())
+        self.assertTrue(d2.is_local())
 
-        f7 = make_file_ref_from_path("../../")
+        d3 = make_file_ref_from_path("../../")
         # we're using .. because it will succeed the internal is_dir checks
-        self.assertEqual("file:./../../", str(f7))
-        self.assertEqual(".", f7.root_dir)
-        self.assertEqual(["..", ".."], f7.subdirectories)
-        self.assertEqual("", f7.file_name)
-        self.assertTrue(f7.is_dir())
-        self.assertTrue(f7.is_local())
+        self.assertEqual("file:./../../", str(d3))
+        self.assertEqual(".", d3.root_dir)
+        self.assertEqual(["..", ".."], d3.subdirectories)
+        self.assertEqual("", d3.file_name)
+        self.assertTrue(d3.is_dir())
+        self.assertTrue(d3.is_local())
+
+        d4 = make_file_ref_from_path("localdir/")
+        self.assertEqual("file:./localdir/", str(d4))
+        self.assertEqual(".", d4.root_dir)
+        self.assertEqual(["localdir"], d4.subdirectories)
+        self.assertEqual("", d4.file_name)
+        self.assertTrue(d4.is_dir())
+        self.assertTrue(d4.is_local())
+
+        # It will check if a directory exists of the requested name, which in this case isn't
+        # there, so it will conclude that we're talking about a file, not a directory.
+        not_d4 = make_file_ref_from_path("localdir")
+        self.assertEqual("file:./localdir", str(not_d4))
+        self.assertEqual(".", not_d4.root_dir)
+        self.assertEqual([], not_d4.subdirectories)
+        self.assertEqual("localdir", not_d4.file_name)
+        self.assertFalse(not_d4.is_dir())
+        self.assertTrue(not_d4.is_local())
+
+    def test_validate_directory_input(self) -> None:
+        cleanup_between_tests()
+
+        self.assertFalse(make_file_ref_from_path("write_output/").exists())
+        self.assertEqual(
+            "write_output/",
+            validate_directory_input(
+                "write_output", "x", raise_exception_dont_exit=True
+            ),
+        )
+        self.assertEqual(
+            "write_output/",
+            validate_directory_input(
+                "write_output/", "x", raise_exception_dont_exit=True
+            ),
+        )
+        self.assertEqual(
+            "write_output/",
+            validate_directory_input(
+                "write_output/",
+                "x",
+                error_if_exists=True,
+                raise_exception_dont_exit=True,
+            ),
+        )
+        with self.assertRaises(FileExistsError):
+            validate_directory_input(
+                "write_output/",
+                "x",
+                error_if_absent=True,
+                raise_exception_dont_exit=True,
+            )
+
+        make_file_ref_from_path("write_output/test1.txt").write(
+            "Some file contents here."
+        )
+
+        self.assertTrue(make_file_ref_from_path("write_output/").exists())
+        self.assertTrue(make_file_ref_from_path("write_output/").is_dir())
+        self.assertEqual(
+            "write_output/",
+            validate_directory_input(
+                "write_output", "x", raise_exception_dont_exit=True
+            ),
+        )
+        self.assertEqual(
+            "write_output/",
+            validate_directory_input(
+                "write_output",
+                "x",
+                error_if_absent=True,
+                raise_exception_dont_exit=True,
+            ),
+        )
+        self.assertEqual(
+            "write_output/",
+            validate_directory_input(
+                "write_output/",
+                "x",
+                error_if_absent=True,
+                raise_exception_dont_exit=True,
+            ),
+        )
+        with self.assertRaises(FileExistsError):
+            validate_directory_input(
+                "write_output/",
+                "x",
+                error_if_exists=True,
+                raise_exception_dont_exit=True,
+            )
+
+        cleanup_between_tests()
 
     def test_make_file_ref_from_path_s3(self) -> None:
         f0 = make_file_ref_from_path("s3://foo/bar.txt")

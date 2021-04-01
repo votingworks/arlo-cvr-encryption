@@ -18,6 +18,7 @@ from arlo_e2e.arlo_audit_report import (
     arlo_audit_report_to_sampled_ballots,
 )
 from arlo_e2e.eg_helpers import log_nothing_to_stdout
+from arlo_e2e.io import validate_directory_input
 from arlo_e2e.publish import load_fast_tally
 from arlo_e2e.tally import FastTallyEverythingResults
 
@@ -76,6 +77,11 @@ if __name__ == "__main__":
     audit_report_filename = args.audit_report[0]
     validate_decryptions = args.validate
     root_hash = args.root_hash
+
+    tally_dir = validate_directory_input(tally_dir, "tally", error_if_absent=True)
+    decrypted_dir = validate_directory_input(
+        decrypted_dir, "decryption", error_if_absent=True
+    )
 
     print(f"Loading tallies from {tally_dir}.")
     tally: Optional[FastTallyEverythingResults] = load_fast_tally(

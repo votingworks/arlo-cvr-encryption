@@ -153,10 +153,12 @@ class FileRef(ABC):
         ...
 
     @abstractmethod
-    def file_exists(self) -> bool:
+    def exists(self) -> bool:
         """
         Checks whether the file exists with non-zero size (True) or not (False).
-        Doesn't work for directories.
+        For directories (local or remote), checks if the directory exists with
+        any files in it. This leads to at least somewhat consistent behavior
+        between S3 and local files, since S3 "directories" don't really exist.
         """
         ...
 
@@ -371,6 +373,17 @@ def make_file_ref_from_path(full_path: str) -> FileRef:
     Given something that might show up on the Unix command-line, which might be
     a relative filename, an absolute filename, or possible a S3 URL, converts
     that input to a FileRef.
+
+    If the given path ends with a slash, then it's assumed that we're naming a
+    *directory*. If the given path doesn't end with a slash, but a local directory
+    of the requested name exists, then that's also treated as a directory. Otherwise,
+    it's assumed that we're talking about a *file*. This has ramifications for
+    the front-end user experience. If the user is naming the output directory,
+    they should be required to add a trailing slash.
+
+    So, if you're *expecting* the user to name a directory, then just pass the
+    name into this function, and call `is_dir()` on the resulting `FileRef`.
+    if it's not a directory, then bomb out with a user-friendly error message.
     """
 
     if full_path.startswith("s3://"):
@@ -399,7 +412,7 @@ def make_file_ref_from_path(full_path: str) -> FileRef:
         path = Path(full_path)
         parts = list(path.parts)
         num_parts = len(parts)
-        is_dir = path.is_dir()
+        is_dir = path.is_dir() or full_path.endswith("/")
 
         if num_parts == 0:
             # this happens if the input is "."
@@ -456,6 +469,65 @@ def make_file_ref(
         return LocalFileRef(root_dir, subdirectories, file_name)
 
 
+def validate_directory_input(
+    directory_name: str,
+    explanation: str,
+    error_if_exists: bool = False,
+    error_if_absent: bool = False,
+    raise_exception_dont_exit: bool = False,
+) -> str:
+    """
+    Given a string input, from a user, claiming to be the name of a directory,
+    makes sure that it actually is a directory (e.g., requiring a trailing slash
+    for S3, and making sure no such thing exists as a local file of the same name).
+    If there's an error condition, a suitable message is printed to stdout, and
+    `exit(1)` is called. If this function returns, the string that comes back should
+    be used in place of the original `directory_name`.
+
+    When you're about to do something heavyweight, like writing out all of the encrypted
+    ballots for an election, you might want to error out if the requested directory
+    already exists, as a way to make sure you don't accidentally overwrite existing ballots.
+    The optional flag `error_if_exists`, if set to try, will accomplish this. Similarly,
+    if you're about to read a bunch of such material, then `error_if_absent` will make
+    the desired checks for you. An empty directory is considered as if it's absent.
+
+    For testing purposes, you can set `raise_exception_dont_exit`, which will cause
+    a `FileExistsError` to be raised.
+    """
+    dir_ref = make_file_ref_from_path(directory_name)
+    if dir_ref.is_file():
+        directory_name = directory_name + "/"
+        dir_ref = make_file_ref_from_path(directory_name)
+        if dir_ref.is_file():
+            err_str = f"Unexpected error: {explanation} directory {directory_name} isn't actually a directory."
+            if raise_exception_dont_exit:
+                raise FileExistsError(err_str)
+            print(err_str)
+            exit(1)
+
+    if error_if_absent or error_if_exists:
+        dir_exists = dir_ref.exists()
+        if error_if_exists and dir_exists:
+            err_str = f"Error: {explanation} directory {directory_name} already exists."
+            if raise_exception_dont_exit:
+                raise FileExistsError(err_str)
+            print(err_str)
+            exit(1)
+        elif error_if_absent and not dir_exists:
+            err_str = (
+                f"Error: {explanation} directory {directory_name} is missing or empty."
+            )
+            if raise_exception_dont_exit:
+                raise FileExistsError(err_str)
+            print(err_str)
+            exit(1)
+
+    if directory_name.endswith("/"):
+        return directory_name
+    else:
+        return directory_name + "/"
+
+
 @dataclass(eq=True, unsafe_hash=True)
 class S3FileRef(FileRef):
     def __init__(self, root_dir: str, subdirectories: List[str], file_name: str):
@@ -507,26 +579,29 @@ class S3FileRef(FileRef):
             # slash, which is exactly what we want for a directory as distinct from a file.
             return "/".join(self.subdirectories + [self.file_name])
 
-    def file_exists(self) -> bool:
+    def exists(self) -> bool:
         if self.is_dir():
-            raise RuntimeError("file_exists doesn't work on directories")
+            # not the most efficient thing to do on directories with a zillion files
+            # but will give us the desired semantics
+            scan = self.scandir()
+            return len(scan.files) > 0 or len(scan.subdirs) > 0
+        else:
+            client = _s3_client()
+            s3_bucket = self.s3_bucket()
+            s3_key = self.s3_key_name()
 
-        client = _s3_client()
-        s3_bucket = self.s3_bucket()
-        s3_key = self.s3_key_name()
+            try:
+                result = client.head_object(Bucket=s3_bucket, Key=s3_key)
+                return result["ContentLength"] > 0
 
-        try:
-            result = client.head_object(Bucket=s3_bucket, Key=s3_key)
-            return result["ContentLength"] > 0
+            except ClientError as error:
+                error_dict = error.response["Error"]
+                log_error(f"failed to stat {str(self)}: {str(error_dict)}")
+                return False
 
-        except ClientError as error:
-            error_dict = error.response["Error"]
-            log_error(f"failed to stat {str(self)}: {str(error_dict)}")
-            return False
-
-        except Exception as e:
-            log_error(f"failed to stat {str(self)}: {str(e)}")
-            return False
+            except Exception as e:
+                log_error(f"failed to stat {str(self)}: {str(e)}")
+                return False
 
     def unlink(self) -> None:
         if self.is_dir():
@@ -759,15 +834,18 @@ class LocalFileRef(FileRef):
     def s3_key_name(self) -> str:
         raise RuntimeError("can't get an s3 key-name from a non-s3 file path")
 
-    def file_exists(self) -> bool:
+    def exists(self) -> bool:
         if self.is_dir():
-            raise RuntimeError("file_exists doesn't work on directories")
-
-        try:
-            s = stat(self.local_file_path())
-            return s.st_size > 0 and S_ISREG(s.st_mode)
-        except FileNotFoundError:
-            return False
+            # not the most efficient thing to do on directories with a zillion files
+            # but will give us the desired semantics
+            scan = self.scandir()
+            return len(scan.files) > 0 or len(scan.subdirs) > 0
+        else:
+            try:
+                s = stat(self.local_file_path())
+                return s.st_size > 0 and S_ISREG(s.st_mode)
+            except FileNotFoundError:
+                return False
 
     def unlink(self) -> None:
         if not self.is_dir():
@@ -818,28 +896,30 @@ class LocalFileRef(FileRef):
         plain_files: Dict[str, "FileRef"] = {}
         directories: Dict[str, "FileRef"] = {}
 
-        with os.scandir(startpoint) as it:
-            # typecasting here because there isn't an annotation on os.scandir()
-            typed_it: Iterator[os.DirEntry] = it
-            for entry in typed_it:
-                if not entry.name.startswith("."):
-                    if entry.is_file():
-                        plain_files[entry.name] = self.update(
-                            new_file_name=entry.name,
-                            new_subdirs=self.subdirectories,
-                            new_root_dir=self.root_dir,
-                        )
-                    elif entry.is_dir():
-                        directories[entry.name] = self.update(
-                            new_file_name="",
-                            new_subdirs=self.subdirectories + [entry.name],
-                            new_root_dir=self.root_dir,
-                        )
-                    else:
-                        # something other than a file or directory? ignore for now.
-                        pass
-
-        return FileRef.DirInfo(plain_files, directories)
+        try:
+            with os.scandir(startpoint) as it:
+                # typecasting here because there isn't an annotation on os.scandir()
+                typed_it: Iterator[os.DirEntry] = it
+                for entry in typed_it:
+                    if not entry.name.startswith("."):
+                        if entry.is_file():
+                            plain_files[entry.name] = self.update(
+                                new_file_name=entry.name,
+                                new_subdirs=self.subdirectories,
+                                new_root_dir=self.root_dir,
+                            )
+                        elif entry.is_dir():
+                            directories[entry.name] = self.update(
+                                new_file_name="",
+                                new_subdirs=self.subdirectories + [entry.name],
+                                new_root_dir=self.root_dir,
+                            )
+                        else:
+                            # something other than a file or directory? ignore for now.
+                            pass
+            return FileRef.DirInfo(plain_files, directories)
+        except FileNotFoundError:
+            return FileRef.DirInfo({}, {})
 
     def size(self) -> int:
         try:
