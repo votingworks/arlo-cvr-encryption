@@ -464,6 +464,12 @@ def make_file_ref(
     subdirectories = [] if subdirectories is None else subdirectories
     if root_dir.startswith("s3://"):
         root_dir = root_dir[5:]
+        parts = list(Path(root_dir).parts)
+        assert len(parts) >= 1, "can't make an S3 refrence without a bucket name"
+
+        root_dir = parts[0]
+        subdirectories = parts[1:] + subdirectories
+
         return S3FileRef(root_dir, subdirectories, file_name)
     else:
         return LocalFileRef(root_dir, subdirectories, file_name)
@@ -768,7 +774,11 @@ class S3FileRef(FileRef):
             log_error(f"failed to list_objects {str(self)}: {str(error_dict)}")
 
         except Exception as e:
-            log_error(f"failed to list_objects {str(self)}: {str(e)}")
+            # we're not going to log this as an error, because this is what happens
+            # when there's nothing there.
+
+            # log_error(f"failed to list_objects {str(self)}: {str(e)}")
+            pass
 
         return FileRef.DirInfo(plain_files, directories)
 

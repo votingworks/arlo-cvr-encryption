@@ -57,6 +57,7 @@ from arlo_e2e.manifest import (
 from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.ray_helpers import ray_wait_for_workers
 from arlo_e2e.ray_map_reduce import MapReduceContext, RayMapReducer
+from arlo_e2e.root_qrcode import gen_root_qrcode
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
     TALLY_TYPE,
@@ -394,6 +395,19 @@ def ray_tally_everything(
         )
         manifest = flatmap_optional(
             root_hash, lambda h: load_existing_manifest(root_dir2, [], h)
+        )
+
+        # When used for real, we might want to add additional metadata, which we don't
+        # really have here. The user can run arlo_write_root_hash, which is just a front-end
+        # for `gen_root_qrcode`, and specify KEY=VALUE pairs on the command-line, which just
+        # end up in the resulting QRcode.
+
+        # The benefit of running this now is that it will end up in the index.html file.
+        gen_root_qrcode(
+            election_name=cvrs.metadata.election_name,
+            tally_dir=root_dir2,
+            metadata={},
+            num_retry_attempts=NUM_WRITE_RETRIES,
         )
 
         generate_index_html_files(
