@@ -1,6 +1,5 @@
 from io import StringIO
 from multiprocessing.pool import Pool
-from os import path
 from typing import Optional, TypeVar, Tuple
 
 import pandas as pd
@@ -20,6 +19,7 @@ from arlo_e2e.constants import (
     CRYPTO_CONSTANTS,
     CRYPTO_CONTEXT,
 )
+from arlo_e2e.io import make_file_ref_from_path
 from arlo_e2e.manifest import (
     load_existing_manifest,
     Manifest,
@@ -57,65 +57,65 @@ def _load_tally_shared(
     set_serializers()
     set_deserializers()
 
-    if not path.exists(results_dir):
-        log_error(f"Path ({results_dir}) not found, cannot load the fast-tally")
-        return None
-
-    manifest = load_existing_manifest(
-        results_dir, subdirectories=None, expected_root_hash=root_hash
-    )
-    if manifest is None:
-        return None
-
-    election_description: Optional[ElectionDescription] = manifest.read_json_file(
-        ELECTION_DESCRIPTION, ElectionDescription
-    )
-    if election_description is None:
-        return None
-
-    constants: Optional[ElectionConstants] = manifest.read_json_file(
-        CRYPTO_CONSTANTS, ElectionConstants
-    )
-    if constants is None:
-        return None
-    if constants != ElectionConstants():
-        log_error(
-            f"constants are out of date or otherwise don't match the current library: {constants}"
+    if make_file_ref_from_path(results_dir).exists():
+        manifest = load_existing_manifest(
+            results_dir, subdirectories=None, expected_root_hash=root_hash
         )
-        return None
+        if manifest is None:
+            return None
 
-    cec: Optional[CiphertextElectionContext] = manifest.read_json_file(
-        CRYPTO_CONTEXT, CiphertextElectionContext
-    )
-    if cec is None:
-        return None
-
-    encrypted_tally: Optional[SelectionTally] = manifest.read_json_file(
-        ENCRYPTED_TALLY, SelectionTally
-    )
-    if encrypted_tally is None:
-        return None
-
-    metadata: Optional[ElectionMetadata] = manifest.read_json_file(
-        ELECTION_METADATA, ElectionMetadata
-    )
-    if metadata is None:
-        return None
-
-    cvr_metadata = manifest.read_file(CVR_METADATA)
-    if cvr_metadata is None:
-        return None
-
-    try:
-        df = pd.read_csv(
-            StringIO(cvr_metadata),
-            sep=",",
-            engine="python",
+        election_description: Optional[ElectionDescription] = manifest.read_json_file(
+            ELECTION_DESCRIPTION, ElectionDescription
         )
-    except pd.errors.ParserError:
-        return None
+        if election_description is None:
+            return None
 
-    return manifest, election_description, cec, encrypted_tally, metadata, df
+        constants: Optional[ElectionConstants] = manifest.read_json_file(
+            CRYPTO_CONSTANTS, ElectionConstants
+        )
+        if constants is None:
+            return None
+        if constants != ElectionConstants():
+            log_error(
+                f"constants are out of date or otherwise don't match the current library: {constants}"
+            )
+            return None
+
+        cec: Optional[CiphertextElectionContext] = manifest.read_json_file(
+            CRYPTO_CONTEXT, CiphertextElectionContext
+        )
+        if cec is None:
+            return None
+
+        encrypted_tally: Optional[SelectionTally] = manifest.read_json_file(
+            ENCRYPTED_TALLY, SelectionTally
+        )
+        if encrypted_tally is None:
+            return None
+
+        metadata: Optional[ElectionMetadata] = manifest.read_json_file(
+            ELECTION_METADATA, ElectionMetadata
+        )
+        if metadata is None:
+            return None
+
+        cvr_metadata = manifest.read_file(CVR_METADATA)
+        if cvr_metadata is None:
+            return None
+
+        try:
+            df = pd.read_csv(
+                StringIO(cvr_metadata.decode("utf-8")),
+                sep=",",
+                engine="python",
+            )
+        except pd.errors.ParserError:
+            return None
+
+        return manifest, election_description, cec, encrypted_tally, metadata, df
+
+    log_error(f"Path ({results_dir}) not found, cannot load the fast-tally")
+    return None
 
 
 def load_ray_tally(

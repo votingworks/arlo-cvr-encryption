@@ -38,7 +38,10 @@ if __name__ == "__main__":
             print("Read failed.")
             exit(1)
         else:
-            print(result)
+            try:
+                print(result.decode("utf-8"))
+            except UnicodeDecodeError:
+                print(result)
 
     elif command == "write":
         data = sys.stdin.read()

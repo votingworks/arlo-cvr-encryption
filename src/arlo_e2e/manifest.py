@@ -150,10 +150,11 @@ class Manifest:
         # this loads the file and verifies the hashes
         file_contents = self.read_file(file_name, subdirectories)
         return flatmap_optional(
-            file_contents, lambda f: decode_json_file_contents(f, class_handle)
+            file_contents,
+            lambda f: decode_json_file_contents(f.decode("utf-8"), class_handle),
         )
 
-    def _validate_contents(self, filename: str, file_contents: str) -> bool:
+    def _validate_contents(self, filename: str, file_contents: AnyStr) -> bool:
         """
         Checks the manifest for the given file name. Returns True if the name is
         included in the manifest *and* the file_contents match the manifest. If anything
@@ -164,7 +165,10 @@ class Manifest:
             return False
 
         file_info = self.file_hashes[filename]
-        file_len = len(file_contents.encode("utf-8"))
+        if isinstance(file_contents, str):
+            file_len = len(file_contents.encode("utf-8"))
+        else:
+            file_len = len(file_contents)
 
         if file_len != file_info.num_bytes:
             log_error(
@@ -215,7 +219,7 @@ class Manifest:
 
     def _read_file_recursive(
         self, file_name: str, subdirectories: List[str]
-    ) -> Optional[str]:
+    ) -> Optional[bytes]:
         """
         Recursively works through the subdirectories, checking that all hashes match,
         ultimately returning the contents of the file, if successful, or `None` if
@@ -250,9 +254,9 @@ class Manifest:
 
     def read_file(
         self, file_name: str, subdirectories: List[str] = None
-    ) -> Optional[str]:
+    ) -> Optional[bytes]:
         """
-        Reads the requested file, by name, returning its contents as a Python string.
+        Reads the requested file, by name, returning its contents as an array of raw bytes.
         If no hash for the file is present, or if the file doesn't match its known
         hash, then `None` will be returned and an error will be logged. If the file_name
         is actually a path-like object, the subdirectories are ignored.
@@ -374,7 +378,7 @@ def _r_build_manifest_for_directory(
             verbose=True,
         )
     plain_files, directories = make_file_ref(
-        "", root_dir=root_dir, subdirectories=subdirectories
+        file_name="", root_dir=root_dir, subdirectories=subdirectories
     ).scandir()
 
     if MANIFEST_FILE in plain_files:
@@ -539,7 +543,7 @@ def load_existing_manifest(
             return None
 
     manifest_ex: Optional[ManifestExternal] = decode_json_file_contents(
-        manifest_str, class_handle=ManifestExternal
+        manifest_str.decode("utf-8"), class_handle=ManifestExternal
     )
     return flatmap_optional(
         manifest_ex, lambda m: m.to_manifest(root_dir, subdirectories, manifest_info)

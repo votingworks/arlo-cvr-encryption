@@ -309,14 +309,15 @@ class FileRef(ABC):
         # this loads the file and verifies the hashes
         file_contents = self.read(expected_sha256_hash)
         if file_contents is not None:
-            return decode_json_file_contents(file_contents, class_handle)
+            return decode_json_file_contents(
+                file_contents.decode("utf-8"), class_handle
+            )
         else:
             return None
 
-    def read(self, expected_sha256_hash: Optional[str] = None) -> Optional[str]:
+    def read(self, expected_sha256_hash: Optional[str] = None) -> Optional[bytes]:
         """
-        Reads the requested file and returns the bytes,
-        if they exist or None if there's an error.
+        Reads the requested file and returns the raw bytes or None if there's an error.
 
         :param expected_sha256_hash: If this parameter is not None, then the file bytes must match the specified hash,
           with any mismatch causing an error to be logged and None to be returned.
@@ -328,14 +329,14 @@ class FileRef(ABC):
         if expected_sha256_hash is not None:
             actual_sha256_hash = sha256_hash(binary_contents)
             if expected_sha256_hash == actual_sha256_hash:
-                return binary_contents.decode("utf-8")
+                return binary_contents
             else:
                 log_error(
                     f"mismatching hash for {str(self)}: expected {expected_sha256_hash}, found {actual_sha256_hash}"
                 )
                 return None
         else:
-            return binary_contents.decode("utf-8")
+            return binary_contents
 
     @abstractmethod
     def _read_internal(self) -> Optional[bytes]:
@@ -1136,6 +1137,7 @@ def decode_json_file_contents(json_str: str, class_handle: Type[S]) -> Optional[
     :param class_handle: the class, itself, that we're trying to deserialize to
     :returns: the contents of the file, or `None` if there was an error
     """
+
     try:
         result = class_handle.from_json(json_str)
     except DecodeError as err:  # pragma: no cover
