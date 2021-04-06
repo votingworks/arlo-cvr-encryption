@@ -53,9 +53,12 @@ def generate_index_html_files(
             f"<i>{num_bytes} bytes</i>" if not is_dir else "<b>directory</b>"
         )
 
-        file_name_plus_slash = f"{fn.file_name}{'/' if is_dir else ''}"
+        if is_dir:
+            file_or_dir_name = f"{fn.subdirectories[-1]}/"
+        else:
+            file_or_dir_name = f"{fn.file_name}"
 
-        index_text += f"        <li><a href='{file_name_plus_slash}'>{file_name_plus_slash}</a> - {additional_text}</li>\n"
+        index_text += f"        <li><a href='{file_or_dir_name}'>{file_or_dir_name}</a> - {additional_text}</li>\n"
 
         if is_dir:
             generate_index_html_files(title_text, fn, num_attempts=num_attempts)
