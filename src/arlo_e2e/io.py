@@ -1,7 +1,7 @@
 import hashlib
 import os
 import random
-from abc import ABC, abstractmethod
+from abc import abstractmethod, ABC
 from asyncio import Event
 from base64 import b64encode
 from dataclasses import dataclass
@@ -18,6 +18,7 @@ from typing import (
     Dict,
     NamedTuple,
     Iterator,
+    Final,
 )
 
 import boto3
@@ -41,7 +42,7 @@ _s3_client_handle: Optional[S3Client] = None
 _local_failed_writes: int = 0
 
 
-DEFAULT_S3_STORAGE_CLASS = "STANDARD"
+DEFAULT_S3_STORAGE_CLASS: Final[str] = "STANDARD"
 # Twice as expensive per month for storage, but supports immediate deletion,
 # cheaper access. Suitable for testing, when we're creating and nuking these
 # files fairly quickly.
@@ -629,7 +630,7 @@ class S3FileRef(FileRef):
         s3_bucket = self.s3_bucket()
         s3_key = self.s3_key_name()
         if isinstance(contents, str):
-            binary_contents = contents.encode()
+            binary_contents = contents.encode("utf-8")
         else:
             binary_contents = contents
 
