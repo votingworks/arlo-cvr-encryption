@@ -602,10 +602,6 @@ class S3FileRef(FileRef):
                 log_error(f"failed to stat {str(self)}: {str(error_dict)}")
                 return False
 
-            except Exception as e:
-                log_error(f"failed to stat {str(self)}: {str(e)}")
-                return False
-
     def unlink(self) -> None:
         if self.is_dir():
             return
@@ -620,9 +616,6 @@ class S3FileRef(FileRef):
         except ClientError as error:
             error_dict = error.response["Error"]
             log_error(f"failed to remove {str(self)}: {str(error_dict)}")
-
-        except Exception as e:
-            log_error(f"failed to remove {str(self)}: {str(e)}")
 
     def _write_internal(
         self,
@@ -674,10 +667,6 @@ class S3FileRef(FileRef):
             )
             return False
 
-        except Exception as e:
-            log_and_print(f"failed to write {str(self)} (attempt #{counter}): {str(e)}")
-            return False
-
         return True
 
     def _read_internal(self) -> Optional[bytes]:
@@ -699,10 +688,6 @@ class S3FileRef(FileRef):
         except ClientError as error:
             error_dict = error.response["Error"]
             log_error(f"failed to read {str(self)}: {str(error_dict)}")
-            return None
-
-        except Exception as e:
-            log_error(f"failed to read {str(self)}: {str(e)}")
             return None
 
     def scandir(self) -> FileRef.DirInfo:
@@ -727,51 +712,46 @@ class S3FileRef(FileRef):
             )
 
             for page in pages:
-                for obj in page["Contents"]:
-                    # {
-                    #     'Key': 'string',
-                    #     'LastModified': datetime(2015, 1, 1),
-                    #     'ETag': 'string',
-                    #     'Size': 123,
-                    #     'StorageClass': 'STANDARD'|'REDUCED_REDUNDANCY'|'GLACIER'|'STANDARD_IA'|'ONEZONE_IA'|'INTELLIGENT_TIERING'|'DEEP_ARCHIVE'|'OUTPOSTS',
-                    #     'Owner': {
-                    #         'DisplayName': 'string',
-                    #         'ID': 'string'
-                    #     }
-                    # },
-                    k = obj["Key"]
-                    if k.endswith("/"):
-                        # we'll get back an entry corresponding to the directory prefix that we're
-                        # actually searching for, which we just need to ignore
-                        continue
+                if "Contents" in page:
+                    for obj in page["Contents"]:
+                        # {
+                        #     'Key': 'string',
+                        #     'LastModified': datetime(2015, 1, 1),
+                        #     'ETag': 'string',
+                        #     'Size': 123,
+                        #     'StorageClass': 'STANDARD'|'REDUCED_REDUNDANCY'|'GLACIER'|'STANDARD_IA'|'ONEZONE_IA'|'INTELLIGENT_TIERING'|'DEEP_ARCHIVE'|'OUTPOSTS',
+                        #     'Owner': {
+                        #         'DisplayName': 'string',
+                        #         'ID': 'string'
+                        #     }
+                        # },
+                        k = obj["Key"]
+                        if k.endswith("/"):
+                            # we'll get back an entry corresponding to the directory prefix that we're
+                            # actually searching for, which we just need to ignore
+                            continue
 
-                    fr = make_file_ref_from_path(f"s3://{s3_bucket}/{k}")
-                    plain_files[fr.file_name] = fr
-                for d in page["CommonPrefixes"]:
-                    # {
-                    #      'Prefix': 'string'
-                    # }
-                    prefix: str = d["Prefix"]
-                    assert prefix.endswith(
-                        "/"
-                    ), "expecting an S3 `prefix` to act like a directory name"
+                        fr = make_file_ref_from_path(f"s3://{s3_bucket}/{k}")
+                        plain_files[fr.file_name] = fr
+                if "CommonPrefixes" in page:
+                    for d in page["CommonPrefixes"]:
+                        # {
+                        #      'Prefix': 'string'
+                        # }
+                        prefix: str = d["Prefix"]
+                        assert prefix.endswith(
+                            "/"
+                        ), "expecting an S3 `prefix` to act like a directory name"
 
-                    path = prefix.split("/")
+                        path = prefix.split("/")
 
-                    fr = make_file_ref_from_path(f"s3://{s3_bucket}/{prefix}")
-                    directory_name = path[-2]
-                    directories[directory_name] = fr
+                        fr = make_file_ref_from_path(f"s3://{s3_bucket}/{prefix}")
+                        directory_name = path[-2]
+                        directories[directory_name] = fr
 
         except ClientError as error:
             error_dict = error.response["Error"]
             log_error(f"failed to list_objects {str(self)}: {str(error_dict)}")
-
-        except Exception as e:
-            # we're not going to log this as an error, because this is what happens
-            # when there's nothing there.
-
-            # log_error(f"failed to list_objects {str(self)}: {str(e)}")
-            pass
 
         return FileRef.DirInfo(plain_files, directories)
 
@@ -791,9 +771,6 @@ class S3FileRef(FileRef):
         except ClientError as error:
             error_dict = error.response["Error"]
             log_error(f"failed to head_object {str(self)}: {str(error_dict)}")
-
-        except Exception as e:
-            log_error(f"failed to head_object {str(self)}: {str(e)}")
 
         return 0
 
