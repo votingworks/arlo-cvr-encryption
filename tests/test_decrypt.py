@@ -19,7 +19,6 @@ from arlo_e2e.decrypt import (
 )
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.ray_tally import ray_tally_everything
-from arlo_e2e.ray_io import mkdir_helper
 from arlo_e2e_testing.dominion_hypothesis import (
     ballots_and_context,
     DominionBallotsAndContext,
@@ -29,15 +28,18 @@ _encrypted_ballot_dir = "audit_encrypted_ballots"
 _decrypted_ballot_dir = "audit_decrypted_ballots"
 
 
+def remove_subdirs() -> None:
+    shutil.rmtree(_encrypted_ballot_dir, ignore_errors=True)
+    shutil.rmtree(_decrypted_ballot_dir, ignore_errors=True)
+
+
 class EncryptionAndDecryption(unittest.TestCase):
     def setUp(self) -> None:
-        shutil.rmtree(_encrypted_ballot_dir, ignore_errors=True)
-        shutil.rmtree(_decrypted_ballot_dir, ignore_errors=True)
+        remove_subdirs()
         ray_init_localhost()
 
     def tearDown(self) -> None:
-        shutil.rmtree(_encrypted_ballot_dir, ignore_errors=True)
-        shutil.rmtree(_decrypted_ballot_dir, ignore_errors=True)
+        remove_subdirs()
         ray.shutdown()
 
     @given(ballots_and_context(max_rows=20))
@@ -51,11 +53,7 @@ class EncryptionAndDecryption(unittest.TestCase):
     def test_everything(self, input: DominionBallotsAndContext) -> None:
         # Something of an end-to-end test of an election RLA!
 
-        shutil.rmtree(_encrypted_ballot_dir, ignore_errors=True)
-        shutil.rmtree(_decrypted_ballot_dir, ignore_errors=True)
-
-        mkdir_helper(_encrypted_ballot_dir)
-        mkdir_helper(_decrypted_ballot_dir)
+        remove_subdirs()
 
         cvrs, ed, secret_key, id_map, cec, ballots = input
         ied = InternalElectionDescription(ed)
@@ -111,6 +109,4 @@ class EncryptionAndDecryption(unittest.TestCase):
             for bid in bids_from_tally
         ]
         self.assertTrue(all(verifications))
-
-        shutil.rmtree(_encrypted_ballot_dir, ignore_errors=True)
-        shutil.rmtree(_decrypted_ballot_dir, ignore_errors=True)
+        remove_subdirs()

@@ -1,11 +1,12 @@
 import argparse
-from os import path
 from sys import exit
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.constants import MANIFEST_FILE
+from arlo_e2e.io import validate_directory_input, make_file_ref
+from arlo_e2e.publish import load_ray_tally
 from arlo_e2e.root_qrcode import gen_root_qrcode
 
 # Typical usage, shown with data for Inyo County, 2020 (with arguments split across lines for legibility,
@@ -28,7 +29,8 @@ if __name__ == "__main__":
     set_deserializers()
 
     parser = argparse.ArgumentParser(
-        description="Writes out a file (root_hash.html) suitable for printing and handing out as the root hash of the election."
+        description="Writes out a file (root_hash.html) suitable for printing"
+        " and handing out as the root hash of the election."
     )
 
     parser.add_argument(
@@ -61,9 +63,28 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    election_name: str = args.election_name
+    election_name: Optional[str] = args.election_name
     tally_dir: str = args.tallies
     metadata_strs: List[str] = args.metadata
+
+    if election_name is None or election_name == "":
+        tally = load_ray_tally(
+            tally_dir,
+            check_proofs=False,
+            verbose=False,
+            recheck_ballots_and_tallies=False,
+            root_hash=None,
+        )
+
+        if tally is not None:
+            election_name = tally.metadata.election_name
+
+        # perhaps better than just bombing out, but really this shouldn't happen
+        if election_name is None or election_name == "":
+            election_name = "General Election"
+
+    tally_dir = validate_directory_input(tally_dir, "tally", error_if_absent=True)
+    tally_dir_ref = make_file_ref(root_dir=tally_dir, subdirectories=[], file_name="")
 
     metadata: Dict[str, str] = {}
     for s in metadata_strs:
@@ -74,14 +95,12 @@ if __name__ == "__main__":
         value = "=".join(items[1:])
         metadata[key] = value
 
-    if not path.exists(tally_dir):
-        print(f"Local root directory ({tally_dir}) not found. Exiting.")
-        exit(1)
-
-    if not path.exists(path.join(tally_dir, MANIFEST_FILE)):
+    if not (tally_dir_ref + MANIFEST_FILE).exists():
         print(
-            f"No MANIFEST.json found in {tally_dir}, cannot generate root hash. Exiting."
+            f"No {MANIFEST_FILE} found in {str(tally_dir_ref)}, cannot generate root hash. Exiting."
         )
         exit(1)
 
-    gen_root_qrcode(election_name=election_name, tally_dir=tally_dir, metadata=metadata)
+    gen_root_qrcode(
+        election_name=election_name, tally_dir_ref=tally_dir_ref, metadata=metadata
+    )

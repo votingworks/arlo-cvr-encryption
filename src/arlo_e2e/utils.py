@@ -1,3 +1,5 @@
+from base64 import b64encode
+from hashlib import sha256
 from math import ceil, floor
 from typing import (
     TypeVar,
@@ -5,6 +7,7 @@ from typing import (
     Sequence,
     List,
     Iterable,
+    AnyStr,
 )
 
 from more_itertools import peekable
@@ -134,3 +137,19 @@ def shard_iterable_uniform(
             residual = current_num_per_group_float - current_num_per_group_int
 
         yield [next(input_iter) for _ in range(0, current_num_per_group_int)]
+
+
+def sha256_hash(input: AnyStr) -> str:
+    """
+    Given a string or array of bytes, returns a base64-encoded representation of the
+    256-bit SHA2-256 hash of that input string, first encoding the input string as UTF8.
+    """
+    h = sha256()
+    if isinstance(input, str):
+        encoded = input.encode("utf-8")
+        h.update(encoded)
+    else:
+        h.update(input)
+
+    hash_str = b64encode(h.digest()).decode("utf-8")
+    return hash_str

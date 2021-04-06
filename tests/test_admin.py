@@ -4,7 +4,7 @@ import unittest
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.admin import make_fresh_election_admin, ElectionAdmin
-from arlo_e2e.ray_io import ray_load_json_file, ray_write_json_file
+from arlo_e2e.io import make_file_ref
 
 
 class TestAdmin(unittest.TestCase):
@@ -19,10 +19,9 @@ class TestAdmin(unittest.TestCase):
 
     def test_write_fresh_state(self) -> None:
         admin_state = make_fresh_election_admin()
-        ray_write_json_file(
-            file_name=self.admin_file, content_obj=admin_state, root_dir="."
-        )
-        admin_state2 = ray_load_json_file(".", self.admin_file, ElectionAdmin)
+        fr = make_file_ref(file_name=self.admin_file, root_dir=".")
+        fr.write_json(admin_state)
+        admin_state2 = fr.read_json(ElectionAdmin)
 
         self.assertEqual(admin_state2, admin_state)
         self.assertTrue(admin_state2.is_valid())

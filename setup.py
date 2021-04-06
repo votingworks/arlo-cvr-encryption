@@ -61,13 +61,14 @@ setup(
         "typish==1.7.0",
         "jsons==1.1.2",
         "tqdm==4.56.2",
-        "cryptography==3.3.2",
+        "cryptography==3.4.6",
         "flask==1.1.2",
         "ray==1.2.0",
-        "pillow==8.0.1",
+        "pillow==8.1.2",
         "qrcode==6.1",
         "more-itertools==8.7.0",
-        "boto3==1.17.23",
+        "boto3==1.17.44",
+        "boto3-stubs[s3,ec2]==1.17.44",
     ],
     # ElectionGuard is also a requirement, but we're assuming that's being installed elsewhere, since
     # we're using a forked version of it.

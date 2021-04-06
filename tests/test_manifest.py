@@ -8,9 +8,9 @@ from electionguard.logs import log_warning
 from hypothesis import given, settings, HealthCheck, Phase
 from hypothesis.strategies import integers
 
+from arlo_e2e.io import make_file_ref
 from arlo_e2e.manifest import load_existing_manifest, build_manifest_for_directory
 from arlo_e2e.ray_helpers import ray_init_localhost
-from arlo_e2e.ray_io import ray_write_file
 from arlo_e2e_testing.manifest_hypothesis import (
     FileNameAndContents,
     list_file_names_contents,
@@ -52,35 +52,43 @@ class TestManifestPublishing(unittest.TestCase):
         for c in contents:
             c.write(MANIFEST_TESTING_DIR)
 
+        manifest_dir_ref = make_file_ref(
+            file_name="", subdirectories=[], root_dir=MANIFEST_TESTING_DIR
+        )
+
         # generate the manifest on disk
         root_hash = build_manifest_for_directory(
-            MANIFEST_TESTING_DIR, num_write_retries=1, logging_enabled=False
+            manifest_dir_ref, num_write_retries=1, logging_enabled=False
         )
         self.assertIsNotNone(root_hash)
 
         # now, build an in-memory manifest
         manifest = load_existing_manifest(
-            MANIFEST_TESTING_DIR, expected_root_hash=root_hash
+            manifest_dir_ref, expected_root_hash=root_hash
         )
         self.assertIsNotNone(manifest)
 
         for c in contents:
             bits = manifest.read_file(c.file_name, c.file_path)
             self.assertIsNotNone(bits)
-            self.assertEqual(c.file_contents, bits)
+            self.assertEqual(c.file_contents, bits.decode("utf-8"))
 
         # now, write out a second directory, same contents, so we can
         # check that we get identical hashes
+        manifest_dir_ref2 = make_file_ref(
+            file_name="", subdirectories=[], root_dir=MANIFEST_TESTING_DIR2
+        )
+
         for c in contents:
             c.write(MANIFEST_TESTING_DIR2)
         root_hash2 = build_manifest_for_directory(
-            MANIFEST_TESTING_DIR2, num_write_retries=1, logging_enabled=False
+            manifest_dir_ref2, num_write_retries=1, logging_enabled=False
         )
         self.assertIsNotNone(root_hash2)
 
         # now, build an in-memory manifest
         manifest2 = load_existing_manifest(
-            MANIFEST_TESTING_DIR2, expected_root_hash=root_hash2
+            manifest_dir_ref2, expected_root_hash=root_hash2
         )
         self.assertIsNotNone(manifest2)
         self.assertEqual(root_hash, root_hash2)
@@ -88,10 +96,11 @@ class TestManifestPublishing(unittest.TestCase):
         self.assertTrue(manifest.equivalent(manifest2))
 
         # next up, inducing errors; add a file that's not already there; reading should fail
-        ray_write_file(
-            "something-else", "something-not-already-there", MANIFEST_TESTING_DIR, []
+        make_file_ref(file_name="something-else", root_dir=MANIFEST_TESTING_DIR).write(
+            "unexpected content"
         )
         self.assertIsNone(manifest.read_file("something-else"))
+        self.assertIsNone(manifest.read_file("something-else-missing"))
 
         # and, lastly, try modifying the existing files; reading should fail
         for c in contents:

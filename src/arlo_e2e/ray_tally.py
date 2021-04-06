@@ -38,7 +38,6 @@ from electionguard.logs import log_error, log_info
 from electionguard.nonces import Nonces
 from electionguard.utils import flatmap_optional
 from ray import ObjectRef
-from ray.actor import ActorHandle
 
 from arlo_e2e.constants import (
     NUM_WRITE_RETRIES,
@@ -49,6 +48,7 @@ from arlo_e2e.constants import (
 from arlo_e2e.dominion import DominionCSV, BallotPlaintextFactory
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.html_index import generate_index_html_files
+from arlo_e2e.io import make_file_ref, FileRef
 from arlo_e2e.manifest import (
     Manifest,
     build_manifest_for_directory,
@@ -56,8 +56,8 @@ from arlo_e2e.manifest import (
 )
 from arlo_e2e.metadata import ElectionMetadata
 from arlo_e2e.ray_helpers import ray_wait_for_workers
-from arlo_e2e.ray_io import mkdir_helper, ray_write_ciphertext_ballot
 from arlo_e2e.ray_map_reduce import MapReduceContext, RayMapReducer
+from arlo_e2e.root_qrcode import gen_root_qrcode
 from arlo_e2e.tally import (
     FastTallyEverythingResults,
     TALLY_TYPE,
@@ -87,42 +87,6 @@ from arlo_e2e.utils import shard_iterable_uniform
 # Even though these will work and do exactly what you want when the problem sizes are small, you
 # end up in a world of hurt once the problem size scales up. Dealing with these problems ultimately
 # shaped a lot of how the code here works.
-
-
-def partial_tally(
-    progressbar_actor: Optional[ActorHandle],
-    *ptallies: Optional[TALLY_TYPE],
-) -> Optional[TALLY_TYPE]:
-    """
-    This is a front-end for `sequential_tally`, which can be called locally
-    (for remote: see `r_partial_tally`).
-
-    The input is a sequence of TALLY_TYPE and the result is also TALLY_TYPE.
-
-    If any of the partial tallies is `None`, the result is an empty dict,
-    but still `TALLY_TYPE`.
-    """
-    assert not isinstance(
-        ptallies, Dict
-    ), "type failure: got a dict when we should have gotten a sequence"
-
-    if None in ptallies:
-        return None
-    if progressbar_actor:
-        progressbar_actor.update_num_concurrent.remote("Tallies", 1)
-
-    num_ptallies = len(ptallies)
-
-    if num_ptallies > 0:
-        assert isinstance(
-            ptallies[0], Dict
-        ), "type failure: we were expecting a dict (TALLY_TYPE), not an objectref"
-
-    result: TALLY_TYPE = sequential_tally(ptallies)
-    if progressbar_actor:
-        progressbar_actor.update_completed.remote("Tallies", num_ptallies)
-        progressbar_actor.update_num_concurrent.remote("Tallies", -1)
-    return result
 
 
 @ray.remote
@@ -189,11 +153,13 @@ def ray_decrypt_tally(
 TALLY_MAP_INPUT_TYPE = Tuple[Dict[str, Any], int]
 
 
-class BallotTallyContext(MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_TYPE]]):
+class BallotTallyContext(
+    MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_TYPE]]
+):  # pragma: no cover
     _ied: InternalElectionDescription
     _cec: CiphertextElectionContext
     _seed_hash: ElementModQ
-    _root_dir: Optional[str]
+    _root_dir_ref: Optional[FileRef]
     _bpf: BallotPlaintextFactory
     _nonces: Nonces
 
@@ -214,10 +180,15 @@ class BallotTallyContext(MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_T
 
         cballot = ciphertext_ballot_to_accepted(cballot_option)
 
-        if self._root_dir is not None:
-            ray_write_ciphertext_ballot(
-                cballot, root_dir=self._root_dir, num_retries=NUM_WRITE_RETRIES
-            )
+        if self._root_dir_ref is not None:
+            if not self._root_dir_ref.write_ciphertext_ballot(
+                cballot, num_attempts=NUM_WRITE_RETRIES
+            ):
+                # Interesting engineering question: if the write fails, but we have
+                # the value in memory, do we just return it because we're happy, or
+                # do we pass the failure along? Passing the failure along seems to
+                # be the right answer, but it's not obvious.
+                return None
 
         return ciphertext_ballot_to_dict(cballot)
 
@@ -242,14 +213,14 @@ class BallotTallyContext(MapReduceContext[TALLY_MAP_INPUT_TYPE, Optional[TALLY_T
         ied: InternalElectionDescription,
         cec: CiphertextElectionContext,
         seed_hash: ElementModQ,
-        root_dir: Optional[str],
+        root_dir_ref: Optional[FileRef],
         bpf: BallotPlaintextFactory,
         nonces: Nonces,
     ):
         self._ied = ied
         self._cec = cec
         self._seed_hash = seed_hash
-        self._root_dir = root_dir
+        self._root_dir_ref = root_dir_ref
         self._bpf = bpf
         self._nonces = nonces
 
@@ -288,9 +259,6 @@ def ray_tally_everything(
 
     if date is None:
         date = datetime.now()
-
-    if root_dir is not None:
-        mkdir_helper(root_dir, num_retries=NUM_WRITE_RETRIES)
 
     start_time = timer()
 
@@ -336,7 +304,12 @@ def ray_tally_everything(
 
     nonces = Nonces(master_nonce)
 
-    btc = BallotTallyContext(ied, cec, seed_hash, root_dir, bpf, nonces)
+    root_dir_ref = (
+        make_file_ref(file_name="", root_dir=root_dir, subdirectories=[])
+        if root_dir
+        else None
+    )
+    btc = BallotTallyContext(ied, cec, seed_hash, root_dir_ref, bpf, nonces)
 
     nonce_indices = range(num_ballots)
     inputs = zip(ballot_dicts, nonce_indices)
@@ -411,7 +384,7 @@ def ray_tally_everything(
             tally=out_tally,
             metadata=cvrs.metadata,
             cvr_metadata=cvr_metadata,
-            num_retries=NUM_WRITE_RETRIES,
+            num_attempts=NUM_WRITE_RETRIES,
         )
 
         log_info("Writing manifests")
@@ -419,18 +392,34 @@ def ray_tally_everything(
         # Cast from Optional[str] to str is necessary here only because mypy isn't very
         # smart about flow typing from the if-statement above.
         root_dir2: str = cast(str, root_dir)
+
+        root_dir_ref2 = make_file_ref(
+            file_name="", subdirectories=[], root_dir=root_dir2
+        )
         root_hash = build_manifest_for_directory(
-            root_dir=root_dir2,
-            subdirectories=[],
+            root_dir_ref=root_dir_ref2,
             show_progressbar=use_progressbar,
             num_write_retries=NUM_WRITE_RETRIES,
         )
         manifest = flatmap_optional(
-            root_hash, lambda h: load_existing_manifest(root_dir2, [], h)
+            root_hash, lambda h: load_existing_manifest(root_dir_ref2, h)
+        )
+
+        # When used for real, we might want to add additional metadata, which we don't
+        # really have here. The user can run arlo_write_root_hash, which is just a front-end
+        # for `gen_root_qrcode`, and specify KEY=VALUE pairs on the command-line, which just
+        # end up in the resulting QRcode.
+
+        # The benefit of running this now is that it will end up in the index.html file.
+        gen_root_qrcode(
+            election_name=cvrs.metadata.election_name,
+            tally_dir_ref=root_dir_ref2,
+            metadata={},
+            num_retry_attempts=NUM_WRITE_RETRIES,
         )
 
         generate_index_html_files(
-            cvrs.metadata.election_name, root_dir2, num_retries=NUM_WRITE_RETRIES
+            cvrs.metadata.election_name, root_dir_ref2, num_attempts=NUM_WRITE_RETRIES
         )
 
     return RayTallyEverythingResults(
@@ -444,11 +433,13 @@ def ray_tally_everything(
     )
 
 
-class BallotVerifyContext(MapReduceContext[str, Optional[TALLY_TYPE]]):
+class BallotVerifyContext(
+    MapReduceContext[str, Optional[TALLY_TYPE]]
+):  # pragma: no cover
     _public_key: ElementModP
     _hash_header: ElementModQ
     _cec: CiphertextElectionContext
-    _root_dir: str
+    _root_dir_ref: FileRef
     _manifest: Manifest
 
     def map(self, filename: str) -> Optional[TALLY_TYPE]:
@@ -486,13 +477,13 @@ class BallotVerifyContext(MapReduceContext[str, Optional[TALLY_TYPE]]):
         self,
         public_key: ElementModP,
         hash_header: ElementModQ,
-        root_dir: str,
+        root_dir_ref: FileRef,
     ):
         self._public_key = public_key
         self._hash_header = hash_header
-        self._root_dir = root_dir
+        self._root_dir_ref = root_dir_ref
 
-        manifest = load_existing_manifest(root_dir, [])
+        manifest = load_existing_manifest(self._root_dir_ref)
         if manifest is None:
             raise RuntimeError("unexpected failure to make a manifest!")
         else:
@@ -665,7 +656,7 @@ class RayTallyEverythingResults(NamedTuple):
             bvc = BallotVerifyContext(
                 self.context.elgamal_public_key,
                 self.context.crypto_extended_base_hash,
-                self.manifest.root_dir,
+                self.manifest.dir_ref,
             )
             rmr = RayMapReducer(
                 context=bvc,

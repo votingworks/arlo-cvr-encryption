@@ -8,8 +8,8 @@ import qrcode
 # centering is awful: https://css-tricks.com/centering-a-div-that-maintains-aspect-ratio-when-theres-body-margin/
 from arlo_e2e.constants import NUM_WRITE_RETRIES
 from arlo_e2e.eg_helpers import log_and_print
+from arlo_e2e.io import FileRef
 from arlo_e2e.manifest import load_existing_manifest
-from arlo_e2e.ray_io import ray_write_file_with_retries
 
 root_start_text = """<!DOCTYPE html>
 <html>
@@ -31,9 +31,8 @@ root_start_text = """<!DOCTYPE html>
 <head><title>{title_text}: Root Hash</title></head>
 <body>
     <h2>{title_text}: Root Hash</h2>
-    <p>This information comprises the "root hash" of this election. This data points at
-    a web URL as well as an S3 bucket where every encrypted ballot can be found as well as where
-    the decrypted ballots will be located once the RLA begins.</p>
+    <p>This information comprises the "root hash" of this election. Additional useful metadata
+    about the election may appear here as well, such as URLs or cloud storage bucket names.
     
     <p>This data helps validate the integrity of a risk limiting audit and is means to be
     read by software like <a href="https://voting.works">VotingWorks</a>'s 
@@ -55,7 +54,7 @@ root_end_text = """
 
 def gen_root_qrcode(
     election_name: str,
-    tally_dir: str,
+    tally_dir_ref: FileRef,
     metadata: Dict[str, str],
     num_retry_attempts: int = NUM_WRITE_RETRIES,
 ) -> None:
@@ -78,12 +77,14 @@ def gen_root_qrcode(
     See also, `load_existing_manifest` has an optional `expected_root_hash` field,
     used by `load_ray_tally` and `load_fast_tally`.
 
-    :param election_name: Human-readable name of the election, e.g., `Harris County General Election, November 2020`
-    :param tally_dir: Local directory where `MANIFEST.json` can be found and where results will be written
+    :param election_name: Human-readable name of the election, e.g., `Harris County General Election, November 2020`.
+      If this is missing, the election name is taken from the election itself, assuming there's an `election_name`
+      field in the election metadata, which is normally there.
+    :param tally_dir_ref: FileRef to the directory where `MANIFEST.json` can be found and where results will be written
     :param metadata: dictionary mapping strings to values, rendered out to the QRcode as-is
     :param num_retry_attempts: number of times to attempt a write if it fails
     """
-    manifest = load_existing_manifest(root_dir=tally_dir)
+    manifest = load_existing_manifest(root_dir_ref=tally_dir_ref)
     if manifest is None:
         log_and_print("MANIFEST.json file not found, cannot generate QRcode")
         return
@@ -91,20 +92,20 @@ def gen_root_qrcode(
     data_hash = manifest.manifest_hash.hash
     qr_headers = {
         "election_name": election_name,
+        "tally_location": str(tally_dir_ref),
         "root_hash": data_hash,
     }
-    qr_data = {
-        **qr_headers,
-        **metadata,
-    }  # goofy Python syntax to merge two dictionaries
+
+    # goofy Python syntax to merge two dictionaries
+    qr_data = {**qr_headers, **metadata}
 
     bullet_text = ""
     for k in sorted(qr_data.keys()):
-        value_data = (
-            f'<a href="{qr_data[k]}f">{qr_data[k]}</a>'
-            if qr_data[k].startswith("http")
-            else qr_data[k]
-        )
+        if qr_data[k].startswith("http"):
+            value_data = f'<a href="{qr_data[k]}f">{qr_data[k]}</a>'
+        else:
+            value_data = qr_data[k]
+
         bullet_text += (
             f"        <li><code><b>{k}:</b></code> <code>{value_data}</code></li>\n"
         )
@@ -113,21 +114,14 @@ def gen_root_qrcode(
     qr_byteio = BytesIO()
     qr_img.save(qr_byteio, "PNG")
     qr_bytes: bytes = qr_byteio.getvalue()
-    ray_write_file_with_retries(
-        "root_hash_qrcode.png",
-        qr_bytes,
-        root_dir=tally_dir,
-        subdirectories=[],
-        num_attempts=num_retry_attempts,
+    (tally_dir_ref + "root_hash_qrcode.png").write(
+        qr_bytes, num_attempts=num_retry_attempts
     )
 
     html_text = (
         root_start_text.format(title_text=election_name) + bullet_text + root_end_text
     )
-    ray_write_file_with_retries(
-        "root_hash.html",
+    (tally_dir_ref + "root_hash.html").write(
         html_text,
-        root_dir=tally_dir,
-        subdirectories=[],
         num_attempts=num_retry_attempts,
     )

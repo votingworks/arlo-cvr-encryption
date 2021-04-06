@@ -1,19 +1,23 @@
 import argparse
-from os import path
 from sys import exit
 from timeit import default_timer as timer
 from typing import Optional
 
+import ray
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.admin import ElectionAdmin
 from arlo_e2e.dominion import read_dominion_csv
+from arlo_e2e.io import (
+    wait_for_zero_pending_writes,
+    make_file_ref_from_path,
+    validate_directory_input,
+)
 from arlo_e2e.ray_helpers import (
     ray_init_cluster,
     ray_init_localhost,
     ray_wait_for_workers,
 )
-from arlo_e2e.ray_io import wait_for_zero_pending_writes, ray_load_json_file
 from arlo_e2e.ray_tally import ray_tally_everything
 
 if __name__ == "__main__":
@@ -55,12 +59,10 @@ if __name__ == "__main__":
     tallydir = args.tallies
     use_cluster = args.cluster
 
-    if path.exists(tallydir):
-        print(f"Tally directory ({tallydir}) already exists. Exiting.")
-        exit(1)
+    tallydir = validate_directory_input(tallydir, "tally", error_if_exists=True)
 
-    admin_state: Optional[ElectionAdmin] = ray_load_json_file(
-        ".", keyfile, ElectionAdmin
+    admin_state: Optional[ElectionAdmin] = make_file_ref_from_path(keyfile).read_json(
+        ElectionAdmin
     )
     if admin_state is None or not admin_state.is_valid():
         print(f"Election administration key material wasn't valid")
@@ -98,3 +100,6 @@ if __name__ == "__main__":
     num_failures = wait_for_zero_pending_writes()
     if num_failures > 0:
         print(f"WARNING: Failed to write {num_failures} files. Something bad happened.")
+
+    if ray.is_initialized():
+        ray.shutdown()

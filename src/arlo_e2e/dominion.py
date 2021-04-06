@@ -125,25 +125,6 @@ def dominion_row_to_uid(row: pd.Series, election_title: str, fields: List[str]) 
     return result
 
 
-def _nonempty_elem(row: pd.Series, key: str) -> bool:
-    """
-    Decides whether the particular key in this row is present or absent.
-    """
-    try:
-        val = getattr(row, key)
-    except AttributeError:
-        assert False, f"key should always be present; key: ({key}), row: ({row})"
-
-    # seems that we'll sometimes get None and other times get NaN, so we
-    # have to be extra paranoid.
-    if isinstance(val, float):
-        return not isnan(val)
-    elif isinstance(val, str):
-        return str != ""
-    else:
-        return val is not None
-
-
 def _str_to_internationalized_text_en(s: str) -> InternationalizedText:
     return InternationalizedText([Language(s, language="en")])
 

@@ -1,6 +1,5 @@
 import csv
 import functools
-import os
 from multiprocessing.pool import Pool
 from typing import Optional, Dict, List
 
@@ -21,20 +20,13 @@ from ray.actor import ActorHandle
 from tqdm import tqdm
 
 from arlo_e2e.admin import ElectionAdmin
+from arlo_e2e.constants import BALLOT_FILENAME_PREFIX_DIGITS, NUM_WRITE_RETRIES
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.html_index import generate_index_html_files
+from arlo_e2e.io import make_file_ref
 from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.ray_tally import RayTallyEverythingResults
 from arlo_e2e.tally import FastTallyEverythingResults
-
-from arlo_e2e.ray_io import (
-    mkdir_helper,
-    file_exists_helper,
-    ray_load_json_file,
-    ray_write_file_with_retries,
-    ray_write_json_file,
-)
-from arlo_e2e.constants import BALLOT_FILENAME_PREFIX_DIGITS, NUM_WRITE_RETRIES
 
 
 @ray.remote
@@ -43,7 +35,7 @@ def r_verify_proven_ballot_proofs(
     public_key: ElementModP,
     ciphertext_ballot: CiphertextAcceptedBallot,
     pballot: ProvenPlaintextBallot,
-) -> bool:
+) -> bool:  # pragma: no cover
     return verify_proven_ballot_proofs(
         extended_base_hash, public_key, ciphertext_ballot, pballot
     )
@@ -133,7 +125,7 @@ def decrypt_ballots(
 
 
 def write_proven_ballot(
-    pballot: ProvenPlaintextBallot, decrypted_dir: str, num_retries: int = 1
+    pballot: ProvenPlaintextBallot, decrypted_dir: str, num_attempts: int = 1
 ) -> None:
     """
     Writes out a `ProvenPlaintextBallot` in the desired directory.
@@ -143,13 +135,11 @@ def write_proven_ballot(
     ballot_object_id = pballot.ballot.object_id
     ballot_name_prefix = ballot_object_id[0:BALLOT_FILENAME_PREFIX_DIGITS]
 
-    ray_write_json_file(
+    make_file_ref(
         file_name=ballot_object_id + ".json",
         root_dir=decrypted_dir,
-        content_obj=pballot,
         subdirectories=[ballot_name_prefix],
-        num_retries=num_retries,
-    )
+    ).write_json(pballot, num_attempts=num_attempts)
 
 
 def load_proven_ballot(
@@ -164,15 +154,14 @@ def load_proven_ballot(
     if not exists_proven_ballot(ballot_object_id, decrypted_dir):
         return None
 
-    ballot_name_prefix = ballot_object_id[
-        0:BALLOT_FILENAME_PREFIX_DIGITS
-    ]  # letter b plus first few digits
-    return ray_load_json_file(
-        decrypted_dir,
-        ballot_object_id + ".json",
-        ProvenPlaintextBallot,
-        [ballot_name_prefix],
-    )
+    # letter b plus first few digits
+    ballot_name_prefix = ballot_object_id[0:BALLOT_FILENAME_PREFIX_DIGITS]
+
+    return make_file_ref(
+        root_dir=decrypted_dir,
+        file_name=ballot_object_id + ".json",
+        subdirectories=[ballot_name_prefix],
+    ).read_json(ProvenPlaintextBallot)
 
 
 def exists_proven_ballot(ballot_object_id: str, decrypted_dir: str) -> bool:
@@ -182,11 +171,11 @@ def exists_proven_ballot(ballot_object_id: str, decrypted_dir: str) -> bool:
     ballot_name_prefix = ballot_object_id[
         0:BALLOT_FILENAME_PREFIX_DIGITS
     ]  # letter b plus first few digits
-    return file_exists_helper(
-        decrypted_dir,
-        ballot_object_id + ".json",
-        [ballot_name_prefix],
-    )
+    return make_file_ref(
+        root_dir=decrypted_dir,
+        file_name=ballot_object_id + ".json",
+        subdirectories=[ballot_name_prefix],
+    ).exists()
 
 
 @ray.remote
@@ -214,7 +203,7 @@ def r_decrypt_and_write_one(
         progressbar_actor.update_completed.remote("Ballots", 1)
         return 0
 
-    write_proven_ballot(plaintext, decrypted_dir, num_retries=NUM_WRITE_RETRIES)
+    write_proven_ballot(plaintext, decrypted_dir, num_attempts=NUM_WRITE_RETRIES)
     progressbar_actor.update_completed.remote("Ballots", 1)
     return 1
 
@@ -263,8 +252,6 @@ def decrypt_and_write(
     r_results = ray.put(results)
     r_decrypted_dir = ray.put(decrypted_dir)
 
-    mkdir_helper(decrypted_dir)
-
     plaintexts_future = [
         r_decrypt_and_write_one.remote(
             r_keypair,
@@ -292,18 +279,18 @@ def decrypt_and_write(
         results.cvr_metadata["BallotId"].isin(ballot_ids)
     ]
     cvr_bytes = cvr_subset.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC)
-    ray_write_file_with_retries(
-        "cvr_metadata.csv",
-        cvr_bytes,
-        root_dir=decrypted_dir,
-        subdirectories=[],
-        num_attempts=NUM_WRITE_RETRIES,
+
+    decrypted_dir_ref = make_file_ref(
+        file_name="", root_dir=decrypted_dir, subdirectories=[]
+    )
+    (decrypted_dir_ref + "cvr_metadata.csv").write(
+        cvr_bytes, num_attempts=NUM_WRITE_RETRIES
     )
 
     generate_index_html_files(
         f"{results.metadata.election_name} (Decrypted Ballots)",
-        decrypted_dir,
-        num_retries=NUM_WRITE_RETRIES,
+        decrypted_dir_ref,
+        num_attempts=NUM_WRITE_RETRIES,
     )
 
     return True

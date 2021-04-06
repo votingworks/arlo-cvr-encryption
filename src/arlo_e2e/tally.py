@@ -75,6 +75,7 @@ from arlo_e2e.constants import (
 from arlo_e2e.dominion import DominionCSV
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.html_index import generate_index_html_files
+from arlo_e2e.io import make_file_ref
 from arlo_e2e.manifest import (
     Manifest,
     build_manifest_for_directory,
@@ -82,12 +83,6 @@ from arlo_e2e.manifest import (
 )
 from arlo_e2e.memo import Memo, make_memo_value, make_memo_lambda
 from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.ray_io import (
-    mkdir_helper,
-    ray_write_json_file,
-    ray_write_file,
-    ray_write_ciphertext_ballot,
-)
 from arlo_e2e.utils import shard_list_uniform
 
 
@@ -1027,24 +1022,28 @@ def fast_tally_everything(
         log_info("Writing ballots")
 
         for ballot in accepted_ballots:
-            ray_write_ciphertext_ballot(ballot, root_dir=root_dir)
+            make_file_ref(file_name="", root_dir=root_dir).write_ciphertext_ballot(
+                ballot
+            )
 
         log_info("Writing manifests")
 
         # Cast from Optional[str] to str is necessary here only because mypy isn't very
         # smart about flow typing from the if-statement above.
         root_dir2: str = cast(str, root_dir)
+        root_dir_ref = make_file_ref(
+            file_name="", root_dir=root_dir2, subdirectories=[]
+        )
         root_hash = build_manifest_for_directory(
-            root_dir=root_dir2,
-            subdirectories=[],
+            root_dir_ref=root_dir_ref,
             show_progressbar=use_progressbar,
             num_write_retries=1,
         )
         manifest = flatmap_optional(
-            root_hash, lambda h: load_existing_manifest(root_dir2, [], h)
+            root_hash, lambda h: load_existing_manifest(root_dir_ref, h)
         )
 
-        generate_index_html_files(cvrs.metadata.election_name, root_dir2)
+        generate_index_html_files(cvrs.metadata.election_name, root_dir_ref)
 
     return FastTallyEverythingResults(
         metadata=cvrs.metadata,
@@ -1085,7 +1084,7 @@ def write_tally_metadata(
     tally: SelectionTally,
     metadata: ElectionMetadata,
     cvr_metadata: pd.DataFrame,
-    num_retries: int = 1,
+    num_attempts: int = 1,
 ) -> None:
     """Helper function used to write tally metadata of all sorts out to disk."""
 
@@ -1094,40 +1093,34 @@ def write_tally_metadata(
 
     results_dir = results_dir
     log_info("write_tally_metadata: starting!")
-    mkdir_helper(results_dir, num_retries=num_retries)
 
     log_info("write_tally_metadata: writing election_description")
-    ray_write_json_file(
-        ELECTION_DESCRIPTION,
-        election_description,
-        num_retries=num_retries,
-        root_dir=results_dir,
+    make_file_ref(file_name=ELECTION_DESCRIPTION, root_dir=results_dir).write_json(
+        election_description, num_attempts=num_attempts
     )
 
     log_info("write_tally_metadata: writing crypto context")
-    ray_write_json_file(
-        CRYPTO_CONTEXT, context, num_retries=num_retries, root_dir=results_dir
+    make_file_ref(file_name=CRYPTO_CONTEXT, root_dir=results_dir).write_json(
+        context, num_attempts=num_attempts
     )
 
     log_info("write_tally_metadata: writing crypto constants")
-    ray_write_json_file(
-        CRYPTO_CONSTANTS, constants, num_retries=num_retries, root_dir=results_dir
+    make_file_ref(file_name=CRYPTO_CONSTANTS, root_dir=results_dir).write_json(
+        constants, num_attempts=num_attempts
     )
 
     log_info("write_tally_metadata: writing tally")
-    ray_write_json_file(
-        ENCRYPTED_TALLY, tally, num_retries=num_retries, root_dir=results_dir
+    make_file_ref(file_name=ENCRYPTED_TALLY, root_dir=results_dir).write_json(
+        tally, num_attempts=num_attempts
     )
 
     log_info("write_tally_metadata: writing metadata")
-    ray_write_json_file(
-        ELECTION_METADATA, metadata, num_retries=num_retries, root_dir=results_dir
+    make_file_ref(file_name=ELECTION_METADATA, root_dir=results_dir).write_json(
+        metadata, num_attempts=num_attempts
     )
 
     log_info("write_tally_metadata: writing cvr metadata")
-    ray_write_file(
-        CVR_METADATA,
+    make_file_ref(file_name=CVR_METADATA, root_dir=results_dir).write(
         cvr_metadata.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC),
-        num_retries=num_retries,
-        root_dir=results_dir,
+        num_attempts=num_attempts,
     )

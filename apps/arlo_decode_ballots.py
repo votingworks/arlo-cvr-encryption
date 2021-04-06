@@ -9,6 +9,7 @@ from arlo_e2e.decrypt import (
     load_proven_ballot,
 )
 from arlo_e2e.eg_helpers import log_nothing_to_stdout
+from arlo_e2e.io import validate_directory_input
 from arlo_e2e.publish import load_fast_tally
 from arlo_e2e.tally import FastTallyEverythingResults
 
@@ -58,6 +59,11 @@ if __name__ == "__main__":
     decrypted_dir = args.decrypted
     ballot_ids: List[str] = args.ballot_id
     root_hash = args.root_hash
+
+    tallydir = validate_directory_input(tally_dir, "tally", error_if_absent=True)
+    decrypted_dir = validate_directory_input(
+        decrypted_dir, "decryption", error_if_absent=True
+    )
 
     print(f"Loading tallies from {tally_dir}.")
     tally: Optional[FastTallyEverythingResults] = load_fast_tally(

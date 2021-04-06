@@ -2,6 +2,7 @@ import argparse
 
 import ray
 
+from arlo_e2e.io import validate_directory_input, make_file_ref
 from arlo_e2e.manifest import build_manifest_for_directory
 from arlo_e2e.ray_helpers import ray_init_localhost
 
@@ -18,16 +19,16 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    root_dir = args.dir[0]
+    root_dir = validate_directory_input(args.dir[0], "tally", error_if_absent=True)
+    root_dir_ref = make_file_ref(root_dir=root_dir, file_name="", subdirectories=[])
 
     ray_init_localhost()
 
     build_manifest_for_directory(
-        root_dir=root_dir,
-        subdirectories=[],
-        show_progressbar=True,
+        root_dir_ref,
+        show_progressbar=False,
         num_write_retries=1,
-        logging_enabled=False,
+        logging_enabled=True,
     )
 
     ray.shutdown()
