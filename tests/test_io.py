@@ -1,3 +1,4 @@
+import mimetypes
 import shutil
 import unittest
 from dataclasses import dataclass
@@ -347,6 +348,12 @@ class TestBasicReadsAndWrites(unittest.TestCase):
         self.assertEqual(
             make_file_ref_from_path("foo/bar/ballots/b1234/b12345678.json"), fr_b1
         )
+
+    def test_mime_type_extraction(self) -> None:
+        self.assertEqual("image/png", mimetypes.guess_type("x/y/z.png")[0])
+        self.assertEqual("text/html", mimetypes.guess_type("x/y/z.html")[0])
+        self.assertEqual("application/json", mimetypes.guess_type("x/y/z.json")[0])
+        self.assertEqual(None, mimetypes.guess_type("x/y/z")[0])
 
 
 class TestRayWriteRetry(unittest.TestCase):

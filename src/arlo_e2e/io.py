@@ -1,4 +1,5 @@
 import hashlib
+import mimetypes
 import os
 import random
 from abc import abstractmethod, ABC
@@ -672,6 +673,15 @@ class S3FileRef(FileRef):
 
         md5_hash = _md5_hash(binary_contents)
 
+        # When we use S3's web front-end, it doesn't try to infer the file's
+        # MIME type, which screws up browsing. Apparently, the fix is to set
+        # the MIME type at the time you write the file to S3. We're leveraging
+        # Python's built-in mimetypes library, which has a method to do exactly
+        # what we need.
+
+        tmp = mimetypes.guess_type(str(self))
+        mime_type = tmp[0] if tmp[0] is not None else "application/octet-stream"
+
         try:
             if DEFAULT_S3_STORAGE_CLASS == "STANDARD_IA":
                 client.put_object(
@@ -679,6 +689,7 @@ class S3FileRef(FileRef):
                     Key=s3_key,
                     Body=binary_contents,
                     ContentMD5=md5_hash,
+                    ContentType=mime_type,
                     StorageClass="STANDARD_IA",
                 )
             else:
@@ -691,6 +702,7 @@ class S3FileRef(FileRef):
                     Key=s3_key,
                     Body=binary_contents,
                     ContentMD5=md5_hash,
+                    ContentType=mime_type,
                     StorageClass="STANDARD",
                 )
 
