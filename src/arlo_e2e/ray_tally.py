@@ -48,7 +48,7 @@ from arlo_e2e.constants import (
 from arlo_e2e.dominion import DominionCSV, BallotPlaintextFactory
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.html_index import generate_index_html_files
-from arlo_e2e.io import make_file_ref
+from arlo_e2e.io import make_file_ref, FileRef
 from arlo_e2e.manifest import (
     Manifest,
     build_manifest_for_directory,
@@ -159,7 +159,7 @@ class BallotTallyContext(
     _ied: InternalElectionDescription
     _cec: CiphertextElectionContext
     _seed_hash: ElementModQ
-    _root_dir: Optional[str]
+    _root_dir_ref: Optional[FileRef]
     _bpf: BallotPlaintextFactory
     _nonces: Nonces
 
@@ -180,10 +180,10 @@ class BallotTallyContext(
 
         cballot = ciphertext_ballot_to_accepted(cballot_option)
 
-        if self._root_dir is not None:
-            if not make_file_ref(
-                file_name="", root_dir=self._root_dir
-            ).write_ciphertext_ballot(cballot, num_attempts=NUM_WRITE_RETRIES):
+        if self._root_dir_ref is not None:
+            if not self._root_dir_ref.write_ciphertext_ballot(
+                cballot, num_attempts=NUM_WRITE_RETRIES
+            ):
                 # Interesting engineering question: if the write fails, but we have
                 # the value in memory, do we just return it because we're happy, or
                 # do we pass the failure along? Passing the failure along seems to
@@ -213,14 +213,14 @@ class BallotTallyContext(
         ied: InternalElectionDescription,
         cec: CiphertextElectionContext,
         seed_hash: ElementModQ,
-        root_dir: Optional[str],
+        root_dir_ref: Optional[FileRef],
         bpf: BallotPlaintextFactory,
         nonces: Nonces,
     ):
         self._ied = ied
         self._cec = cec
         self._seed_hash = seed_hash
-        self._root_dir = root_dir
+        self._root_dir_ref = root_dir_ref
         self._bpf = bpf
         self._nonces = nonces
 
@@ -304,7 +304,12 @@ def ray_tally_everything(
 
     nonces = Nonces(master_nonce)
 
-    btc = BallotTallyContext(ied, cec, seed_hash, root_dir, bpf, nonces)
+    root_dir_ref = (
+        make_file_ref(file_name="", root_dir=root_dir, subdirectories=[])
+        if root_dir
+        else None
+    )
+    btc = BallotTallyContext(ied, cec, seed_hash, root_dir_ref, bpf, nonces)
 
     nonce_indices = range(num_ballots)
     inputs = zip(ballot_dicts, nonce_indices)
@@ -387,14 +392,17 @@ def ray_tally_everything(
         # Cast from Optional[str] to str is necessary here only because mypy isn't very
         # smart about flow typing from the if-statement above.
         root_dir2: str = cast(str, root_dir)
+
+        root_dir_ref2 = make_file_ref(
+            file_name="", subdirectories=[], root_dir=root_dir2
+        )
         root_hash = build_manifest_for_directory(
-            root_dir=root_dir2,
-            subdirectories=[],
+            root_dir_ref=root_dir_ref2,
             show_progressbar=use_progressbar,
             num_write_retries=NUM_WRITE_RETRIES,
         )
         manifest = flatmap_optional(
-            root_hash, lambda h: load_existing_manifest(root_dir2, [], h)
+            root_hash, lambda h: load_existing_manifest(root_dir_ref2, h)
         )
 
         # When used for real, we might want to add additional metadata, which we don't
@@ -405,13 +413,13 @@ def ray_tally_everything(
         # The benefit of running this now is that it will end up in the index.html file.
         gen_root_qrcode(
             election_name=cvrs.metadata.election_name,
-            tally_dir=root_dir2,
+            tally_dir_ref=root_dir_ref2,
             metadata={},
             num_retry_attempts=NUM_WRITE_RETRIES,
         )
 
         generate_index_html_files(
-            cvrs.metadata.election_name, root_dir2, num_attempts=NUM_WRITE_RETRIES
+            cvrs.metadata.election_name, root_dir_ref2, num_attempts=NUM_WRITE_RETRIES
         )
 
     return RayTallyEverythingResults(
@@ -431,7 +439,7 @@ class BallotVerifyContext(
     _public_key: ElementModP
     _hash_header: ElementModQ
     _cec: CiphertextElectionContext
-    _root_dir: str
+    _root_dir_ref: FileRef
     _manifest: Manifest
 
     def map(self, filename: str) -> Optional[TALLY_TYPE]:
@@ -469,13 +477,13 @@ class BallotVerifyContext(
         self,
         public_key: ElementModP,
         hash_header: ElementModQ,
-        root_dir: str,
+        root_dir_ref: FileRef,
     ):
         self._public_key = public_key
         self._hash_header = hash_header
-        self._root_dir = root_dir
+        self._root_dir_ref = root_dir_ref
 
-        manifest = load_existing_manifest(root_dir, [])
+        manifest = load_existing_manifest(self._root_dir_ref)
         if manifest is None:
             raise RuntimeError("unexpected failure to make a manifest!")
         else:
@@ -648,7 +656,7 @@ class RayTallyEverythingResults(NamedTuple):
             bvc = BallotVerifyContext(
                 self.context.elgamal_public_key,
                 self.context.crypto_extended_base_hash,
-                self.manifest.root_dir,
+                self.manifest.dir_ref,
             )
             rmr = RayMapReducer(
                 context=bvc,

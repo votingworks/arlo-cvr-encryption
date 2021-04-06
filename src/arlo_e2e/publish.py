@@ -57,9 +57,11 @@ def _load_tally_shared(
     set_serializers()
     set_deserializers()
 
-    if make_file_ref_from_path(results_dir).exists():
+    results_dir_ref = make_file_ref_from_path(results_dir)
+
+    if results_dir_ref.exists():
         manifest = load_existing_manifest(
-            results_dir, subdirectories=None, expected_root_hash=root_hash
+            root_dir_ref=results_dir_ref, expected_root_hash=root_hash
         )
         if manifest is None:
             return None

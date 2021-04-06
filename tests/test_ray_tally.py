@@ -15,18 +15,22 @@ from hypothesis import settings, given, HealthCheck, Phase
 from hypothesis.strategies import booleans, lists, integers
 
 from arlo_e2e.dominion import read_dominion_csv
+from arlo_e2e.io import make_file_ref
 from arlo_e2e.manifest import load_existing_manifest
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.ray_tally import ray_tally_everything
 from arlo_e2e.tally import fast_tally_everything
 from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 
+RTALLY_OUTPUT = "rtally_output"
+FTALLY_OUTPUT = "ftally_output"
+
 
 class TestRayTallies(unittest.TestCase):
     def removeTree(self) -> None:
         try:
-            shutil.rmtree("ftally_output", ignore_errors=True)
-            shutil.rmtree("rtally_output", ignore_errors=True)
+            shutil.rmtree(RTALLY_OUTPUT, ignore_errors=True)
+            shutil.rmtree(FTALLY_OUTPUT, ignore_errors=True)
         except FileNotFoundError:
             # okay if it's not there
             pass
@@ -68,12 +72,12 @@ class TestRayTallies(unittest.TestCase):
                 cvrs,
                 verbose=True,
                 secret_key=keypair.secret_key,
-                root_dir="rtally_output",
+                root_dir=RTALLY_OUTPUT,
                 use_progressbar=False,
             )
         else:
             rtally = ray_tally_everything(
-                cvrs, verbose=True, root_dir="rtally_output", use_progressbar=False
+                cvrs, verbose=True, root_dir=RTALLY_OUTPUT, use_progressbar=False
             )
 
         self.assertTrue(rtally.all_proofs_valid(verbose=False))
@@ -85,7 +89,9 @@ class TestRayTallies(unittest.TestCase):
         self.assertTrue(ftally.all_proofs_valid(verbose=False))
 
         # lastly, we'll compare the manifests to make sure everything went out the same
-        manifest2 = load_existing_manifest("rtally_output")
+        manifest2 = load_existing_manifest(
+            make_file_ref(root_dir=RTALLY_OUTPUT, subdirectories=[], file_name="")
+        )
         equiv = rtally.manifest.equivalent(manifest2)
         self.assertTrue(equiv)
         self.removeTree()
@@ -124,7 +130,7 @@ class TestRayTallies(unittest.TestCase):
             pool=self.pool,
             seed_hash=seed_hash,
             master_nonce=master_nonce,
-            root_dir="ftally_output",
+            root_dir=FTALLY_OUTPUT,
             use_progressbar=False,
         )
         rtally = ray_tally_everything(
@@ -134,7 +140,7 @@ class TestRayTallies(unittest.TestCase):
             secret_key=keypair.secret_key,
             seed_hash=seed_hash,
             master_nonce=master_nonce,
-            root_dir="rtally_output",
+            root_dir=RTALLY_OUTPUT,
             use_progressbar=False,
         )
 

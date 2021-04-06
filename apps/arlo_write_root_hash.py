@@ -29,7 +29,8 @@ if __name__ == "__main__":
     set_deserializers()
 
     parser = argparse.ArgumentParser(
-        description="Writes out a file (root_hash.html) suitable for printing and handing out as the root hash of the election."
+        description="Writes out a file (root_hash.html) suitable for printing"
+        " and handing out as the root hash of the election."
     )
 
     parser.add_argument(
@@ -83,6 +84,7 @@ if __name__ == "__main__":
             election_name = "General Election"
 
     tally_dir = validate_directory_input(tally_dir, "tally", error_if_absent=True)
+    tally_dir_ref = make_file_ref(root_dir=tally_dir, subdirectories=[], file_name="")
 
     metadata: Dict[str, str] = {}
     for s in metadata_strs:
@@ -93,10 +95,12 @@ if __name__ == "__main__":
         value = "=".join(items[1:])
         metadata[key] = value
 
-    if not make_file_ref(root_dir=tally_dir, file_name=MANIFEST_FILE).exists():
+    if not tally_dir_ref.update(new_file_name=MANIFEST_FILE).exists():
         print(
-            f"No {MANIFEST_FILE} found in {tally_dir}, cannot generate root hash. Exiting."
+            f"No {MANIFEST_FILE} found in {str(tally_dir_ref)}, cannot generate root hash. Exiting."
         )
         exit(1)
 
-    gen_root_qrcode(election_name=election_name, tally_dir=tally_dir, metadata=metadata)
+    gen_root_qrcode(
+        election_name=election_name, tally_dir_ref=tally_dir_ref, metadata=metadata
+    )

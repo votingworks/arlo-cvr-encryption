@@ -2,7 +2,7 @@
 
 from typing import List
 
-from arlo_e2e.io import make_file_ref, FileRef
+from arlo_e2e.io import FileRef
 
 index_start_text = """<!DOCTYPE html>
 <html>
@@ -27,25 +27,16 @@ index_end_text = """
 
 def generate_index_html_files(
     title_text: str,
-    root_dir: str,
-    subdirectories: List[str] = None,
+    dir_ref: FileRef,
     num_attempts: int = 1,
 ) -> None:
     """
     Creates index.html files at every level of the directory. Note that this doesn't cause
     anything to be added to the manifest. That's not necessary, and could be messy.
     """
-    if subdirectories is None:
-        subdirectories = []
+    scan = dir_ref.scandir()
 
-    dir_fr = make_file_ref(
-        file_name="", root_dir=root_dir, subdirectories=subdirectories
-    )
-    scan = dir_fr.scandir()
-
-    index_text = index_start_text.format(
-        title_text=title_text, path="/" + "/".join(subdirectories)
-    )
+    index_text = index_start_text.format(title_text=title_text, path=str(dir_ref))
 
     files_and_dirs: List[FileRef] = sorted(
         list(scan.files.values()) + list(scan.subdirs.values()), key=lambda fn: str(fn)
@@ -67,12 +58,10 @@ def generate_index_html_files(
         index_text += f"        <li><a href='{file_name_plus_slash}'>{file_name_plus_slash}</a> - {additional_text}</li>\n"
 
         if is_dir:
-            generate_index_html_files(
-                title_text, root_dir, fn.subdirectories, num_attempts=num_attempts
-            )
+            generate_index_html_files(title_text, fn, num_attempts=num_attempts)
 
     index_text += index_end_text
 
-    dir_fr.update(new_file_name="index.html").write(
+    dir_ref.update(new_file_name="index.html").write(
         index_text, num_attempts=num_attempts
     )

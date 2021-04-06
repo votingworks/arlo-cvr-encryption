@@ -52,35 +52,43 @@ class TestManifestPublishing(unittest.TestCase):
         for c in contents:
             c.write(MANIFEST_TESTING_DIR)
 
+        manifest_dir_ref = make_file_ref(
+            file_name="", subdirectories=[], root_dir=MANIFEST_TESTING_DIR
+        )
+
         # generate the manifest on disk
         root_hash = build_manifest_for_directory(
-            MANIFEST_TESTING_DIR, num_write_retries=1, logging_enabled=False
+            manifest_dir_ref, num_write_retries=1, logging_enabled=False
         )
         self.assertIsNotNone(root_hash)
 
         # now, build an in-memory manifest
         manifest = load_existing_manifest(
-            MANIFEST_TESTING_DIR, expected_root_hash=root_hash
+            manifest_dir_ref, expected_root_hash=root_hash
         )
         self.assertIsNotNone(manifest)
 
         for c in contents:
             bits = manifest.read_file(c.file_name, c.file_path)
             self.assertIsNotNone(bits)
-            self.assertEqual(c.file_contents, bits)
+            self.assertEqual(c.file_contents, bits.decode("utf-8"))
 
         # now, write out a second directory, same contents, so we can
         # check that we get identical hashes
+        manifest_dir_ref2 = make_file_ref(
+            file_name="", subdirectories=[], root_dir=MANIFEST_TESTING_DIR2
+        )
+
         for c in contents:
             c.write(MANIFEST_TESTING_DIR2)
         root_hash2 = build_manifest_for_directory(
-            MANIFEST_TESTING_DIR2, num_write_retries=1, logging_enabled=False
+            manifest_dir_ref2, num_write_retries=1, logging_enabled=False
         )
         self.assertIsNotNone(root_hash2)
 
         # now, build an in-memory manifest
         manifest2 = load_existing_manifest(
-            MANIFEST_TESTING_DIR2, expected_root_hash=root_hash2
+            manifest_dir_ref2, expected_root_hash=root_hash2
         )
         self.assertIsNotNone(manifest2)
         self.assertEqual(root_hash, root_hash2)

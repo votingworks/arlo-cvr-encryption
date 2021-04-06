@@ -114,7 +114,7 @@ class FileRef(ABC):
         to be a new file name, root directory, and/or subdirectory list. The original doesn't
         mutate.
         """
-        ...
+        pass
 
     def is_file(self) -> bool:
         """Returns whether this is a file (True) or a directory (False)."""
@@ -127,12 +127,12 @@ class FileRef(ABC):
     @abstractmethod
     def is_local(self) -> bool:
         """Returns whether this is a local file (True) or an S3 file (False)."""
-        ...
+        pass
 
     @abstractmethod
     def local_file_path(self) -> Path:
         """For local files or directories, returns a `Path` to the file or directory."""
-        ...
+        pass
 
     @abstractmethod
     def local_dir_path(self) -> Path:
@@ -140,17 +140,7 @@ class FileRef(ABC):
         For local files, returns a `Path` to the directory containing the file.
         For local directories, returns a `Path` to the directory itself.
         """
-        ...
-
-    @abstractmethod
-    def s3_bucket(self) -> str:
-        """For s3 files, returns the bucket name."""
-        ...
-
-    @abstractmethod
-    def s3_key_name(self) -> str:
-        """For s3 files, returns the key name."""
-        ...
+        pass
 
     @abstractmethod
     def exists(self) -> bool:
@@ -160,7 +150,7 @@ class FileRef(ABC):
         any files in it. This leads to at least somewhat consistent behavior
         between S3 and local files, since S3 "directories" don't really exist.
         """
-        ...
+        pass
 
     @abstractmethod
     def unlink(self) -> None:
@@ -168,7 +158,7 @@ class FileRef(ABC):
         Attempts to remove the file. If the file doesn't exist, nothing happens.
         Directories are silently ignored.
         """
-        ...
+        pass
 
     def write(self, contents: AnyStr, num_attempts: int = 1) -> bool:
         """
@@ -261,7 +251,7 @@ class FileRef(ABC):
 
     @abstractmethod
     def _write_internal(self, contents: AnyStr, counter: int) -> bool:
-        ...
+        pass
 
     def _write_failure_for_testing(
         self,
@@ -344,7 +334,7 @@ class FileRef(ABC):
         Internal function: Reads the requested file and returns the bytes,
         if they exist, or None if there's an error.
         """
-        ...
+        pass
 
     class DirInfo(NamedTuple):
         files: Dict[str, "FileRef"]
@@ -359,14 +349,14 @@ class FileRef(ABC):
 
         Any file or directory name starting with a dot is ignored.
         """
-        ...
+        pass
 
     @abstractmethod
     def size(self) -> int:
         """
         Returns the number of bytes in the file if it exists. Zero on failure.
         """
-        ...
+        pass
 
 
 def make_file_ref_from_path(full_path: str) -> FileRef:
@@ -579,9 +569,11 @@ class S3FileRef(FileRef):
         raise RuntimeError("can't convert an s3 filename to a local file path")
 
     def s3_bucket(self) -> str:
+        """For s3 files, returns the bucket name."""
         return self.root_dir
 
     def s3_key_name(self) -> str:
+        """For s3 files, returns the key name."""
         if not self.subdirectories and not self.file_name:
             # special case for a FileRef to the root of a bucket.
             return "/"
@@ -842,12 +834,6 @@ class LocalFileRef(FileRef):
 
     def local_dir_path(self) -> Path:
         return Path(PurePath(self.root_dir, *self.subdirectories))
-
-    def s3_bucket(self) -> str:
-        raise RuntimeError("s3_bucket only defined for s3 files")
-
-    def s3_key_name(self) -> str:
-        raise RuntimeError("can't get an s3 key-name from a non-s3 file path")
 
     def exists(self) -> bool:
         if self.is_dir():

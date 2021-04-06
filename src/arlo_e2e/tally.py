@@ -1031,17 +1031,19 @@ def fast_tally_everything(
         # Cast from Optional[str] to str is necessary here only because mypy isn't very
         # smart about flow typing from the if-statement above.
         root_dir2: str = cast(str, root_dir)
+        root_dir_ref = make_file_ref(
+            file_name="", root_dir=root_dir2, subdirectories=[]
+        )
         root_hash = build_manifest_for_directory(
-            root_dir=root_dir2,
-            subdirectories=[],
+            root_dir_ref=root_dir_ref,
             show_progressbar=use_progressbar,
             num_write_retries=1,
         )
         manifest = flatmap_optional(
-            root_hash, lambda h: load_existing_manifest(root_dir2, [], h)
+            root_hash, lambda h: load_existing_manifest(root_dir_ref, h)
         )
 
-        generate_index_html_files(cvrs.metadata.election_name, root_dir2)
+        generate_index_html_files(cvrs.metadata.election_name, root_dir_ref)
 
     return FastTallyEverythingResults(
         metadata=cvrs.metadata,

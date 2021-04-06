@@ -1,14 +1,11 @@
 import shutil
 import unittest
 from dataclasses import dataclass
-from datetime import timedelta
 from os import cpu_count
-from typing import List
+from typing import cast
 
 import ray
 from electionguard.serializable import Serializable
-from hypothesis import given, settings, HealthCheck, Phase
-from hypothesis.strategies import integers
 
 from arlo_e2e.io import (
     set_failure_probability_for_testing,
@@ -18,13 +15,10 @@ from arlo_e2e.io import (
     FileRef,
     make_file_ref_from_path,
     validate_directory_input,
+    S3FileRef,
 )
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.utils import sha256_hash
-from arlo_e2e_testing.manifest_hypothesis import (
-    list_file_names_contents,
-    FileNameAndContents,
-)
 
 poop_emoji = "💩"  # used for testing encoding/decoding
 
@@ -148,9 +142,10 @@ class TestBasicReadsAndWrites(unittest.TestCase):
     def test_hash_verification(self) -> None:
         fr = make_file_ref("test1", "write_output")
         fr.write("test contents")
-        self.assertEqual("test contents", fr.read())
+        self.assertEqual("test contents", fr.read().decode("utf-8"))
         self.assertEqual(
-            "test contents", fr.read(expected_sha256_hash=sha256_hash("test contents"))
+            "test contents".encode("utf-8"),
+            fr.read(expected_sha256_hash=sha256_hash("test contents")),
         )
         self.assertIsNone(fr.read(expected_sha256_hash=sha256_hash("wrong contents")))
         cleanup_between_tests()
@@ -304,14 +299,16 @@ class TestBasicReadsAndWrites(unittest.TestCase):
         cleanup_between_tests()
 
     def test_make_file_ref_from_path_s3(self) -> None:
-        f0 = make_file_ref_from_path("s3://foo/bar.txt")
+        f = make_file_ref_from_path("s3://foo/bar.txt")
+        f0 = cast(S3FileRef, f)
         self.assertEqual("s3://foo/bar.txt", str(f0))
         self.assertEqual("foo", f0.s3_bucket())
         self.assertEqual("bar.txt", f0.s3_key_name())
         self.assertTrue(f0.is_file())
         self.assertFalse(f0.is_local())
 
-        f1 = make_file_ref_from_path("s3://foo/bar/baz.txt")
+        f = make_file_ref_from_path("s3://foo/bar/baz.txt")
+        f1 = cast(S3FileRef, f)
         self.assertEqual("s3://foo/bar/baz.txt", str(f1))
         self.assertEqual("foo", f1.root_dir)
         self.assertEqual(["bar"], f1.subdirectories)
@@ -321,7 +318,8 @@ class TestBasicReadsAndWrites(unittest.TestCase):
         self.assertTrue(f1.is_file())
         self.assertFalse(f1.is_local())
 
-        d1 = make_file_ref_from_path("s3://foo/bar/baz/")
+        d = make_file_ref_from_path("s3://foo/bar/baz/")
+        d1 = cast(S3FileRef, d)
         self.assertEqual("s3://foo/bar/baz/", str(d1))
         self.assertEqual("foo", d1.root_dir)
         self.assertEqual(["bar", "baz"], d1.subdirectories)
@@ -331,7 +329,8 @@ class TestBasicReadsAndWrites(unittest.TestCase):
         self.assertTrue(d1.is_dir())
         self.assertFalse(d1.is_local())
 
-        d2 = make_file_ref_from_path("s3://foo")
+        d = make_file_ref_from_path("s3://foo")
+        d2 = cast(S3FileRef, d)
         self.assertEqual("s3://foo/", str(d2))
         self.assertEqual("foo", d2.root_dir)
         self.assertEqual([], d2.subdirectories)

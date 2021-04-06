@@ -8,7 +8,7 @@ import qrcode
 # centering is awful: https://css-tricks.com/centering-a-div-that-maintains-aspect-ratio-when-theres-body-margin/
 from arlo_e2e.constants import NUM_WRITE_RETRIES
 from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.io import make_file_ref
+from arlo_e2e.io import FileRef
 from arlo_e2e.manifest import load_existing_manifest
 
 root_start_text = """<!DOCTYPE html>
@@ -54,7 +54,7 @@ root_end_text = """
 
 def gen_root_qrcode(
     election_name: str,
-    tally_dir: str,
+    tally_dir_ref: FileRef,
     metadata: Dict[str, str],
     num_retry_attempts: int = NUM_WRITE_RETRIES,
 ) -> None:
@@ -80,11 +80,11 @@ def gen_root_qrcode(
     :param election_name: Human-readable name of the election, e.g., `Harris County General Election, November 2020`.
       If this is missing, the election name is taken from the election itself, assuming there's an `election_name`
       field in the election metadata, which is normally there.
-    :param tally_dir: Local directory where `MANIFEST.json` can be found and where results will be written
+    :param tally_dir_ref: FileRef to the directory where `MANIFEST.json` can be found and where results will be written
     :param metadata: dictionary mapping strings to values, rendered out to the QRcode as-is
     :param num_retry_attempts: number of times to attempt a write if it fails
     """
-    manifest = load_existing_manifest(root_dir=tally_dir)
+    manifest = load_existing_manifest(root_dir_ref=tally_dir_ref)
     if manifest is None:
         log_and_print("MANIFEST.json file not found, cannot generate QRcode")
         return
@@ -92,7 +92,7 @@ def gen_root_qrcode(
     data_hash = manifest.manifest_hash.hash
     qr_headers = {
         "election_name": election_name,
-        "tally_dir": tally_dir,
+        "tally_location": str(tally_dir_ref),
         "root_hash": data_hash,
     }
 
@@ -114,15 +114,14 @@ def gen_root_qrcode(
     qr_byteio = BytesIO()
     qr_img.save(qr_byteio, "PNG")
     qr_bytes: bytes = qr_byteio.getvalue()
-    make_file_ref(
-        "root_hash_qrcode.png",
-        root_dir=tally_dir,
-    ).write(qr_bytes, num_attempts=num_retry_attempts)
+    tally_dir_ref.update(new_file_name="root_hash_qrcode.png").write(
+        qr_bytes, num_attempts=num_retry_attempts
+    )
 
     html_text = (
         root_start_text.format(title_text=election_name) + bullet_text + root_end_text
     )
-    make_file_ref("root_hash.html", root_dir=tally_dir).write(
+    tally_dir_ref.update(new_file_name="root_hash.html").write(
         html_text,
         num_attempts=num_retry_attempts,
     )

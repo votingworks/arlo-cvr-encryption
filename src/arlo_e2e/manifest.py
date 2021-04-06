@@ -24,7 +24,7 @@ from arlo_e2e.constants import (
     MANIFEST_FILE,
 )
 from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.io import decode_json_file_contents, make_file_ref
+from arlo_e2e.io import decode_json_file_contents, make_file_ref, FileRef
 from arlo_e2e.ray_helpers import ray_wait_for_workers
 from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.utils import sha256_hash
@@ -65,19 +65,14 @@ class ManifestExternal(Serializable):
 
     def to_manifest(
         self,
-        root_dir: str,
-        subdirectories: Optional[List[str]],
+        root_dir_ref: FileRef,
         manifest_hash: ManifestFileInfo,
     ) -> "Manifest":
         """
         Converts this to a Manifest class, suitable for working with in-memory.
         """
-        if subdirectories is None:
-            subdirectories = []
-
         return Manifest(
-            root_dir,
-            subdirectories,
+            root_dir_ref,
             self.file_hashes,
             self.directory_hashes,
             manifest_hash,
@@ -94,11 +89,8 @@ class Manifest:
     Do not construct this directly. Instead, use `make_manifest_for_directory` or `load_existing_manifest`.
     """
 
-    root_dir: str
-    """Root directory of the whole manifest structure."""
-
-    subdirectories: List[str]
-    """Path from the root to get to this specific manifest."""
+    dir_ref: FileRef
+    """Reference to the directory holding this manifest file."""
 
     file_hashes: Dict[str, ManifestFileInfo]
     """Mapping from file names to hashes."""
@@ -114,14 +106,12 @@ class Manifest:
 
     def __init__(
         self,
-        root_dir: str,
-        subdirectories: List[str],
+        root_dir_ref: FileRef,
         file_hashes: Dict[str, ManifestFileInfo],
         directory_hashes: Dict[str, ManifestFileInfo],
         manifest_hash: ManifestFileInfo,
     ):
-        self.root_dir = root_dir
-        self.subdirectories = subdirectories if subdirectories else []
+        self.dir_ref = root_dir_ref
         self.file_hashes = file_hashes
         self.directory_hashes = directory_hashes
         self.manifest_hash = manifest_hash
@@ -139,7 +129,7 @@ class Manifest:
         process fails, then `None` will be returned and an error will be logged. If the `file_name`
         is actually a path-like object, the subdirectories are ignored.
 
-        :param subdirectories: Path elements to be introduced between `root_dir` and the file; empty-list means
+        :param subdirectories: Path elements to be introduced between the `root_dir_ref` and the file; empty-list means
           no subdirectory. Ignored if the file_name is a path-like object.
         :param file_name: Name of the file, including any suffix, or a path-like object.
         :param class_handle: The class, itself, that we're trying to deserialize to (if None, then you get back
@@ -203,8 +193,9 @@ class Manifest:
         ]
 
         subdir_manifest = load_existing_manifest(
-            self.root_dir,
-            self.subdirectories + [directory_name],
+            self.dir_ref.update(
+                new_subdirs=self.dir_ref.subdirectories + [directory_name]
+            ),
             dir_manifest_hash,
             dir_manifest_num_bytes,
         )
@@ -226,9 +217,7 @@ class Manifest:
         something went wrong.
         """
         if not subdirectories:
-            file_contents = make_file_ref(
-                file_name, root_dir=self.root_dir, subdirectories=self.subdirectories
-            ).read()
+            file_contents = self.dir_ref.update(new_file_name=file_name).read()
             if file_contents is None:
                 log_and_print(f"failed to load file: {file_name}", verbose=True)
                 return None
@@ -298,7 +287,7 @@ class Manifest:
         """
 
         if not (
-            self.subdirectories == other.subdirectories
+            self.dir_ref == other.dir_ref
             and self.file_hashes == other.file_hashes
             and self.directory_hashes == other.directory_hashes
             and self.manifest_hash == other.manifest_hash
@@ -316,8 +305,7 @@ class Manifest:
 
 @ray.remote
 def _r_hash_file(
-    root_dir: str,
-    subdirectories: Optional[List[str]],
+    root_dir_ref: FileRef,
     filename: str,
     progress_actor: Optional[ActorHandle],
     logging_enabled: bool,
@@ -331,13 +319,11 @@ def _r_hash_file(
 
     if logging_enabled:
         log_and_print(
-            f"_r_hash_file('{root_dir}', {subdirectories}, '{filename}')",
+            f"_r_hash_file('{str(root_dir_ref)}'/'{filename}')",
             verbose=True,
         )
 
-    contents = make_file_ref(
-        filename, root_dir=root_dir, subdirectories=subdirectories
-    ).read()
+    contents = root_dir_ref.update(new_file_name=filename).read()
     fileinfo = sha256_manifest_info(contents) if contents else None
 
     if progress_actor:
@@ -349,8 +335,7 @@ def _r_hash_file(
 
 @ray.remote
 def _r_build_manifest_for_directory(
-    root_dir: str,
-    subdirectories: List[str],
+    root_dir_ref: FileRef,
     progress_actor: Optional[ActorHandle],
     num_attempts: int,
     logging_enabled: bool,
@@ -374,19 +359,17 @@ def _r_build_manifest_for_directory(
 
     if logging_enabled:
         log_and_print(
-            f"_r_build_manifest_for_directory('{root_dir}', {subdirectories})",
+            f"_r_build_manifest_for_directory({str(root_dir_ref)})",
             verbose=True,
         )
-    plain_files, directories = make_file_ref(
-        file_name="", root_dir=root_dir, subdirectories=subdirectories
-    ).scandir()
+    plain_files, directories = root_dir_ref.scandir()
 
     if MANIFEST_FILE in plain_files:
         # we could just bomb out with an error; instead we're going to
         # log something, ignore the manifest file, and move onward
         if logging_enabled:
             log_and_print(
-                f"Warning: found existing MANIFEST.json in {root_dir}/{'/'.join(subdirectories)}",
+                f"Warning: found existing MANIFEST.json in {str(root_dir_ref)}",
                 verbose=True,
             )
         del plain_files[MANIFEST_FILE]
@@ -399,16 +382,13 @@ def _r_build_manifest_for_directory(
     # which will potentially increase the number of tasks enormously, don't
     # execute until all these file hashes are done.
     file_hashes_r = [
-        _r_hash_file.remote(
-            root_dir, subdirectories, f, progress_actor, logging_enabled
-        )
+        _r_hash_file.remote(root_dir_ref, f, progress_actor, logging_enabled)
         for f in plain_files.keys()
     ]
 
-    directory_manifests_r = [
+    directory_hashes_r = [
         _r_build_manifest_for_directory.remote(
-            root_dir,
-            subdirectories + [d],
+            root_dir_ref.update(new_subdirs=root_dir_ref.subdirectories + [d]),
             progress_actor,
             num_attempts,
             logging_enabled,
@@ -416,8 +396,10 @@ def _r_build_manifest_for_directory(
         for d in directories.keys()
     ]
 
-    directory_hashes_l = ray.get(directory_manifests_r)
-    file_hashes_l = ray.get(file_hashes_r)
+    directory_hashes_l: List[Tuple[str, Optional[ManifestFileInfo]]] = ray.get(
+        directory_hashes_r
+    )
+    file_hashes_l: List[Tuple[str, Optional[ManifestFileInfo]]] = ray.get(file_hashes_r)
 
     failures = any([x[1] is None for x in directory_hashes_l]) or any(
         [x[1] is None for x in file_hashes_l]
@@ -434,10 +416,8 @@ def _r_build_manifest_for_directory(
         }
         result_ex = ManifestExternal(file_hashes, directory_hashes)
         manifest_info = _write_json_file_get_hash(
-            file_name=MANIFEST_FILE,
+            file_ref=root_dir_ref.update(new_file_name=MANIFEST_FILE),
             content_obj=result_ex,
-            subdirectories=subdirectories,
-            root_dir=root_dir,
             num_attempts=num_attempts,
         )
 
@@ -446,15 +426,14 @@ def _r_build_manifest_for_directory(
         progress_actor.update_completed.remote("Directories", 1)
 
     # the final element in the list of subdirectories is the name of "this" subdirectory
-    if subdirectories:
-        return subdirectories[-1:][0], manifest_info
+    if root_dir_ref.subdirectories:
+        return root_dir_ref.subdirectories[-1:][0], manifest_info
     else:
         return "", manifest_info
 
 
 def build_manifest_for_directory(
-    root_dir: str,
-    subdirectories: List[str] = None,
+    root_dir_ref: FileRef,
     show_progressbar: bool = False,
     num_write_retries: int = NUM_WRITE_RETRIES,
     logging_enabled: bool = False,
@@ -465,15 +444,11 @@ def build_manifest_for_directory(
     if successful, otherwise `None`.
 
     This will launch a number of concurrent Ray tasks to accelerate the computation process.
-    :param root_dir: a name for the directory about to be filled up with fresh files
-    :param subdirectories: optional specification of a subdirectory in which to compute
+    :param root_dir_ref: a FileRef for the directory where the manifest is to be written
     :param show_progressbar: if true, displays a tqdm progressbar for the computation
     :param num_write_retries: number of times to retry a failed write
     :param logging_enabled: adds additional logging and printing while the manifest is being built
     """
-
-    if not subdirectories:
-        subdirectories = []
 
     ray_wait_for_workers()
 
@@ -484,7 +459,7 @@ def build_manifest_for_directory(
         pba = pb.actor
 
     task_ref = _r_build_manifest_for_directory.remote(
-        root_dir, subdirectories, pba, num_write_retries, logging_enabled
+        root_dir_ref, pba, num_write_retries, logging_enabled
     )
 
     if pb is not None:
@@ -500,8 +475,7 @@ def build_manifest_for_directory(
 
 
 def load_existing_manifest(
-    root_dir: str,
-    subdirectories: List[str] = None,
+    root_dir_ref: FileRef,
     expected_root_hash: Optional[str] = None,
     expected_num_bytes: int = -1,
 ) -> Optional[Manifest]:
@@ -512,18 +486,10 @@ def load_existing_manifest(
       manifest against the hash, returns `None` and logs if there's a mismatch.
     :param expected_num_bytes: optional integer with the expected length, in bytes, of the
       manifest. Returns `None` and logs if there's a mismatch.
-    :param root_dir: a name for the directory containing `MANIFEST.json` and other files.
-    :param subdirectories: a list of subdirectories below the root directory
+    :param root_dir_ref: a FileRef for the directory containing `MANIFEST.json` and other files.
     """
 
-    if subdirectories is None:
-        subdirectories = []
-
-    manifest_str = make_file_ref(
-        root_dir=root_dir,
-        subdirectories=subdirectories,
-        file_name=MANIFEST_FILE,
-    ).read()
+    manifest_str = root_dir_ref.update(new_file_name=MANIFEST_FILE).read()
 
     if manifest_str is None:
         return None
@@ -533,12 +499,12 @@ def load_existing_manifest(
         data_hash, num_bytes = manifest_info
         if data_hash != expected_root_hash:
             log_and_print(
-                f"Manifest hash mismatch on {'/'.join(subdirectories)}/MANIFEST.json; expected {expected_root_hash}, got {data_hash}"
+                f"Manifest hash mismatch on {str(root_dir_ref)}/MANIFEST.json; expected {expected_root_hash}, got {data_hash}"
             )
             return None
         if expected_num_bytes > -1 and expected_num_bytes != num_bytes:
             log_and_print(
-                f"Manifest length mismatch on {'/'.join(subdirectories)}/MANIFEST.json; expected {expected_num_bytes}, got {num_bytes}"
+                f"Manifest length mismatch on {str(root_dir_ref)}/MANIFEST.json; expected {expected_num_bytes}, got {num_bytes}"
             )
             return None
 
@@ -546,15 +512,13 @@ def load_existing_manifest(
         manifest_str.decode("utf-8"), class_handle=ManifestExternal
     )
     return flatmap_optional(
-        manifest_ex, lambda m: m.to_manifest(root_dir, subdirectories, manifest_info)
+        manifest_ex, lambda m: m.to_manifest(root_dir_ref, manifest_info)
     )
 
 
 def _write_json_file_get_hash(
-    file_name: str,
+    file_ref: FileRef,
     content_obj: Serializable,
-    subdirectories: List[str] = None,
-    root_dir: str = ".",
     num_attempts: int = 1,
 ) -> ManifestFileInfo:  # pragma: no cover
     """
@@ -562,19 +526,13 @@ def _write_json_file_get_hash(
     than nothing.
     """
 
-    if subdirectories is None:
-        subdirectories = []
-
     # If a manifest already exists, we're going to remove it; we don't want to
     # do this in general, but it's something that might happen when driving
     # manifest creation from the command-line.
-    fr = make_file_ref(
-        file_name=file_name, root_dir=root_dir, subdirectories=subdirectories
-    )
-    fr.unlink()
+    file_ref.unlink()
 
     json_txt = content_obj.to_json(strip_privates=True)
-    fr.write(
+    file_ref.write(
         json_txt,
         num_attempts=num_attempts,
     )

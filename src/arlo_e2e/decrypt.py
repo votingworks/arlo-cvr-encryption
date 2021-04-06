@@ -280,15 +280,16 @@ def decrypt_and_write(
     ]
     cvr_bytes = cvr_subset.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC)
 
-    make_file_ref(
-        file_name="cvr_metadata.csv",
-        root_dir=decrypted_dir,
-        subdirectories=[],
-    ).write(cvr_bytes, num_attempts=NUM_WRITE_RETRIES)
+    decrypted_dir_ref = make_file_ref(
+        file_name="", root_dir=decrypted_dir, subdirectories=[]
+    )
+    decrypted_dir_ref.update(new_file_name="cvr_metadata.csv").write(
+        cvr_bytes, num_attempts=NUM_WRITE_RETRIES
+    )
 
     generate_index_html_files(
         f"{results.metadata.election_name} (Decrypted Ballots)",
-        decrypted_dir,
+        decrypted_dir_ref,
         num_attempts=NUM_WRITE_RETRIES,
     )
 

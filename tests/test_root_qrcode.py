@@ -2,12 +2,12 @@ import re
 import shutil
 import unittest
 from datetime import timedelta
-from os import path
 from typing import List
 
 from hypothesis import given, settings, HealthCheck, Phase
 from hypothesis.strategies import integers
 
+from arlo_e2e.io import make_file_ref
 from arlo_e2e.manifest import build_manifest_for_directory, load_existing_manifest
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.root_qrcode import gen_root_qrcode
@@ -48,15 +48,20 @@ class TestRootQrCode(unittest.TestCase):
 
     def test_failures(self) -> None:
         # no MANIFEST written
+        qr_test_dir_ref = make_file_ref(
+            root_dir=QRCODE_TESTING_DIR, subdirectories=[], file_name=""
+        )
         gen_root_qrcode(
             election_name="Test Election 2020",
-            tally_dir=QRCODE_TESTING_DIR,
+            tally_dir_ref=qr_test_dir_ref,
             metadata=metadata,
         )
 
-        self.assertFalse(path.exists(path.join(QRCODE_TESTING_DIR, "root_hash.html")))
         self.assertFalse(
-            path.exists(path.join(QRCODE_TESTING_DIR, "root_hash_qrcode.png"))
+            qr_test_dir_ref.update(new_file_name="root_hash.html").exists()
+        )
+        self.assertFalse(
+            qr_test_dir_ref.update(new_file_name="root_hash_qrcode.png").exists()
         )
 
         remove_test_tree()
@@ -75,21 +80,25 @@ class TestRootQrCode(unittest.TestCase):
         for c in contents:
             c.write(QRCODE_TESTING_DIR)
 
+        qr_test_dir_ref = make_file_ref(
+            root_dir=QRCODE_TESTING_DIR, subdirectories=[], file_name=""
+        )
+
         # generate the manifest on disk
         root_hash = build_manifest_for_directory(
-            QRCODE_TESTING_DIR, num_write_retries=1, logging_enabled=False
+            root_dir_ref=qr_test_dir_ref, num_write_retries=1, logging_enabled=False
         )
         self.assertIsNotNone(root_hash)
 
         # now, build an in-memory manifest
         manifest = load_existing_manifest(
-            QRCODE_TESTING_DIR, expected_root_hash=root_hash
+            root_dir_ref=qr_test_dir_ref, expected_root_hash=root_hash
         )
         self.assertIsNotNone(manifest)
 
         gen_root_qrcode(
             election_name="Test Election 2020",
-            tally_dir=QRCODE_TESTING_DIR,
+            tally_dir_ref=qr_test_dir_ref,
             metadata=metadata,
         )
 
@@ -97,13 +106,16 @@ class TestRootQrCode(unittest.TestCase):
         # cheat and just check that the QRcode is written to disk, at all, but we'll
         # scan for the hash written to the HTML text.
 
-        self.assertTrue(path.exists(path.join(QRCODE_TESTING_DIR, "root_hash.html")))
+        self.assertTrue(qr_test_dir_ref.update(new_file_name="root_hash.html").exists())
         self.assertTrue(
-            path.exists(path.join(QRCODE_TESTING_DIR, "root_hash_qrcode.png"))
+            qr_test_dir_ref.update(new_file_name="root_hash_qrcode.png").exists()
         )
 
-        with open(path.join(QRCODE_TESTING_DIR, "root_hash.html")) as f:
-            lines = f.read().splitlines()
+        x = qr_test_dir_ref.update(new_file_name="root_hash.html").read()
+        self.assertIsNotNone(x)
+
+        if x is not None:
+            lines = x.decode("utf-8").splitlines()
             for line in lines:
                 if "Root Hash: <code>" in line:
                     match = re.search("<code>([A-Za-z0-9+/]+={0,2})</code></li>", line)

@@ -3,6 +3,7 @@ from sys import exit
 from timeit import default_timer as timer
 from typing import Optional
 
+import ray
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.admin import ElectionAdmin
@@ -99,3 +100,6 @@ if __name__ == "__main__":
     num_failures = wait_for_zero_pending_writes()
     if num_failures > 0:
         print(f"WARNING: Failed to write {num_failures} files. Something bad happened.")
+
+    if ray.is_initialized():
+        ray.shutdown()
