@@ -114,14 +114,14 @@ def gen_root_qrcode(
     qr_byteio = BytesIO()
     qr_img.save(qr_byteio, "PNG")
     qr_bytes: bytes = qr_byteio.getvalue()
-    tally_dir_ref.update(new_file_name="root_hash_qrcode.png").write(
+    (tally_dir_ref + "root_hash_qrcode.png").write(
         qr_bytes, num_attempts=num_retry_attempts
     )
 
     html_text = (
         root_start_text.format(title_text=election_name) + bullet_text + root_end_text
     )
-    tally_dir_ref.update(new_file_name="root_hash.html").write(
+    (tally_dir_ref + "root_hash.html").write(
         html_text,
         num_attempts=num_retry_attempts,
     )

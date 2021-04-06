@@ -57,12 +57,8 @@ class TestRootQrCode(unittest.TestCase):
             metadata=metadata,
         )
 
-        self.assertFalse(
-            qr_test_dir_ref.update(new_file_name="root_hash.html").exists()
-        )
-        self.assertFalse(
-            qr_test_dir_ref.update(new_file_name="root_hash_qrcode.png").exists()
-        )
+        self.assertFalse((qr_test_dir_ref + "root_hash.html").exists())
+        self.assertFalse((qr_test_dir_ref + "root_hash_qrcode.png").exists())
 
         remove_test_tree()
 
@@ -106,12 +102,10 @@ class TestRootQrCode(unittest.TestCase):
         # cheat and just check that the QRcode is written to disk, at all, but we'll
         # scan for the hash written to the HTML text.
 
-        self.assertTrue(qr_test_dir_ref.update(new_file_name="root_hash.html").exists())
-        self.assertTrue(
-            qr_test_dir_ref.update(new_file_name="root_hash_qrcode.png").exists()
-        )
+        self.assertTrue((qr_test_dir_ref + "root_hash.html").exists())
+        self.assertTrue((qr_test_dir_ref + "root_hash_qrcode.png").exists())
 
-        x = qr_test_dir_ref.update(new_file_name="root_hash.html").read()
+        x = (qr_test_dir_ref + "root_hash.html").read()
         self.assertIsNotNone(x)
 
         if x is not None:

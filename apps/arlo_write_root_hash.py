@@ -95,7 +95,7 @@ if __name__ == "__main__":
         value = "=".join(items[1:])
         metadata[key] = value
 
-    if not tally_dir_ref.update(new_file_name=MANIFEST_FILE).exists():
+    if not (tally_dir_ref + MANIFEST_FILE).exists():
         print(
             f"No {MANIFEST_FILE} found in {str(tally_dir_ref)}, cannot generate root hash. Exiting."
         )

@@ -340,6 +340,14 @@ class TestBasicReadsAndWrites(unittest.TestCase):
         self.assertTrue(d2.is_dir())
         self.assertFalse(d2.is_local())
 
+    def test_ballot_file_from_ballot_id(self) -> None:
+        fr = make_file_ref_from_path("foo/bar/")
+        self.assertTrue(fr.is_dir())
+        fr_b1 = fr._ballot_file_from_ballot_id("b12346789")
+        self.assertEqual(
+            make_file_ref_from_path("foo/bar/ballots/b1234/b12345678.json"), fr_b1
+        )
+
 
 class TestRayWriteRetry(unittest.TestCase):
     def setUp(self) -> None:

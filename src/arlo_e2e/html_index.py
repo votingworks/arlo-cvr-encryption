@@ -62,6 +62,4 @@ def generate_index_html_files(
 
     index_text += index_end_text
 
-    dir_ref.update(new_file_name="index.html").write(
-        index_text, num_attempts=num_attempts
-    )
+    (dir_ref + "index.html").write(index_text, num_attempts=num_attempts)

@@ -193,9 +193,7 @@ class Manifest:
         ]
 
         subdir_manifest = load_existing_manifest(
-            self.dir_ref.update(
-                new_subdirs=self.dir_ref.subdirectories + [directory_name]
-            ),
+            self.dir_ref / directory_name,
             dir_manifest_hash,
             dir_manifest_num_bytes,
         )
@@ -217,7 +215,7 @@ class Manifest:
         something went wrong.
         """
         if not subdirectories:
-            file_contents = self.dir_ref.update(new_file_name=file_name).read()
+            file_contents = (self.dir_ref + file_name).read()
             if file_contents is None:
                 log_and_print(f"failed to load file: {file_name}", verbose=True)
                 return None
@@ -323,7 +321,7 @@ def _r_hash_file(
             verbose=True,
         )
 
-    contents = root_dir_ref.update(new_file_name=filename).read()
+    contents = (root_dir_ref + filename).read()
     fileinfo = sha256_manifest_info(contents) if contents else None
 
     if progress_actor:
@@ -388,7 +386,7 @@ def _r_build_manifest_for_directory(
 
     directory_hashes_r = [
         _r_build_manifest_for_directory.remote(
-            root_dir_ref.update(new_subdirs=root_dir_ref.subdirectories + [d]),
+            root_dir_ref / d,
             progress_actor,
             num_attempts,
             logging_enabled,
@@ -416,7 +414,7 @@ def _r_build_manifest_for_directory(
         }
         result_ex = ManifestExternal(file_hashes, directory_hashes)
         manifest_info = _write_json_file_get_hash(
-            file_ref=root_dir_ref.update(new_file_name=MANIFEST_FILE),
+            file_ref=root_dir_ref + MANIFEST_FILE,
             content_obj=result_ex,
             num_attempts=num_attempts,
         )
@@ -489,7 +487,7 @@ def load_existing_manifest(
     :param root_dir_ref: a FileRef for the directory containing `MANIFEST.json` and other files.
     """
 
-    manifest_str = root_dir_ref.update(new_file_name=MANIFEST_FILE).read()
+    manifest_str = (root_dir_ref + MANIFEST_FILE).read()
 
     if manifest_str is None:
         return None

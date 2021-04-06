@@ -19,6 +19,7 @@ from typing import (
     NamedTuple,
     Iterator,
     Final,
+    cast,
 )
 
 import boto3
@@ -116,6 +117,32 @@ class FileRef(ABC):
         mutate.
         """
         pass
+
+    def __truediv__(self, other: str) -> "FileRef":
+        """
+        Subdirectory path extension. If you have a FileRef to a directory and you want a FileRef
+        to a subdirectory within it, you can use the `/` operator to do it.
+        @param other: subdirectory name
+        """
+        if self.is_file():
+            raise RuntimeError(
+                "subdirectory path extension to directories, with /, not supported for files"
+            )
+        else:
+            return self.update(new_subdirs=self.subdirectories + [other])
+
+    def __add__(self, other: str) -> "FileRef":
+        """
+        File extension to a directory. If you have a FileRef to a directory and you want a FileRef
+        to a file within it, you can use the `+` operator to do it.
+        @param other: file name
+        """
+        if self.is_file():
+            raise RuntimeError(
+                "file extension to directories, with +, not supported for files"
+            )
+        else:
+            return self.update(new_file_name=other)
 
     def is_file(self) -> bool:
         """Returns whether this is a file (True) or a directory (False)."""
@@ -226,12 +253,7 @@ class FileRef(ABC):
         based on its `ballot_id` (without the ".json" suffix).
         """
         ballot_name_prefix = ballot_id[0:BALLOT_FILENAME_PREFIX_DIGITS]
-
-        return self.update(
-            ballot_id + ".json",
-            self.root_dir,
-            self.subdirectories + ["ballots", ballot_name_prefix],
-        )
+        return (self / "ballots" / ballot_name_prefix) + (ballot_id + ".json")
 
     def write_ciphertext_ballot(
         self,
@@ -672,7 +694,7 @@ class S3FileRef(FileRef):
 
     def _read_internal(self) -> Optional[bytes]:
         if self.is_dir():
-            log_error(f"Trying to read a file without a filename: {str(self)}")
+            log_error(f"Trying to read a directory as a regular file: {str(self)}")
             return None
 
         client = _s3_client()
@@ -851,7 +873,7 @@ class LocalFileRef(FileRef):
 
     def _read_internal(self) -> Optional[bytes]:
         if self.is_dir():
-            log_error(f"Trying to read a file without a filename: {str(self)}")
+            log_error(f"Trying to read a directory as a regular file: {str(self)}")
             return None
 
         try:
@@ -878,8 +900,7 @@ class LocalFileRef(FileRef):
         try:
             with os.scandir(startpoint) as it:
                 # typecasting here because there isn't an annotation on os.scandir()
-                typed_it: Iterator[os.DirEntry] = it
-                for entry in typed_it:
+                for entry in cast(Iterator[os.DirEntry], it):
                     if not entry.name.startswith("."):
                         if entry.is_file():
                             plain_files[entry.name] = self.update(
