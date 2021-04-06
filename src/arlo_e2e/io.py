@@ -377,7 +377,10 @@ class FileRef(ABC):
     @abstractmethod
     def size(self) -> int:
         """
-        Returns the number of bytes in the file if it exists. Zero on failure.
+        Returns the number of bytes in the file if it exists. Zero on failure
+        or if the FileRef is to a directory.
+
+        See `scandir` for learning about the contents of a directory.
         """
         pass
 
@@ -474,6 +477,14 @@ def make_file_ref(
     In the local case, `root_dir` could be an arbitrary file path. The subdirectories are
     concatenated using the proper rules for the local operating system (backslashes for
     Windows, forward slashes for Unix).
+
+    If the `file_name` is the empty-string, then it's assumed we're talking about a
+    directory rather than a file.
+
+    If the `root_dir` contains a path in it (e.g., `"a/b/c"`), then it's internally going
+    to be converted into a root directory of `"a"` with subdirectories `["b", "c"]`.
+
+    See also, `make_file_ref_from_path`.
     """
     subdirectories = [] if subdirectories is None else subdirectories
     if root_dir.startswith("s3://"):
