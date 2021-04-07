@@ -24,6 +24,16 @@ index_end_text = """
 </html>
 """
 
+redirect_template = """<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv="refresh" content="0; url={redirect_path}">
+    </head>
+    <body>
+    </body>
+</html>
+"""
+
 
 def generate_index_html_files(
     title_text: str,
@@ -66,3 +76,30 @@ def generate_index_html_files(
     index_text += index_end_text
 
     (dir_ref + "index.html").write(index_text, num_attempts=num_attempts)
+
+    if not dir_ref.is_local():
+        # S3 static web hosting doesn't behave like a normal web server, which will redirect
+        # URLs that end in a slash to the corresponding index.html file. To work around this,
+        # we're going to use a hack: https://stackoverflow.com/a/56597839/4048276
+
+        # Example: if the dir_ref = s3://bucket-name/dir1/dir2/
+        # then the code above just wrote out s3://bucket-name/dir1/dir2/index.html
+        # and we're now going to write s3://bucket-name/dir1/dir2 and s3://bucket-name/dir1/dir2/
+        # as plain files (!) instructing the browser to redirect to the index.html file.
+
+        redirect_txt = redirect_template.format(
+            redirect_path=f"/{'/'.join(dir_ref.subdirectories)}/index.html"
+        )
+        redirect_file_ref1 = dir_ref.update(
+            new_file_name=dir_ref.subdirectories[-1],
+            new_subdirs=dir_ref.subdirectories[:-1],
+        )
+        redirect_file_ref2 = redirect_file_ref1.update(
+            new_file_name=redirect_file_ref1.file_name + "/",
+        )
+        redirect_file_ref1.write(
+            redirect_txt, num_attempts=num_attempts, force_content_type="text/html"
+        )
+        redirect_file_ref2.write(
+            redirect_txt, num_attempts=num_attempts, force_content_type="text/html"
+        )

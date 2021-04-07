@@ -189,7 +189,9 @@ class FileRef(ABC):
         """
         pass
 
-    def write(self, contents: AnyStr, num_attempts: int = 1) -> bool:
+    def write(
+        self, contents: AnyStr, num_attempts: int = 1, force_content_type: str = None
+    ) -> bool:
         """
         Attempts to write the requested contents to this FileRef, and will make the
         requested number of attempts, with some sleeping in between to work around
@@ -198,6 +200,10 @@ class FileRef(ABC):
 
         Notably, if this FileRef requires subdirectories that don't presently exist,
         they will be created.
+
+        The optional argument, `force_content_type`, is only meaningful when writing
+        to S3, and will set the ContentType field for this object to the given string.
+        Otherwise, it's inferred from the file name suffix.
         """
         attempt = 0
 
@@ -215,7 +221,7 @@ class FileRef(ABC):
 
         while attempt < num_attempts:
             attempt += 1
-            if self._write_internal(contents, attempt):
+            if self._write_internal(contents, attempt, force_content_type):
                 if status_actor:
                     num_pending = ray.get(status_actor.decrement_pending.remote(False))
                 if attempt > 1:
@@ -274,7 +280,9 @@ class FileRef(ABC):
         return ballot_file_name.write_json(ballot, num_attempts)
 
     @abstractmethod
-    def _write_internal(self, contents: AnyStr, counter: int) -> bool:
+    def _write_internal(
+        self, contents: AnyStr, counter: int, force_content_type: Optional[str]
+    ) -> bool:
         pass
 
     def _write_failure_for_testing(
@@ -653,9 +661,7 @@ class S3FileRef(FileRef):
             log_error(f"failed to remove {str(self)}: {str(error_dict)}")
 
     def _write_internal(
-        self,
-        contents: AnyStr,
-        counter: int,
+        self, contents: AnyStr, counter: int, force_content_type: Optional[str]
     ) -> bool:
         if not self._write_failure_for_testing(counter):
             return False
@@ -679,8 +685,11 @@ class S3FileRef(FileRef):
         # Python's built-in mimetypes library, which has a method to do exactly
         # what we need.
 
-        tmp = mimetypes.guess_type(str(self))
-        mime_type = tmp[0] if tmp[0] is not None else "application/octet-stream"
+        if force_content_type is not None:
+            mime_type = force_content_type
+        else:
+            tmp = mimetypes.guess_type(str(self))
+            mime_type = tmp[0] if tmp[0] is not None else "application/octet-stream"
 
         try:
             if DEFAULT_S3_STORAGE_CLASS == "STANDARD_IA":
@@ -876,9 +885,7 @@ class LocalFileRef(FileRef):
             self.local_file_path().unlink(missing_ok=True)
 
     def _write_internal(
-        self,
-        contents: AnyStr,
-        counter: int,
+        self, contents: AnyStr, counter: int, force_content_type: Optional[str]
     ) -> bool:
         if not self._write_failure_for_testing(counter):
             return False
