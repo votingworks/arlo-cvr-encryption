@@ -191,7 +191,10 @@ class ProgressBar:
             self.print_update(wait_for_update=False, close_when_complete=False)
 
             tmp: Tuple[List[ObjectRef], List[ObjectRef]] = ray.wait(
-                pending_refs, num_returns=1, timeout=0.5, fetch_local=False
+                pending_refs,
+                num_returns=len(pending_refs),
+                timeout=0.5,
+                fetch_local=False,
             )
             ready_refs, pending_refs = tmp
 

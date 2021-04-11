@@ -4,7 +4,11 @@ import ray
 
 from arlo_e2e.io import validate_directory_input, make_file_ref
 from arlo_e2e.manifest import build_manifest_for_directory
-from arlo_e2e.ray_helpers import ray_init_localhost, ray_init_cluster, ray_wait_for_workers
+from arlo_e2e.ray_helpers import (
+    ray_init_localhost,
+    ray_init_cluster,
+    ray_wait_for_workers,
+)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
