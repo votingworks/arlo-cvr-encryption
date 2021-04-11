@@ -301,8 +301,7 @@ class Manifest:
         return True
 
 
-@ray.remote
-def _r_hash_file(
+def hash_file(
     root_dir_ref: FileRef,
     filename: str,
     progress_actor: Optional[ActorHandle],
@@ -312,12 +311,9 @@ def _r_hash_file(
     Hashes the file, returning the filename and sha256 hash (base64-encoded).
     If there's a failure, the result is the filename and `None`.
     """
-    if progress_actor:
-        progress_actor.update_num_concurrent.remote("Files", 1)
-
     if logging_enabled:
         log_and_print(
-            f"_r_hash_file('{str(root_dir_ref)}'/'{filename}')",
+            f"hash_file('{str(root_dir_ref)}'/'{filename}')",
             verbose=True,
         )
 
@@ -325,7 +321,6 @@ def _r_hash_file(
     fileinfo = sha256_manifest_info(contents) if contents else None
 
     if progress_actor:
-        progress_actor.update_num_concurrent.remote("Files", -1)
         progress_actor.update_completed.remote("Files", 1)
 
     return filename, fileinfo
@@ -337,6 +332,7 @@ def _r_build_manifest_for_directory(
     progress_actor: Optional[ActorHandle],
     num_attempts: int,
     logging_enabled: bool,
+    overwrite_existing_manifests: bool,
 ) -> Tuple[str, Optional[ManifestFileInfo]]:  # pragma: no cover
 
     # Engineering note: this design is recursive, so for every directory level, we're
@@ -360,45 +356,57 @@ def _r_build_manifest_for_directory(
             f"_r_build_manifest_for_directory({str(root_dir_ref)})",
             verbose=True,
         )
-    plain_files, directories = root_dir_ref.scandir()
+    dir_scan: FileRef.DirInfo = root_dir_ref.scandir()
+    plain_files, directories = dir_scan
 
     if MANIFEST_FILE in plain_files:
-        # we could just bomb out with an error; instead we're going to
-        # log something, ignore the manifest file, and move onward
-        if logging_enabled:
-            log_and_print(
-                f"Warning: found existing MANIFEST.json in {str(root_dir_ref)}",
-                verbose=True,
-            )
+        if overwrite_existing_manifests:
+            plain_files[MANIFEST_FILE].unlink()
+        else:
+            # we could just bomb out with an error; instead we're going to
+            # log something, ignore the manifest file, and move onward
+            if logging_enabled:
+                log_and_print(
+                    f"Warning: found existing MANIFEST.json in {str(root_dir_ref)}",
+                    verbose=True,
+                )
         del plain_files[MANIFEST_FILE]
 
     if progress_actor:
         progress_actor.update_total.remote("Directories", len(directories))
         progress_actor.update_total.remote("Files", len(plain_files))
 
-    # We're going to launch the file hashes first, such that directories,
-    # which will potentially increase the number of tasks enormously, don't
-    # execute until all these file hashes are done.
-    file_hashes_r = [
-        _r_hash_file.remote(root_dir_ref, f, progress_actor, logging_enabled)
-        for f in plain_files.keys()
-    ]
+    # We're going to launch the recursive directory hashes first, which
+    # will make sure we get our concurrency rolling, but then we're going
+    # to do all the file hashes locally. While it seems kinda cool to run
+    # all the file hashes concurrently as well, this turns out to run into
+    # a rate-limiter in S3, where you get "SlowDown" errors coming back
+    # when you read files too fast.
+    # https://aws.amazon.com/premiumsupport/knowledge-center/s3-resolve-503-slowdown-throttling/
 
+    # So, turns out that this rate limiter happens when we're talking about
+    # objects with the same "prefix" (i.e., files in the same directory),
+    # so we're not going to have a problem increasing concurrency by working
+    # on multiple directories simultaneously. (Hopefully.)bb
     directory_hashes_r = [
         _r_build_manifest_for_directory.remote(
             root_dir_ref / d,
             progress_actor,
             num_attempts,
             logging_enabled,
+            overwrite_existing_manifests,
         )
         for d in directories.keys()
+    ]
+
+    file_hashes_l: List[Tuple[str, Optional[ManifestFileInfo]]] = [
+        hash_file(root_dir_ref, f, progress_actor, logging_enabled)
+        for f in plain_files.keys()
     ]
 
     directory_hashes_l: List[Tuple[str, Optional[ManifestFileInfo]]] = ray.get(
         directory_hashes_r
     )
-    file_hashes_l: List[Tuple[str, Optional[ManifestFileInfo]]] = ray.get(file_hashes_r)
-
     failures = any([x[1] is None for x in directory_hashes_l]) or any(
         [x[1] is None for x in file_hashes_l]
     )
@@ -435,6 +443,7 @@ def build_manifest_for_directory(
     show_progressbar: bool = False,
     num_write_retries: int = NUM_WRITE_RETRIES,
     logging_enabled: bool = False,
+    overwrite_existing_manifests: bool = False,
 ) -> Optional[str]:
     """
     Recursively walks down, starting at the requested subdirectory of the root directory,
@@ -446,6 +455,8 @@ def build_manifest_for_directory(
     :param show_progressbar: if true, displays a tqdm progressbar for the computation
     :param num_write_retries: number of times to retry a failed write
     :param logging_enabled: adds additional logging and printing while the manifest is being built
+    :param overwrite_existing_manifests: if true, existing MANIFEST.json files will be overwritten
+      rather than raising an error
     """
 
     ray_wait_for_workers()
@@ -457,7 +468,11 @@ def build_manifest_for_directory(
         pba = pb.actor
 
     task_ref = _r_build_manifest_for_directory.remote(
-        root_dir_ref, pba, num_write_retries, logging_enabled
+        root_dir_ref,
+        pba,
+        num_write_retries,
+        logging_enabled,
+        overwrite_existing_manifests,
     )
 
     if pb is not None:
