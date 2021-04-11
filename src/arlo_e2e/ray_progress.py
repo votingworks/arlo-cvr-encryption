@@ -161,7 +161,7 @@ class ProgressBar:
                 p.total = s.total
                 p.set_postfix(running=s.num_concurrent)
                 p.refresh()
-                complete = complete and s.counter >= s.total
+                complete = complete and s.counter >= s.total and s.counter > 0
             if complete and close_when_complete:
                 self.close()
             return complete

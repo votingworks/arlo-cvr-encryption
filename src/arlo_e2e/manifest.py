@@ -476,7 +476,7 @@ def build_manifest_for_directory(
     )
 
     if pb is not None:
-        # pb.print_until_ready(task_ref)  -- doesn't work?!??!
+        # pb.print_until_ready(task_ref)  # isn't refreshing as often as it should
         pb.print_until_done()
 
     result: Tuple[str, Optional[ManifestFileInfo]] = ray.get(task_ref)
