@@ -1,5 +1,5 @@
 import unittest
-from timeit import default_timer as timer
+import time
 from typing import List
 
 import ray
@@ -50,12 +50,12 @@ class TestRayBasics(unittest.TestCase):
         keypair = elgamal_keypair_random()
         r_public_key = ray.put(keypair.public_key)
 
-        start = timer()
+        start = time.perf_counter()
         serial_ciphertexts: List[ElGamalCiphertext] = [
             elgamal_encrypt(p, n, keypair.public_key)
             for p, n in zip(plaintexts, nonces)
         ]
-        serial_time = timer()
+        serial_time = time.perf_counter()
 
         # List[ObjectRef[ElGamalCiphertext]
         parallel_ciphertext_objects: List[ObjectRef] = [
@@ -65,7 +65,7 @@ class TestRayBasics(unittest.TestCase):
             parallel_ciphertext_objects
         )
 
-        parallel_time = timer()
+        parallel_time = time.perf_counter()
 
         self.assertEqual(serial_ciphertexts, parallel_ciphertexts)
         print(

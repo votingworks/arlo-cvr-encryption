@@ -6,7 +6,7 @@ import shutil
 from multiprocessing.pool import Pool
 from os import cpu_count
 from sys import exit
-from timeit import default_timer as timer
+import time
 from typing import Optional
 
 from electionguard.elgamal import elgamal_keypair_from_secret
@@ -22,7 +22,7 @@ from arlo_e2e.tally import fast_tally_everything
 
 
 def run_bench(filename: str, pool: Pool, file_dir: Optional[str]) -> None:
-    start_time = timer()
+    start_time = time.perf_counter()
     print(f"Benchmarking: {filename}")
     log_info(f"Benchmarking: {filename}")
     cvrs = read_dominion_csv(filename)
@@ -31,7 +31,7 @@ def run_bench(filename: str, pool: Pool, file_dir: Optional[str]) -> None:
         exit(1)
     rows, cols = cvrs.data.shape
 
-    parse_time = timer()
+    parse_time = time.perf_counter()
     print(f"    Parse time: {parse_time - start_time: .3f} sec")
 
     assert rows > 0, "can't have zero ballots!"
@@ -39,7 +39,7 @@ def run_bench(filename: str, pool: Pool, file_dir: Optional[str]) -> None:
     # doesn't matter what the key is, so long as it's consistent for both runs
     keypair = get_optional(elgamal_keypair_from_secret(int_to_q_unchecked(31337)))
 
-    tally_start = timer()
+    tally_start = time.perf_counter()
     tally = fast_tally_everything(
         cvrs,
         pool,
@@ -47,17 +47,17 @@ def run_bench(filename: str, pool: Pool, file_dir: Optional[str]) -> None:
         secret_key=keypair.secret_key,
         root_dir=(file_dir + "_fast") if file_dir else None,
     )
-    tally_end = timer()
+    tally_end = time.perf_counter()
     assert tally.all_proofs_valid(verbose=True), "proof failure!"
 
     print(f"\nstarting ray.io parallelism")
-    rtally_start = timer()
+    rtally_start = time.perf_counter()
     rtally = ray_tally_everything(
         cvrs,
         secret_key=keypair.secret_key,
         root_dir=file_dir + "_ray" if file_dir else None,
     )
-    rtally_end = timer()
+    rtally_end = time.perf_counter()
 
     if file_dir:
         rtally_as_fast = rtally.to_fast_tally()

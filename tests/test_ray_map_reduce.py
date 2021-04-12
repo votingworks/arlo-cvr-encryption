@@ -1,6 +1,6 @@
 import unittest
 from datetime import timedelta
-from timeit import default_timer as timer
+import time
 from typing import List, Tuple
 
 import ray
@@ -198,7 +198,7 @@ class TestRayMapReduce(unittest.TestCase):
         inputs = list(zip(nonces, counters))
 
         # run with the map-reduce framework
-        start_time = timer()
+        start_time = time.perf_counter()
         rmr = RayMapReducer(
             context=context,
             use_progressbar=use_progressbar,
@@ -210,15 +210,15 @@ class TestRayMapReduce(unittest.TestCase):
         )
 
         actual_sum = rmr.map_reduce_list(inputs)
-        end_time = timer()
+        end_time = time.perf_counter()
         log_and_print(
             f"Map-reduce version: {len(counters) / (end_time - start_time):0.3f} inputs/sec"
         )
 
         # reference solution: computed conventionally
-        reference_start = timer()
+        reference_start = time.perf_counter()
         expected_sum = context.reduce([context.map(i) for i in inputs])
-        reference_end = timer()
+        reference_end = time.perf_counter()
 
         log_and_print(
             f"Single-core reference: {len(counters) / (reference_end - reference_start):0.3f} encrypts/sec"

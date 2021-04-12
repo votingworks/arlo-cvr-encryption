@@ -1,6 +1,6 @@
 import argparse
 from sys import exit
-from timeit import default_timer as timer
+import time
 from typing import Optional
 
 import ray
@@ -69,13 +69,13 @@ if __name__ == "__main__":
         exit(1)
 
     print(f"Starting up, reading {cvrfile}")
-    start_time = timer()
+    start_time = time.perf_counter()
     cvrs = read_dominion_csv(cvrfile)
     if cvrs is None:
         print(f"Failed to read {cvrfile}, terminating.")
         exit(1)
     rows, cols = cvrs.data.shape
-    parse_time = timer()
+    parse_time = time.perf_counter()
     print(
         f"    Parse time: {parse_time - start_time: .3f} sec, {rows / (parse_time - start_time):.3f} ballots/sec"
     )
@@ -87,14 +87,14 @@ if __name__ == "__main__":
     else:
         ray_init_localhost()
 
-    tally_start = timer()
+    tally_start = time.perf_counter()
     rtally = ray_tally_everything(
         cvrs,
         verbose=False,
         secret_key=admin_state.keypair.secret_key,
         root_dir=tallydir,
     )
-    tally_end = timer()
+    tally_end = time.perf_counter()
     print(f"Tally rate:    {rows / (tally_end - tally_start): .3f} ballots/sec")
 
     num_failures = wait_for_zero_pending_writes()

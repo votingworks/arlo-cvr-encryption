@@ -12,6 +12,7 @@ from typing import (
 )
 
 import ray
+import time
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.logs import log_error
 from electionguard.serializable import Serializable
@@ -24,13 +25,18 @@ from arlo_e2e.constants import (
     MANIFEST_FILE,
 )
 from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.io import decode_json_file_contents, make_file_ref, FileRef
+from arlo_e2e.io import decode_json_file_contents, FileRef
 from arlo_e2e.ray_helpers import ray_wait_for_workers
 from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.utils import sha256_hash
 
 T = TypeVar("T")
 S = TypeVar("S", bound=Serializable)
+
+# When we're computing the manifest, we can overwhelm the progress bar with updates,
+# so we'll check the time, and once this many seconds pass, then we'll send an
+# update to the progress bar.
+SECONDS_PER_PROGRESS_UPDATE = 5
 
 
 class ManifestFileInfo(NamedTuple):
@@ -304,7 +310,6 @@ class Manifest:
 def hash_file(
     root_dir_ref: FileRef,
     filename: str,
-    progress_actor: Optional[ActorHandle],
     logging_enabled: bool,
 ) -> Tuple[str, Optional[ManifestFileInfo]]:  # pragma: no cover
     """
@@ -319,9 +324,6 @@ def hash_file(
 
     contents = (root_dir_ref + filename).read()
     fileinfo = sha256_manifest_info(contents) if contents else None
-
-    if progress_actor:
-        progress_actor.update_completed.remote("Files", 1)
 
     return filename, fileinfo
 
@@ -399,10 +401,20 @@ def _r_build_manifest_for_directory(
         for d in directories.keys()
     ]
 
-    file_hashes_l: List[Tuple[str, Optional[ManifestFileInfo]]] = [
-        hash_file(root_dir_ref, f, progress_actor, logging_enabled)
-        for f in plain_files.keys()
-    ]
+    file_hashes_l: List[Tuple[str, Optional[ManifestFileInfo]]] = []
+    timestamp = time.perf_counter()
+    hashes_complete = 0
+    for f in plain_files.keys():
+        file_hashes_l.append(hash_file(root_dir_ref, f, logging_enabled))
+        hashes_complete += 1
+        new_time = time.perf_counter()
+        if new_time - timestamp >= SECONDS_PER_PROGRESS_UPDATE and progress_actor:
+            progress_actor.update_completed.remote("Files", hashes_complete)
+            hashes_complete = 0
+            timestamp = new_time
+
+    if progress_actor and hashes_complete > 0:
+        progress_actor.update_completed.remote("Files", hashes_complete)
 
     directory_hashes_l: List[Tuple[str, Optional[ManifestFileInfo]]] = ray.get(
         directory_hashes_r
@@ -476,8 +488,8 @@ def build_manifest_for_directory(
     )
 
     if pb is not None:
-        # pb.print_until_ready(task_ref)  # isn't refreshing as often as it should
-        pb.print_until_done()
+        pb.print_until_ready(task_ref)
+        # pb.print_until_done()
 
     result: Tuple[str, Optional[ManifestFileInfo]] = ray.get(task_ref)
     _, root_hash = result

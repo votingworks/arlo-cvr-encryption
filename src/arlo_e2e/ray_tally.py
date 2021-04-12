@@ -3,7 +3,7 @@
 
 from datetime import datetime
 from multiprocessing.pool import Pool
-from timeit import default_timer as timer
+import time
 from typing import (
     Optional,
     List,
@@ -260,7 +260,7 @@ def ray_tally_everything(
     if date is None:
         date = datetime.now()
 
-    start_time = timer()
+    start_time = time.perf_counter()
 
     # Performance note: by using to_election_description_ray rather than to_election_description, we're
     # only getting back a list of dictionaries rather than a list of PlaintextBallots. We're pushing that
@@ -269,7 +269,7 @@ def ray_tally_everything(
     # be sent to every node in the cluster.
 
     ed, bpf, ballot_dicts, id_map = cvrs.to_election_description_ray(date=date)
-    setup_time = timer()
+    setup_time = time.perf_counter()
     num_ballots = len(ballot_dicts)
     assert num_ballots > 0, "can't have zero ballots!"
     log_and_print(
@@ -363,7 +363,7 @@ def ray_tally_everything(
         for k in tally.keys()
     }
 
-    tabulate_time = timer()
+    tabulate_time = time.perf_counter()
 
     log_and_print(
         f"Encryption and tabulation: {rows} ballots, {rows / (tabulate_time - start_time): .3f} ballot/sec",
@@ -612,7 +612,7 @@ class RayTallyEverythingResults(NamedTuple):
         r_public_key = ray.put(self.context.elgamal_public_key)
         r_hash_header = ray.put(self.context.crypto_extended_base_hash)
 
-        start = timer()
+        start = time.perf_counter()
         selections = self.tally.map.values()
         num_selections = len(selections)
         sharded_selections = shard_iterable_uniform(
@@ -626,7 +626,7 @@ class RayTallyEverythingResults(NamedTuple):
                 for s in sharded_selections
             ]
         )
-        end = timer()
+        end = time.perf_counter()
 
         log_and_print(f"Verification time: {end - start: .3f} sec", verbose)
         log_and_print(
@@ -651,7 +651,7 @@ class RayTallyEverythingResults(NamedTuple):
             # List[ObjectRef[Optional[TALLY_TYPE]]]
             recomputed_tallies: List[ObjectRef] = []
 
-            ballot_start = timer()
+            ballot_start = time.perf_counter()
 
             bvc = BallotVerifyContext(
                 self.context.elgamal_public_key,
@@ -672,7 +672,7 @@ class RayTallyEverythingResults(NamedTuple):
             if not recomputed_tally:
                 return False
 
-            ballot_end = timer()
+            ballot_end = time.perf_counter()
 
             log_and_print(
                 f"Ballot verification rate: {num_ballots / (ballot_end - ballot_start): .3f} ballot/sec",

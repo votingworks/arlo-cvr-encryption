@@ -1,7 +1,7 @@
 # This is a version of encryption_bench, but only for running Ray remotely.
 import argparse
 from sys import exit
-from timeit import default_timer as timer
+import time
 from typing import Optional
 
 import ray
@@ -16,7 +16,7 @@ from arlo_e2e.ray_tally import ray_tally_everything
 
 
 def run_bench(filename: str, output_dir: Optional[str], use_progressbar: bool) -> None:
-    start_time = timer()
+    start_time = time.perf_counter()
     print(f"Benchmarking: {filename}")
     cvrs = read_dominion_csv(filename)
     if cvrs is None:
@@ -24,7 +24,7 @@ def run_bench(filename: str, output_dir: Optional[str], use_progressbar: bool) -
         exit(1)
     rows, cols = cvrs.data.shape
 
-    parse_time = timer()
+    parse_time = time.perf_counter()
     print(
         f"    Parse time: {parse_time - start_time: .3f} sec, {rows / (parse_time - start_time):.3f} ballots/sec"
     )
@@ -34,7 +34,7 @@ def run_bench(filename: str, output_dir: Optional[str], use_progressbar: bool) -
     # doesn't matter what the key is, so long as it's consistent for both runs
     keypair = get_optional(elgamal_keypair_from_secret(int_to_q_unchecked(31337)))
 
-    rtally_start = timer()
+    rtally_start = time.perf_counter()
     rtally = ray_tally_everything(
         cvrs,
         secret_key=keypair.secret_key,
@@ -42,7 +42,7 @@ def run_bench(filename: str, output_dir: Optional[str], use_progressbar: bool) -
         root_dir=output_dir,
         use_progressbar=use_progressbar,
     )
-    rtally_end = timer()
+    rtally_end = time.perf_counter()
 
     print(f"\nOVERALL PERFORMANCE")
     print(f"    Ray time:    {rtally_end - rtally_start : .3f} sec")

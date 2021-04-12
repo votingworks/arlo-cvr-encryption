@@ -3,7 +3,7 @@ import functools
 from dataclasses import dataclass
 from datetime import datetime
 from multiprocessing.pool import Pool
-from timeit import default_timer as timer
+import time
 from typing import (
     Tuple,
     List,
@@ -646,7 +646,7 @@ class FastTallyEverythingResults(NamedTuple):
             self.context.elgamal_public_key,
             self.context.crypto_extended_base_hash,
         )
-        start = timer()
+        start = time.perf_counter()
 
         inputs = self.tally.map.values()
         if verbose:  # pragma: no cover
@@ -657,7 +657,7 @@ class FastTallyEverythingResults(NamedTuple):
             if pool is None
             else pool.map(func=wrapped_func, iterable=inputs)
         )
-        end = timer()
+        end = time.perf_counter()
         log_and_print(f"Verification time: {end - start: .3f} sec", verbose)
         log_and_print(
             f"Verification rate: {len(self.tally.map.keys()) / (end - start): .3f} selection/sec",
@@ -677,14 +677,14 @@ class FastTallyEverythingResults(NamedTuple):
             ballot_iter = tqdm(self.encrypted_ballots, desc="Ballot proofs")
             ballot_func = functools.partial(verify_ballot_proof, self.context)
 
-            ballot_start = timer()
+            ballot_start = time.perf_counter()
             ballot_result: List[bool] = (
                 [ballot_func(x) for x in ballot_iter]
                 if pool is None
                 else pool.map(func=ballot_func, iterable=ballot_iter)
             )
 
-            ballot_end = timer()
+            ballot_end = time.perf_counter()
             log_and_print(
                 f"Ballot verification rate: {len(self.encrypted_ballots) / (ballot_end - ballot_start): .3f} ballot/sec",
                 verbose,
@@ -891,7 +891,7 @@ def fast_tally_everything(
     if date is None:
         date = datetime.now()
 
-    parse_time = timer()
+    parse_time = time.perf_counter()
     log_and_print(f"Rows: {rows}, cols: {cols}", verbose)
 
     ed, ballots, id_map = cvrs.to_election_description(date=date)
@@ -912,7 +912,7 @@ def fast_tally_everything(
         )
     ).decrypt(secret_key), "got wrong ElGamal decryption!"
 
-    dlog_prime_time = timer()
+    dlog_prime_time = time.perf_counter()
     log_and_print(
         f"DLog prime time (n={len(ballots)}): {dlog_prime_time - parse_time: .3f} sec",
         verbose,
@@ -939,7 +939,7 @@ def fast_tally_everything(
     cballots = fast_encrypt_ballots(
         ballots, ied, cec, seed_hash, nonces, pool, use_progressbar=use_progressbar
     )
-    eg_encrypt_time = timer()
+    eg_encrypt_time = time.perf_counter()
 
     log_and_print(
         f"Encryption time: {eg_encrypt_time - dlog_prime_time: .3f} sec", verbose
@@ -950,7 +950,7 @@ def fast_tally_everything(
     )
 
     tally: TALLY_TYPE = fast_tally_ballots(cballots, pool)
-    eg_tabulate_time = timer()
+    eg_tabulate_time = time.perf_counter()
 
     log_and_print(
         f"Tabulation time: {eg_tabulate_time - eg_encrypt_time: .3f} sec", verbose
@@ -971,7 +971,7 @@ def fast_tally_everything(
     decrypted_tally: DECRYPT_TALLY_OUTPUT_TYPE = fast_decrypt_tally(
         tally, cec, keypair, seed_hash, pool, verbose
     )
-    eg_decryption_time = timer()
+    eg_decryption_time = time.perf_counter()
     log_and_print(
         f"Decryption time: {eg_decryption_time - eg_tabulate_time: .3f} sec", verbose
     )
