@@ -246,7 +246,7 @@ class TestDominionHypotheses(unittest.TestCase):
 
     @given(ballots_and_context(), elements_mod_q())
     @settings(
-        deadline=timedelta(milliseconds=50000),
+        deadline=timedelta(milliseconds=100000),
         suppress_health_check=[HealthCheck.too_slow],
         max_examples=5,
         # disabling the "shrink" phase, because it runs very slowly
