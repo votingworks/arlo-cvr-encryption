@@ -43,11 +43,10 @@ S = TypeVar("S", bound=Serializable)
 _s3_client_handle: Optional[S3Client] = None
 _local_failed_writes: int = 0
 
-
 DEFAULT_S3_STORAGE_CLASS: Final[str] = "STANDARD"
-# Twice as expensive per month for storage, but supports immediate deletion,
-# cheaper access. Suitable for testing, when we're creating and nuking these
-# files fairly quickly.
+# "STANDARD" is twice as expensive per month for storage, but supports immediate
+# deletion, cheaper access. Suitable for testing, when we're creating and nuking
+# these files fairly quickly.
 
 # DEFAULT_S3_STORAGE_CLASS = "STANDARD_IA"
 # Suitable for 'Long-lived, infrequently accessed data'. Half the cost of "STANDARD"

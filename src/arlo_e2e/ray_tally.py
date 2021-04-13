@@ -1,9 +1,9 @@
 # Uses Ray to achieve cluster parallelism for tallying. Note that this code is patterned closely after the
 # code in tally.py, and should yield identical results, just much faster on big cluster computers.
 
+import time
 from datetime import datetime
 from multiprocessing.pool import Pool
-import time
 from typing import (
     Optional,
     List,

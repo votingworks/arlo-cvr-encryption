@@ -1,6 +1,6 @@
+import time
 import unittest
 from datetime import timedelta
-import time
 from typing import List, Tuple
 
 import ray

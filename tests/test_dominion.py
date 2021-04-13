@@ -1,5 +1,5 @@
-import unittest
 import csv
+import unittest
 from datetime import timedelta
 from io import StringIO
 from typing import Optional
@@ -14,6 +14,7 @@ from electionguard.nonces import Nonces
 from electionguard.tally import tally_ballots
 from electionguardtest.group import elements_mod_q
 from hypothesis import given, settings, HealthCheck, Phase
+from hypothesis.strategies import integers
 
 from arlo_e2e.dominion import (
     fix_strings,
@@ -29,7 +30,6 @@ from arlo_e2e_testing.dominion_hypothesis import (
     ballots_and_context,
     DominionBallotsAndContext,
 )
-from hypothesis.strategies import integers
 
 _good_dominion_cvrs = """
 "2018 Test Election","5.2.16.1","","","","","","","","","",""

@@ -1,10 +1,10 @@
 import csv
 import re
+from dataclasses import dataclass
 from io import StringIO
 from typing import Union, Optional, List, Dict
 
 import pandas as pd
-from dataclasses import dataclass
 
 from arlo_e2e.dominion import fix_strings
 from arlo_e2e.eg_helpers import log_and_print

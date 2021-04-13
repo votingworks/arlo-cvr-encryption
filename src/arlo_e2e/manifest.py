@@ -1,3 +1,4 @@
+import time
 from dataclasses import dataclass
 from typing import (
     Dict,
@@ -12,7 +13,6 @@ from typing import (
 )
 
 import ray
-import time
 from electionguard.ballot import CiphertextAcceptedBallot
 from electionguard.logs import log_error
 from electionguard.serializable import Serializable

@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import TypeVar, Generic, Optional, List, Tuple, Iterable, Sequence
-from more_itertools import peekable
 
 import ray
-from dataclasses import dataclass
+from more_itertools import peekable
 from ray import ObjectRef
 from ray.actor import ActorHandle
 

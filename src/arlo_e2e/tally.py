@@ -1,9 +1,9 @@
 import csv
 import functools
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from multiprocessing.pool import Pool
-import time
 from typing import (
     Tuple,
     List,

@@ -46,6 +46,7 @@ from arlo_e2e_testing.dominion_hypothesis import (
 _encrypted_ballot_dir = "audit_encrypted_ballots"
 _decrypted_ballot_dir = "audit_decrypted_ballots"
 
+
 # this is similar to test_decrypt, but is all about exercising the code in arlo_audit
 
 

@@ -1,6 +1,7 @@
 import os
-import ray
 from time import sleep
+
+import ray
 
 from arlo_e2e.io import (
     set_failure_probability_for_testing,
