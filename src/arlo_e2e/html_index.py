@@ -57,8 +57,16 @@ def _l_generate_index_html_files(
             fn.unlink()  # remove the file, which we'll then regenerate later
             continue
 
-        num_bytes = fn.size()
         is_dir = fn.is_dir()
+
+        if not is_dir and fn.file_name in scan.subdirs:
+            # it's one of the S3 redirect files; this can only happen if we run
+            # generate_index_html_files more than once, but we still want to ignore
+            # and regenerate these things.
+            fn.unlink()
+            continue
+
+        num_bytes = scan.file_sizes[fn.file_name] if not is_dir else 0
 
         additional_text = (
             f"<i>{num_bytes} bytes</i>" if not is_dir else "<b>directory</b>"

@@ -359,7 +359,7 @@ def _r_build_manifest_for_directory(
             verbose=True,
         )
     dir_scan: FileRef.DirInfo = root_dir_ref.scandir()
-    plain_files, directories = dir_scan
+    plain_files, file_sizes, directories = dir_scan
 
     if MANIFEST_FILE in plain_files:
         if overwrite_existing_manifests:

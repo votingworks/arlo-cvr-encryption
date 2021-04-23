@@ -52,14 +52,14 @@ if __name__ == "__main__":
             print("Write failed.")
 
     elif command == "scandir":
-        files, subdirs = fr.scandir()
+        files, file_sizes, subdirs = fr.scandir()
         print("Subdirectories:")
         for s in sorted(subdirs.keys()):
             print(f"    {s}: {subdirs[s]}")
 
         print("Files:")
         for f in sorted(files.keys()):
-            print(f"    {f}: {files[f]}")
+            print(f"    {f}: {files[f]} ({file_sizes[f]} bytes)")
 
     elif command == "unlink":
         fr.unlink()

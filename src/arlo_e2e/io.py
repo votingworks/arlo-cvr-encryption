@@ -369,6 +369,7 @@ class FileRef(ABC):
 
     class DirInfo(NamedTuple):
         files: Dict[str, "FileRef"]
+        file_sizes: Dict[str, int]
         subdirs: Dict[str, "FileRef"]
 
     @abstractmethod
@@ -753,6 +754,7 @@ class S3FileRef(FileRef):
         s3_key = self.s3_key_name()
 
         plain_files: Dict[str, FileRef] = {}
+        plain_file_sizes: Dict[str, int] = {}
         directories: Dict[str, FileRef] = {}
 
         try:
@@ -780,6 +782,7 @@ class S3FileRef(FileRef):
                         #     }
                         # },
                         k = obj["Key"]
+                        size = obj["Size"]
                         if k.endswith("/"):
                             # we'll get back an entry corresponding to the directory prefix that we're
                             # actually searching for, which we just need to ignore
@@ -787,6 +790,7 @@ class S3FileRef(FileRef):
 
                         fr = make_file_ref_from_path(f"s3://{s3_bucket}/{k}")
                         plain_files[fr.file_name] = fr
+                        plain_file_sizes[fr.file_name] = size
                 if "CommonPrefixes" in page:
                     for d in page["CommonPrefixes"]:
                         # {
@@ -807,7 +811,7 @@ class S3FileRef(FileRef):
             error_dict = error.response["Error"]
             log_error(f"failed to list_objects {str(self)}: {str(error_dict)}")
 
-        return FileRef.DirInfo(plain_files, directories)
+        return FileRef.DirInfo(plain_files, plain_file_sizes, directories)
 
     def size(self) -> int:
         if self.is_dir():
@@ -924,6 +928,7 @@ class LocalFileRef(FileRef):
 
         startpoint = self.local_file_path()
         plain_files: Dict[str, "FileRef"] = {}
+        file_sizes: Dict[str, int] = {}
         directories: Dict[str, "FileRef"] = {}
 
         try:
@@ -937,6 +942,15 @@ class LocalFileRef(FileRef):
                                 new_subdirs=self.subdirectories,
                                 new_root_dir=self.root_dir,
                             )
+                            # So we're going to stat() each file, which seems like
+                            # an unnecessary expense, but this is when we're on localhost
+                            # so we're not paying enormous network costs. Conversely,
+                            # we get file sizes "for free" when scanning a directory on S3,
+                            # versus adding separate HTTP queries for each and every file.
+
+                            # This tradeoff ends up being well worth it for the enormous
+                            # speedup we get on S3.
+                            file_sizes[entry.name] = entry.stat().st_size
                         elif entry.is_dir():
                             directories[entry.name] = self.update(
                                 new_file_name="",
@@ -946,9 +960,9 @@ class LocalFileRef(FileRef):
                         else:
                             # something other than a file or directory? ignore for now.
                             pass
-            return FileRef.DirInfo(plain_files, directories)
+            return FileRef.DirInfo(plain_files, file_sizes, directories)
         except FileNotFoundError:
-            return FileRef.DirInfo({}, {})
+            return FileRef.DirInfo({}, {}, {})
 
     def size(self) -> int:
         try:
