@@ -2,6 +2,10 @@
 
 from typing import List
 
+import ray
+from ray import ObjectRef
+
+from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.io import FileRef
 
 index_start_text = """<!DOCTYPE html>
@@ -35,15 +39,11 @@ redirect_template = """<!DOCTYPE html>
 """
 
 
-def generate_index_html_files(
-    title_text: str,
-    dir_ref: FileRef,
-    num_attempts: int = 1,
+def _l_generate_index_html_files(
+    title_text: str, dir_ref: FileRef, num_attempts: int, verbose: bool, use_ray: bool
 ) -> None:
-    """
-    Creates index.html files at every level of the directory. Note that this doesn't cause
-    anything to be added to the manifest. That's not necessary, and could be messy.
-    """
+    # local version
+    log_and_print(f"Generating index.html for {str(dir_ref)}", verbose=verbose)
     scan = dir_ref.scandir()
 
     index_text = index_start_text.format(title_text=title_text, path=str(dir_ref))
@@ -51,6 +51,7 @@ def generate_index_html_files(
     files_and_dirs: List[FileRef] = sorted(
         list(scan.files.values()) + list(scan.subdirs.values()), key=lambda fn: str(fn)
     )
+    ray_refs: List[ObjectRef] = []
     for fn in files_and_dirs:
         if fn.file_name == "index.html":
             fn.unlink()  # remove the file, which we'll then regenerate later
@@ -71,7 +72,20 @@ def generate_index_html_files(
         index_text += f"        <li><a href='{file_or_dir_name}'>{file_or_dir_name}</a> - {additional_text}</li>\n"
 
         if is_dir:
-            generate_index_html_files(title_text, fn, num_attempts=num_attempts)
+            if use_ray:
+                ray_refs.append(
+                    _r_generate_index_html_files.remote(
+                        title_text, fn, num_attempts, verbose, use_ray
+                    )
+                )
+            else:
+                _l_generate_index_html_files(
+                    title_text, fn, num_attempts, verbose, use_ray
+                )
+
+    if use_ray:
+        # if we don't do this, the tasks will never actually run
+        ignored = ray.get(ray_refs)
 
     index_text += index_end_text
 
@@ -103,3 +117,28 @@ def generate_index_html_files(
         redirect_file_ref2.write(
             redirect_txt, num_attempts=num_attempts, force_content_type="text/html"
         )
+
+
+@ray.remote
+def _r_generate_index_html_files(
+    title_text: str,
+    dir_ref: FileRef,
+    num_attempts: int,
+    verbose: bool,
+    use_ray: bool,
+) -> None:
+    # remote version
+    _l_generate_index_html_files(title_text, dir_ref, num_attempts, verbose, use_ray)
+    pass
+
+
+def generate_index_html_files(
+    title_text: str, dir_ref: FileRef, num_attempts: int = 1, verbose: bool = False
+) -> None:
+    """
+    Creates index.html files at every level of the directory. Note that this doesn't cause
+    anything to be added to the manifest. That's not necessary, and could be messy.
+    """
+    _l_generate_index_html_files(
+        title_text, dir_ref, num_attempts, verbose, ray.is_initialized()
+    )

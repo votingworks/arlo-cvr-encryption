@@ -57,6 +57,7 @@ def gen_root_qrcode(
     tally_dir_ref: FileRef,
     metadata: Dict[str, str],
     num_retry_attempts: int = NUM_WRITE_RETRIES,
+    verbose: bool = False,
 ) -> None:
     """
     Creates and writes a file, `root_hash.html` and its associated image files,
@@ -83,7 +84,12 @@ def gen_root_qrcode(
     :param tally_dir_ref: FileRef to the directory where `MANIFEST.json` can be found and where results will be written
     :param metadata: dictionary mapping strings to values, rendered out to the QRcode as-is
     :param num_retry_attempts: number of times to attempt a write if it fails
+    :param verbose: if true, logging details go to stdout as well
     """
+    log_and_print(
+        f"Generating root QR hash for for {str(tally_dir_ref)}", verbose=verbose
+    )
+
     manifest = load_existing_manifest(root_dir_ref=tally_dir_ref)
     if manifest is None:
         log_and_print("MANIFEST.json file not found, cannot generate QRcode")
@@ -95,6 +101,8 @@ def gen_root_qrcode(
         "tally_location": str(tally_dir_ref),
         "root_hash": data_hash,
     }
+
+    log_and_print(f"QR headers: {str(qr_headers)}", verbose=verbose)
 
     # goofy Python syntax to merge two dictionaries
     qr_data = {**qr_headers, **metadata}
