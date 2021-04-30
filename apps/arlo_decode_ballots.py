@@ -55,23 +55,22 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    tally_dir = args.tallies
+    tallydir = validate_directory_input(args.tallies, "tally", error_if_absent=True)
     decrypted_dir = args.decrypted
     ballot_ids: List[str] = args.ballot_id
     root_hash = args.root_hash
 
-    tallydir = validate_directory_input(tally_dir, "tally", error_if_absent=True)
     decrypted_dir = validate_directory_input(
         decrypted_dir, "decryption", error_if_absent=True
     )
 
-    print(f"Loading tallies from {tally_dir}.")
+    print(f"Loading tallies from {tallydir}.")
     tally: Optional[FastTallyEverythingResults] = load_fast_tally(
-        tally_dir, check_proofs=False, root_hash=root_hash
+        tallydir, check_proofs=False, root_hash=root_hash
     )
 
     if tally is None:
-        print(f"Failed to load results from {tally_dir}")
+        print(f"Failed to load results from {tallydir}")
         exit(1)
 
     for bid in ballot_ids:

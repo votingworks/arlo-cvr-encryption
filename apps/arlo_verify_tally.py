@@ -53,12 +53,10 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    tallydir = args.tallies
+    tallydir = validate_directory_input(args.tallies, "tally", error_if_absent=True)
     totals = args.totals
     use_cluster = args.cluster
     root_hash = args.root_hash
-
-    tallydir = validate_directory_input(tallydir, "tally", error_if_absent=True)
 
     results: Optional[Union[RayTallyEverythingResults, FastTallyEverythingResults]]
 

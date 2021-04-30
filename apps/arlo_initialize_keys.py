@@ -4,7 +4,7 @@ from sys import exit
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_e2e.admin import make_fresh_election_admin, ElectionAdmin
-from arlo_e2e.io import make_file_ref
+from arlo_e2e.io import make_file_ref_from_path
 
 if __name__ == "__main__":
     set_serializers()
@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
     # This ultimately bottoms out at secrets.randbelow(), which claims to be cryptographically strong.
     admin_state = make_fresh_election_admin()
-    fr = make_file_ref(file_name=args.keys, root_dir=".")
+    fr = make_file_ref_from_path(args.keys)
     fr.write_json(admin_state)
 
     # Read it back in, just to make sure we're all good.

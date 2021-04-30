@@ -48,7 +48,7 @@ from arlo_e2e.constants import (
 from arlo_e2e.dominion import DominionCSV, BallotPlaintextFactory
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.html_index import generate_index_html_files
-from arlo_e2e.io import make_file_ref, FileRef
+from arlo_e2e.io import FileRef, make_file_ref_from_path, validate_directory_input
 from arlo_e2e.manifest import (
     Manifest,
     build_manifest_for_directory,
@@ -304,11 +304,10 @@ def ray_tally_everything(
 
     nonces = Nonces(master_nonce)
 
-    root_dir_ref = (
-        make_file_ref(file_name="", root_dir=root_dir, subdirectories=[])
-        if root_dir
-        else None
-    )
+    if root_dir is not None:
+        root_dir = validate_directory_input(root_dir, "tally")
+
+    root_dir_ref = make_file_ref_from_path(root_dir) if root_dir else None
     btc = BallotTallyContext(ied, cec, seed_hash, root_dir_ref, bpf, nonces)
 
     nonce_indices = range(num_ballots)
@@ -393,9 +392,7 @@ def ray_tally_everything(
         # smart about flow typing from the if-statement above.
         root_dir2: str = cast(str, root_dir)
 
-        root_dir_ref2 = make_file_ref(
-            file_name="", subdirectories=[], root_dir=root_dir2
-        )
+        root_dir_ref2 = make_file_ref_from_path(root_dir2)
         root_hash = build_manifest_for_directory(
             root_dir_ref=root_dir_ref2,
             show_progressbar=use_progressbar,

@@ -56,10 +56,8 @@ if __name__ == "__main__":
 
     keyfile = args.keys
     cvrfile = args.cvr_file[0]
-    tallydir = args.tallies
+    tallydir = validate_directory_input(args.tallies, "tally", error_if_exists=True)
     use_cluster = args.cluster
-
-    tallydir = validate_directory_input(tallydir, "tally", error_if_exists=True)
 
     admin_state: Optional[ElectionAdmin] = make_file_ref_from_path(keyfile).read_json(
         ElectionAdmin

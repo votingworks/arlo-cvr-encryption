@@ -8,7 +8,7 @@ from electionguard.serializable import set_serializers, set_deserializers
 from arlo_e2e.constants import MANIFEST_FILE
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.html_index import generate_index_html_files
-from arlo_e2e.io import validate_directory_input, make_file_ref
+from arlo_e2e.io import validate_directory_input, make_file_ref_from_path
 from arlo_e2e.publish import load_ray_tally
 from arlo_e2e.ray_helpers import ray_init_localhost
 from arlo_e2e.root_qrcode import gen_root_qrcode
@@ -76,12 +76,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     election_name: Optional[str] = args.election_name
-    tally_dir: str = args.tallies
     metadata_strs: List[str] = args.metadata
     gen_index_html: bool = args.index_html
-
-    tally_dir = validate_directory_input(tally_dir, "tally", error_if_absent=True)
-    tally_dir_ref = make_file_ref(root_dir=tally_dir, subdirectories=[], file_name="")
+    tally_dir = validate_directory_input(args.tallies, "tally", error_if_absent=True)
+    tally_dir_ref = make_file_ref_from_path(tally_dir)
 
     ray_init_localhost()  # allows for concurrency when writing out the index.html files
 

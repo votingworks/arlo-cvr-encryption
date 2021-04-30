@@ -25,9 +25,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    tallydir = args.directory
-
-    tallydir = validate_directory_input(tallydir, "tally", error_if_absent=True)
+    tallydir = validate_directory_input(args.directory, "tally", error_if_absent=True)
 
     results: Optional[FastTallyEverythingResults] = load_fast_tally(
         tallydir, check_proofs=False

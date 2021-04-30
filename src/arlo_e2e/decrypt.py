@@ -23,7 +23,7 @@ from arlo_e2e.admin import ElectionAdmin
 from arlo_e2e.constants import BALLOT_FILENAME_PREFIX_DIGITS, NUM_WRITE_RETRIES
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.html_index import generate_index_html_files
-from arlo_e2e.io import make_file_ref
+from arlo_e2e.io import make_file_ref, make_file_ref_from_path
 from arlo_e2e.ray_progress import ProgressBar
 from arlo_e2e.ray_tally import RayTallyEverythingResults
 from arlo_e2e.tally import FastTallyEverythingResults
@@ -280,9 +280,7 @@ def decrypt_and_write(
     ]
     cvr_bytes = cvr_subset.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC)
 
-    decrypted_dir_ref = make_file_ref(
-        file_name="", root_dir=decrypted_dir, subdirectories=[]
-    )
+    decrypted_dir_ref = make_file_ref_from_path(decrypted_dir)
     (decrypted_dir_ref + "cvr_metadata.csv").write(
         cvr_bytes, num_attempts=NUM_WRITE_RETRIES
     )

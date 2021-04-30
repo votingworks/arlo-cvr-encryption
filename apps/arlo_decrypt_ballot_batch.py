@@ -77,14 +77,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     keyfile = args.keys
-    tally_dir = args.tallies
-    decrypted_dir = args.decrypted
+    tally_dir = validate_directory_input(args.tallies, "tally", error_if_absent=True)
+    decrypted_dir = validate_directory_input(args.decrypted, "decryption")
     batch_file = args.batch_file[0]
     use_cluster = args.cluster
     root_hash = args.root_hash
-
-    tally_dir = validate_directory_input(tally_dir, "tally", error_if_absent=True)
-    decrypted_dir = validate_directory_input(decrypted_dir, "decryption")
 
     if use_cluster:
         ray_init_cluster()

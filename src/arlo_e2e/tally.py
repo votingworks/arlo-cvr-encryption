@@ -75,7 +75,7 @@ from arlo_e2e.constants import (
 from arlo_e2e.dominion import DominionCSV
 from arlo_e2e.eg_helpers import log_and_print
 from arlo_e2e.html_index import generate_index_html_files
-from arlo_e2e.io import make_file_ref
+from arlo_e2e.io import make_file_ref_from_path, validate_directory_input
 from arlo_e2e.manifest import (
     Manifest,
     build_manifest_for_directory,
@@ -888,6 +888,9 @@ def fast_tally_everything(
     """
     rows, cols = cvrs.data.shape
 
+    if root_dir is not None:
+        root_dir = validate_directory_input(root_dir, "tally output")
+
     if date is None:
         date = datetime.now()
 
@@ -1006,7 +1009,6 @@ def fast_tally_everything(
 
     cvr_metadata = cvrs.dataframe_without_selections()
     tally_out = SelectionTally(reported_tally)
-    manifest: Optional[Manifest] = None
 
     if root_dir is not None:
         write_tally_metadata(
@@ -1022,18 +1024,15 @@ def fast_tally_everything(
         log_info("Writing ballots")
 
         for ballot in accepted_ballots:
-            make_file_ref(file_name="", root_dir=root_dir).write_ciphertext_ballot(
-                ballot
-            )
+            make_file_ref_from_path(root_dir).write_ciphertext_ballot(ballot)
 
         log_info("Writing manifests")
 
         # Cast from Optional[str] to str is necessary here only because mypy isn't very
         # smart about flow typing from the if-statement above.
         root_dir2: str = cast(str, root_dir)
-        root_dir_ref = make_file_ref(
-            file_name="", root_dir=root_dir2, subdirectories=[]
-        )
+        root_dir_ref = make_file_ref_from_path(root_dir2)
+
         root_hash = build_manifest_for_directory(
             root_dir_ref=root_dir_ref,
             show_progressbar=use_progressbar,
@@ -1091,36 +1090,38 @@ def write_tally_metadata(
     set_serializers()
     set_deserializers()
 
-    results_dir = results_dir
+    results_dir = validate_directory_input(results_dir, "results")
+    results_dir_ref = make_file_ref_from_path(results_dir)
     log_info("write_tally_metadata: starting!")
 
     log_info("write_tally_metadata: writing election_description")
-    make_file_ref(file_name=ELECTION_DESCRIPTION, root_dir=results_dir).write_json(
+
+    results_dir_ref.update(new_file_name=ELECTION_DESCRIPTION).write_json(
         election_description, num_attempts=num_attempts
     )
 
     log_info("write_tally_metadata: writing crypto context")
-    make_file_ref(file_name=CRYPTO_CONTEXT, root_dir=results_dir).write_json(
+    results_dir_ref.update(new_file_name=CRYPTO_CONTEXT).write_json(
         context, num_attempts=num_attempts
     )
 
     log_info("write_tally_metadata: writing crypto constants")
-    make_file_ref(file_name=CRYPTO_CONSTANTS, root_dir=results_dir).write_json(
+    results_dir_ref.update(new_file_name=CRYPTO_CONSTANTS).write_json(
         constants, num_attempts=num_attempts
     )
 
     log_info("write_tally_metadata: writing tally")
-    make_file_ref(file_name=ENCRYPTED_TALLY, root_dir=results_dir).write_json(
+    results_dir_ref.update(new_file_name=ENCRYPTED_TALLY).write_json(
         tally, num_attempts=num_attempts
     )
 
     log_info("write_tally_metadata: writing metadata")
-    make_file_ref(file_name=ELECTION_METADATA, root_dir=results_dir).write_json(
+    results_dir_ref.update(new_file_name=ELECTION_METADATA).write_json(
         metadata, num_attempts=num_attempts
     )
 
     log_info("write_tally_metadata: writing cvr metadata")
-    make_file_ref(file_name=CVR_METADATA, root_dir=results_dir).write(
+    results_dir_ref.update(new_file_name=CVR_METADATA).write(
         cvr_metadata.to_csv(index=False, quoting=csv.QUOTE_NONNUMERIC),
         num_attempts=num_attempts,
     )

@@ -2,7 +2,7 @@ import argparse
 
 import ray
 
-from arlo_e2e.io import validate_directory_input, make_file_ref
+from arlo_e2e.io import validate_directory_input, make_file_ref_from_path
 from arlo_e2e.manifest import build_manifest_for_directory
 from arlo_e2e.ray_helpers import (
     ray_init_localhost,
@@ -29,7 +29,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     root_dir = validate_directory_input(args.dir[0], "tally", error_if_absent=True)
-    root_dir_ref = make_file_ref(root_dir=root_dir, file_name="", subdirectories=[])
+    root_dir_ref = make_file_ref_from_path(root_dir)
     use_cluster = args.cluster
 
     if use_cluster:

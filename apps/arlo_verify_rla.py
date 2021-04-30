@@ -72,16 +72,13 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    tally_dir = args.tallies
-    decrypted_dir = args.decrypted
+    tally_dir = validate_directory_input(args.tallies, "tally", error_if_absent=True)
+    decrypted_dir = validate_directory_input(
+        args.decrypted, "decryption", error_if_absent=True
+    )
     audit_report_filename = args.audit_report[0]
     validate_decryptions = args.validate
     root_hash = args.root_hash
-
-    tally_dir = validate_directory_input(tally_dir, "tally", error_if_absent=True)
-    decrypted_dir = validate_directory_input(
-        decrypted_dir, "decryption", error_if_absent=True
-    )
 
     print(f"Loading tallies from {tally_dir}.")
     tally: Optional[FastTallyEverythingResults] = load_fast_tally(
