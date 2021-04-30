@@ -61,9 +61,9 @@ setup(
         "typish==1.7.0",
         "jsons==1.1.2",
         "tqdm==4.56.2",
-        "cryptography==3.4.6",
+        "cryptography==3.4.7",
         "flask==1.1.2",
-        "ray==1.2.0",
+        "ray==1.3.0",
         "pillow==8.1.2",
         "qrcode==6.1",
         "more-itertools==8.7.0",
@@ -72,5 +72,6 @@ setup(
     ],
     # ElectionGuard is also a requirement, but we're assuming that's being installed elsewhere, since
     # we're using a forked version of it.
+
     # Note: this file needs to be kept in sync with Pipfile.
 )
