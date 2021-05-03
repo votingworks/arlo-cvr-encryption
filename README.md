@@ -1,7 +1,8 @@
 # Arlo E2E Tooling
 
-This repository contains a set of standalone tools that can be
-used alongside an [Arlo RLA audit](https://voting.works/risk-limiting-audits/).
+This repository contains a set of scripts to let one implement VAULT in conjunction with the [risk-limiting audit](https://voting.works/risk-limiting-audits/) application [Arlo](https://github.com/votingworks/arlo).
+
+VAULT (Verifiable Audits Using Limited Transparency) is a method of conducting ballot-comparison risk-limiting audits that lets the public validate the audit, but without having to publish the full list of cast vote records. The original paper describing VAULT can be found [here](https://www.stat.berkeley.edu/~stark/Preprints/vault19.pdf), and slides describing it can be found [here](https://www.e-vote-id.org/wp-content/uploads/2019/10/VAULT.pdf).
 
 ## Table of contents
 
