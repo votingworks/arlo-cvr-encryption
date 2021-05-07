@@ -1,4 +1,6 @@
 # Arlo E2E Tooling
+![check](https://github.com/github/docs/actions/workflows/check.yml/badge.svg)
+
 
 This repository contains a set of standalone tools that can be
 used alongside an [Arlo RLA audit](https://voting.works/risk-limiting-audits/)
