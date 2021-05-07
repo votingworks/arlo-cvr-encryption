@@ -309,8 +309,9 @@ optional arguments:
                         (default: tally_output)
 ```
 
-This command is built into `arlo_tally_ballots`, but allows arbitrary key/value pairs
-to be written to `root_hash.html` and the included QRcode.
+The behavior of this command is built into `arlo_tally_ballots`. You'd only use this
+if you wanted to customize the set of key/value pairs represented in `root_hash.html`
+and the included QRcode.
 
 ### Benchmarks
 
