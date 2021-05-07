@@ -504,9 +504,11 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
             sep=",",
             engine="python",
         )
-    except FileNotFoundError:
+    except FileNotFoundError as e:
+        log_and_print(f"File not found while parsing: {e}")
         return None
-    except pd.errors.ParserError:
+    except pd.errors.ParserError as e:
+        log_and_print(f"ParseError while parsing: {e}", verbose=True)
         return None
 
     # TODO: At this point, we know the file is a valid CSV and we're *assuming* it's a valid Dominion file.
