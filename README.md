@@ -389,9 +389,10 @@ have a limited number of concurrent virtual machines. You have to email them to
 explicitly ask for as many as we're using. 
 
 Configuring Ray: There are two YAML configurations for Ray in the `cloud` 
-directory. One of them `aws-config.yaml` works and is tested regular. The other,
+directory. One of them `aws-config.yaml` works and is execised regularly. The other,
 `azure-config.yaml` is more of a work in progress and should not
-be assumed to be ready to go.
+be assumed to be ready to go. If you want to run on a cluster other than AWS,
+you'll have some extra work to do.
 
 A third file, `iam-policy-summary.txt` is something of an outline of how
 we had to specify the AWS security policies (IAM) in order to ensure that
@@ -409,7 +410,7 @@ Within `aws-config.yaml`:
   After that, the Linux kernel seems to run out of resources.
   
 - The "worker" nodes we're currently using are `c5a.16xlarge` (beefy 64 vCPU AMD machines),
-  with `c5.16xlarge` (similarly beefy Intel machines as an alternate), with a
+  with `c5.12xlarge` (similarly beefy 48vCPU Intel machines as an alternate), with a
   `m5a.xlarge` (four vCPUs but lots more memory) that we use for our "head" node.
   
 - The Ray autoscaler does all the work of creating and destroying our nodes on EC2.
