@@ -8,7 +8,18 @@ with the goal of increasing the *transparency* of a risk-limiting audit.
 
 - [Why E2E?](#why-e2e?)
 - [Command-line tools](#command-line-tools)
-- [Implementation thoughts](#implementation-thoughts)
+  - [arlo_initialize_keys](#arlo_initialize_keys)
+  - [arlo_tally_ballots](#arlo_tally_ballots)
+  - [arlo_decrypt_ballots](#arlo_decrypt_ballots)
+  - [arlo_decrypt_ballot_batch](#arlo_decrypt_ballot_batch)
+  - [arlo_verify_tally](#arlo_verify_tally)
+  - [arlo_verify_rla](#arlo_verify_rla)
+  - [arlo_all_ballots_for_contest](#arlo_all_ballots_for_contest)
+  - [arlo_ballot_style_summary](#arlo_ballot_style_summary)
+  - [arlo_decode_ballots](#arlo_decode_ballots)
+  - [arlo_write_root_hash](#arlo_write_root_hash)
+  - [Benchmarks](#benchmarks)
+- [Implementation status](#implementation-status)
 - [Amazon AWS details](#amazon-aws-s3-ec2-iam-details)
 
 ## Why E2E?
@@ -62,7 +73,7 @@ optional arguments:
 This command randomly generates a public/private keypair that the election official
 will use for subsequent arlo-e2e computation. The resulting file, by default
 `secret_election_keys.json` should be treated as sensitive data. The public
-key will be separately included in the public.
+key will be separately included in the public tally results.
 
 
 ### arlo_tally_ballots
@@ -87,7 +98,14 @@ This command reads a Dominion-style CVR file and ultimately writes out a directo
 of encrypted ballots and their associated proofs, as well as the tallies and their
 decryptions.
 
-- Each subdirectory includes a file called `MANIFEST.json`, which includes the SHA256 hashes
+- A single encrypted ballot can easily become a megabyte of JSON. We write each ballot
+  out to its own file. We map the ballot's unique id to a file within a subdirectory
+  of prefixes (e.g., `b0001283` becomes `ballots/b0001/b0001283.json`). This ensures
+  that we have no more than 1000 ballots per subdirectory. This sort of structure
+  generally improves performance, because subdirectories with large numbers of entries
+  can be slow to traverse.
+
+- Each subdirectory also includes a file called `MANIFEST.json`, which includes the SHA256 hashes
   of its contents, as well as the hash of every subdirectory's manifest. This creates a Merkle-tree
   structure. Subsequent tools take the hash of the root manifest as an input and can then use
   this to validate any file read from this directory.
@@ -105,8 +123,13 @@ decryptions.
   available CPU cores on that single machine to be utilized for increased performance.
   
 - The tally directory can be specified as a local filename or as an S3-style URL 
-  (e.g., `s3://bucket-name/directory-name`). It's possible to run this command on a local
-  computer, with output written to S3, or on an AWS EC2 cluster.
+  (e.g., `s3://bucket-name/directory-name`). When writing to S3, all the appropriate
+  metadata are set for each object to work properly with 
+  [S3's static web service](https://docs.aws.amazon.com/AmazonS3/latest/userguide/WebsiteHosting.html).
+  
+Note that the ability to write output to S3, versus a local filesystem, can be exercised whether
+running the tally locally, or running the tally on an AWS EC2 cluster. For relatively small
+elections, you could run all the computation locally, but still publish the results to S3.
   
 ### arlo_decrypt_ballots
 ```
@@ -134,7 +157,7 @@ optional arguments:
                         optional root hash for the tally directory; if the manifest is
                         tampered, an error is indicated
 ```
-This commands allows a specific set of ballots to be decrypted, and then written into
+This commands allows a desired set of ballots to be decrypted, and then written into
 a separate subdirectory. This is something an election official would do after ballots
 have been selected for an audit. The `ballot_id` names are the internal names used by
 arlo-e2e (e.g., `b0001283` for the ballot in `ballots/b0001/b0001283.json`).
@@ -166,7 +189,7 @@ optional arguments:
                         decrypted_ballots)
 ```
 This command is similar to arlo_decrypt_ballots, except that its input is a "batch file"
-written out by the Arlo auditing system. That particular file includes Dominion-style
+written out by the Arlo auditing system, which includes Dominion-style
 ballot "imprinted id" strings (e.g., `2-1-48`), which are then translated into 
 arlo-e2e identifiers.
   
