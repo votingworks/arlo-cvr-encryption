@@ -410,8 +410,11 @@ Within `aws-config.yaml`:
   After that, the Linux kernel seems to run out of resources.
   
 - The "worker" nodes we're currently using are `c5a.16xlarge` (beefy 64 vCPU AMD machines),
-  with `c5.12xlarge` (similarly beefy 48vCPU Intel machines as an alternate), with a
+  with `c5.12xlarge` (similarly beefy 48vCPU Intel machines) as an alternate, and with a
   `m5a.xlarge` (four vCPUs but lots more memory) that we use for our "head" node.
+  (Ray uses a singular "head" node to control all of its "workers". By giving it
+  a ton of memory and forbidding worker tasks from running on the head node, we
+  seem to be able to run at our desired scale.)
   
 - The Ray autoscaler does all the work of creating and destroying our nodes on EC2.
   It starts from an Ubuntu 20.04 VM, pre-installed with dependencies that we need
@@ -448,3 +451,7 @@ Running Ray on a big cluster:
 - It's useful to also bring up the AWS EC2 dashboard in a separate tab, so you can
   double check that you're not accidentally keeping all these nodes running after
   your computation is complete.
+  
+If you want to learn more about the engineering effort it took to get arlo-e2e running
+at scale, you may enjoy this [YouTube talk](https://www.youtube.com/watch?v=m7r33EuN6Zw)
+with many of the details.
