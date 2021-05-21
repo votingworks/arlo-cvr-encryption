@@ -109,10 +109,11 @@ def gen_root_qrcode(
 
     bullet_text = ""
     for k in sorted(qr_data.keys()):
-        if qr_data[k].startswith("http"):
-            value_data = f'<a href="{qr_data[k]}f">{qr_data[k]}</a>'
+        qr_value = str(qr_data[k])  # because sometimes it's not a string
+        if qr_value.startswith("http"):
+            value_data = f'<a href="{qr_value}f">{qr_value}</a>'
         else:
-            value_data = qr_data[k]
+            value_data = qr_value
 
         bullet_text += (
             f"        <li><code><b>{k}:</b></code> <code>{value_data}</code></li>\n"
