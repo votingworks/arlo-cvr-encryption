@@ -7,8 +7,8 @@ from more_itertools import peekable
 from ray import ObjectRef
 from ray.actor import ActorHandle
 
-from arlo_e2e.ray_progress import ProgressBar
-from arlo_e2e.utils import shard_iterable_uniform, first_n, shard_list_uniform
+from arlo_cvre.ray_progress import ProgressBar
+from arlo_cvre.utils import shard_iterable_uniform, first_n, shard_list_uniform
 
 T = TypeVar("T")
 """The input type for the map methods."""

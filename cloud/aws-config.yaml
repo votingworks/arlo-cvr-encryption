@@ -69,7 +69,7 @@ head_node_type: head_x64
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 head_node:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-    ImageId: ami-0f542b2b48007b168  # customized Ubuntu, pre-install with arlo-e2e, ElectionGuard, Ray; 12 Feb 2021
+    ImageId: ami-0f542b2b48007b168  # customized Ubuntu 20.04; 12 Feb 2021
 
     IamInstanceProfile:
       Arn: arn:aws:iam::339914263940:instance-profile/ray-head-arlo-v1
@@ -88,7 +88,7 @@ head_node:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 worker_nodes:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-    ImageId: ami-0f542b2b48007b168  # customized Ubuntu, pre-install with arlo-e2e, ElectionGuard, Ray; 12 Feb 2021
+    ImageId: ami-0f542b2b48007b168  # customized Ubuntu 20.04; 12 Feb 2021
 
     IamInstanceProfile:
       Arn: arn:aws:iam::339914263940:instance-profile/ray-worker-arlo-v1
@@ -129,8 +129,7 @@ setup_commands:
     # get any updates that might be newer than what's in the AMI
     # - sudo -H pip install boto3==1.15.12
     - sudo pip install -e 'git+https://github.com/votingworks/electionguard-python.git#egg=electionguard'
-    - sudo pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
-#    - sudo pip install -e 'git+https://github.com/votingworks/arlo-e2e@boto-s3-integration#egg=arlo_e2e'
+    - sudo pip install -e 'git+https://github.com/votingworks/arlo-cvr-transparency#egg=arlo_cvre'
 
     # nightly wheel for Ray
 #    - sudo pip install -U https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-2.0.0.dev0-cp38-cp38-manylinux2014_x86_64.whl

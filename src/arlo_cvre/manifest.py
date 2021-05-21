@@ -19,16 +19,16 @@ from electionguard.serializable import Serializable
 from electionguard.utils import flatmap_optional
 from ray.actor import ActorHandle
 
-from arlo_e2e.constants import (
+from arlo_cvre.constants import (
     BALLOT_FILENAME_PREFIX_DIGITS,
     NUM_WRITE_RETRIES,
     MANIFEST_FILE,
 )
-from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.io import decode_json_file_contents, FileRef
-from arlo_e2e.ray_helpers import ray_wait_for_workers
-from arlo_e2e.ray_progress import ProgressBar
-from arlo_e2e.utils import sha256_hash
+from arlo_cvre.eg_helpers import log_and_print
+from arlo_cvre.io import decode_json_file_contents, FileRef
+from arlo_cvre.ray_helpers import ray_wait_for_workers
+from arlo_cvre.ray_progress import ProgressBar
+from arlo_cvre.utils import sha256_hash
 
 T = TypeVar("T")
 S = TypeVar("S", bound=Serializable)

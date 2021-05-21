@@ -9,10 +9,10 @@ from electionguard.elgamal import elgamal_keypair_from_secret
 from electionguard.group import int_to_q_unchecked
 from electionguard.utils import get_optional
 
-from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.io import wait_for_zero_pending_writes, validate_directory_input
-from arlo_e2e.ray_helpers import ray_init_cluster, ray_init_localhost
-from arlo_e2e.ray_tally import ray_tally_everything
+from arlo_cvre.dominion import read_dominion_csv
+from arlo_cvre.io import wait_for_zero_pending_writes, validate_directory_input
+from arlo_cvre.ray_helpers import ray_init_cluster, ray_init_localhost
+from arlo_cvre.ray_tally import ray_tally_everything
 
 
 def run_bench(filename: str, output_dir: Optional[str], use_progressbar: bool) -> None:

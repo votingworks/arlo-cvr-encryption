@@ -34,14 +34,14 @@ from electionguard.election import (
 )
 from electionguard.encrypt import selection_from
 
-from arlo_e2e.eg_helpers import UidMaker, log_and_print
-from arlo_e2e.metadata import (
+from arlo_cvre.eg_helpers import UidMaker, log_and_print
+from arlo_cvre.metadata import (
     ElectionMetadata,
     CONTEST_MAP,
     STYLE_MAP,
     SelectionMetadata,
 )
-from arlo_e2e.utils import flatmap
+from arlo_cvre.utils import flatmap
 
 
 # Arlo-e2e support for CVR files from Dominion ballot scanners.

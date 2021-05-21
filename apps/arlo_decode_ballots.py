@@ -4,14 +4,14 @@ from typing import Optional, List
 
 from electionguard.serializable import set_serializers, set_deserializers
 
-from arlo_e2e.arlo_audit import validate_plaintext_and_encrypted_ballot
-from arlo_e2e.decrypt import (
+from arlo_cvre.arlo_audit import validate_plaintext_and_encrypted_ballot
+from arlo_cvre.decrypt import (
     load_proven_ballot,
 )
-from arlo_e2e.eg_helpers import log_nothing_to_stdout
-from arlo_e2e.io import validate_directory_input
-from arlo_e2e.publish import load_fast_tally
-from arlo_e2e.tally import FastTallyEverythingResults
+from arlo_cvre.eg_helpers import log_nothing_to_stdout
+from arlo_cvre.io import validate_directory_input
+from arlo_cvre.publish import load_fast_tally
+from arlo_cvre.tally import FastTallyEverythingResults
 
 if __name__ == "__main__":
     set_serializers()

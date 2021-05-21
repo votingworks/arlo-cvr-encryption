@@ -3,8 +3,8 @@ import unittest
 
 from electionguard.serializable import set_serializers, set_deserializers
 
-from arlo_e2e.admin import make_fresh_election_admin, ElectionAdmin
-from arlo_e2e.io import make_file_ref
+from arlo_cvre.admin import make_fresh_election_admin, ElectionAdmin
+from arlo_cvre.io import make_file_ref
 
 
 class TestAdmin(unittest.TestCase):

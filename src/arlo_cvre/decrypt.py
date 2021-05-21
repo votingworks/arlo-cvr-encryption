@@ -19,14 +19,14 @@ from electionguard.logs import log_error
 from ray.actor import ActorHandle
 from tqdm import tqdm
 
-from arlo_e2e.admin import ElectionAdmin
-from arlo_e2e.constants import BALLOT_FILENAME_PREFIX_DIGITS, NUM_WRITE_RETRIES
-from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.html_index import generate_index_html_files
-from arlo_e2e.io import make_file_ref, make_file_ref_from_path
-from arlo_e2e.ray_progress import ProgressBar
-from arlo_e2e.ray_tally import RayTallyEverythingResults
-from arlo_e2e.tally import FastTallyEverythingResults
+from arlo_cvre.admin import ElectionAdmin
+from arlo_cvre.constants import BALLOT_FILENAME_PREFIX_DIGITS, NUM_WRITE_RETRIES
+from arlo_cvre.eg_helpers import log_and_print
+from arlo_cvre.html_index import generate_index_html_files
+from arlo_cvre.io import make_file_ref, make_file_ref_from_path
+from arlo_cvre.ray_progress import ProgressBar
+from arlo_cvre.ray_tally import RayTallyEverythingResults
+from arlo_cvre.tally import FastTallyEverythingResults
 
 
 @ray.remote

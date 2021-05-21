@@ -1,7 +1,7 @@
 import unittest
 from io import StringIO, open
 
-from arlo_e2e.arlo_audit_report import (
+from arlo_cvre.arlo_audit_report import (
     arlo_audit_report_to_sampled_ballots,
     fix_excel_thinks_its_a_date,
 )

@@ -4,8 +4,8 @@ from time import sleep
 import ray
 from ray.actor import ActorHandle
 
-from arlo_e2e.ray_helpers import ray_init_localhost
-from arlo_e2e.ray_progress import ProgressBar
+from arlo_cvre.ray_helpers import ray_init_localhost
+from arlo_cvre.ray_progress import ProgressBar
 
 
 @ray.remote

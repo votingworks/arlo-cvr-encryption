@@ -5,13 +5,13 @@ from typing import List, Dict, Optional
 import ray
 from electionguard.serializable import set_serializers, set_deserializers
 
-from arlo_e2e.constants import MANIFEST_FILE
-from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.html_index import generate_index_html_files
-from arlo_e2e.io import validate_directory_input, make_file_ref_from_path
-from arlo_e2e.publish import load_ray_tally
-from arlo_e2e.ray_helpers import ray_init_localhost
-from arlo_e2e.root_qrcode import gen_root_qrcode
+from arlo_cvre.constants import MANIFEST_FILE
+from arlo_cvre.eg_helpers import log_and_print
+from arlo_cvre.html_index import generate_index_html_files
+from arlo_cvre.io import validate_directory_input, make_file_ref_from_path
+from arlo_cvre.publish import load_ray_tally
+from arlo_cvre.ray_helpers import ray_init_localhost
+from arlo_cvre.root_qrcode import gen_root_qrcode
 
 # Typical usage, shown with data for Inyo County, 2020 (with arguments split across lines for legibility,
 # but it's all one Unix command-line):

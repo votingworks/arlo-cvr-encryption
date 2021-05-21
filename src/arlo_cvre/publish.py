@@ -11,7 +11,7 @@ from electionguard.election import (
 from electionguard.logs import log_error
 from electionguard.serializable import set_deserializers, Serializable, set_serializers
 
-from arlo_e2e.constants import (
+from arlo_cvre.constants import (
     ELECTION_METADATA,
     CVR_METADATA,
     ELECTION_DESCRIPTION,
@@ -19,14 +19,14 @@ from arlo_e2e.constants import (
     CRYPTO_CONSTANTS,
     CRYPTO_CONTEXT,
 )
-from arlo_e2e.io import make_file_ref_from_path
-from arlo_e2e.manifest import (
+from arlo_cvre.io import make_file_ref_from_path
+from arlo_cvre.manifest import (
     load_existing_manifest,
     Manifest,
 )
-from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.ray_tally import RayTallyEverythingResults
-from arlo_e2e.tally import (
+from arlo_cvre.metadata import ElectionMetadata
+from arlo_cvre.ray_tally import RayTallyEverythingResults
+from arlo_cvre.tally import (
     FastTallyEverythingResults,
     SelectionTally,
     ballot_memos_from_metadata,

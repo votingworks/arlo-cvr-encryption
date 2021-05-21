@@ -4,21 +4,21 @@ from typing import Optional
 
 from electionguard.serializable import set_serializers, set_deserializers
 
-from arlo_e2e.admin import ElectionAdmin
-from arlo_e2e.arlo_audit import (
+from arlo_cvre.admin import ElectionAdmin
+from arlo_cvre.arlo_audit import (
     get_imprint_ids_from_ballot_retrieval_csv,
     get_ballot_ids_from_imprint_ids,
 )
-from arlo_e2e.decrypt import decrypt_and_write
-from arlo_e2e.eg_helpers import log_nothing_to_stdout
-from arlo_e2e.io import (
+from arlo_cvre.decrypt import decrypt_and_write
+from arlo_cvre.eg_helpers import log_nothing_to_stdout
+from arlo_cvre.io import (
     wait_for_zero_pending_writes,
     make_file_ref_from_path,
     validate_directory_input,
 )
-from arlo_e2e.publish import load_ray_tally
-from arlo_e2e.ray_helpers import ray_init_cluster, ray_init_localhost
-from arlo_e2e.ray_tally import RayTallyEverythingResults
+from arlo_cvre.publish import load_ray_tally
+from arlo_cvre.ray_helpers import ray_init_cluster, ray_init_localhost
+from arlo_cvre.ray_tally import RayTallyEverythingResults
 
 if __name__ == "__main__":
     set_serializers()

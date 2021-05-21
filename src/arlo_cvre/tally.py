@@ -64,7 +64,7 @@ from electionguard.serializable import Serializable, set_serializers, set_deseri
 from electionguard.utils import get_optional, flatmap_optional
 from tqdm import tqdm
 
-from arlo_e2e.constants import (
+from arlo_cvre.constants import (
     ELECTION_DESCRIPTION,
     CRYPTO_CONTEXT,
     CRYPTO_CONSTANTS,
@@ -72,18 +72,18 @@ from arlo_e2e.constants import (
     ELECTION_METADATA,
     CVR_METADATA,
 )
-from arlo_e2e.dominion import DominionCSV
-from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.html_index import generate_index_html_files
-from arlo_e2e.io import make_file_ref_from_path, validate_directory_input
-from arlo_e2e.manifest import (
+from arlo_cvre.dominion import DominionCSV
+from arlo_cvre.eg_helpers import log_and_print
+from arlo_cvre.html_index import generate_index_html_files
+from arlo_cvre.io import make_file_ref_from_path, validate_directory_input
+from arlo_cvre.manifest import (
     Manifest,
     build_manifest_for_directory,
     load_existing_manifest,
 )
-from arlo_e2e.memo import Memo, make_memo_value, make_memo_lambda
-from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.utils import shard_list_uniform
+from arlo_cvre.memo import Memo, make_memo_value, make_memo_lambda
+from arlo_cvre.metadata import ElectionMetadata
+from arlo_cvre.utils import shard_list_uniform
 
 
 def _is_overvoted_contest(

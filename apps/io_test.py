@@ -3,7 +3,7 @@
 import argparse
 import sys
 
-from arlo_e2e.io import make_file_ref_from_path
+from arlo_cvre.io import make_file_ref_from_path
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

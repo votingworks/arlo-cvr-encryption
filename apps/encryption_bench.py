@@ -14,11 +14,11 @@ from electionguard.group import int_to_q_unchecked
 from electionguard.logs import log_info
 from electionguard.utils import get_optional
 
-from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.ray_helpers import ray_init_cluster
-from arlo_e2e.io import wait_for_zero_pending_writes
-from arlo_e2e.ray_tally import ray_tally_everything
-from arlo_e2e.tally import fast_tally_everything
+from arlo_cvre.dominion import read_dominion_csv
+from arlo_cvre.ray_helpers import ray_init_cluster
+from arlo_cvre.io import wait_for_zero_pending_writes
+from arlo_cvre.ray_tally import ray_tally_everything
+from arlo_cvre.tally import fast_tally_everything
 
 
 def run_bench(filename: str, pool: Pool, file_dir: Optional[str]) -> None:

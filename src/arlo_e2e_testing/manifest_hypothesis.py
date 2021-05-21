@@ -3,7 +3,7 @@ from typing import NamedTuple, List
 from electionguardtest.election import _DrawType
 from hypothesis.strategies import composite, characters, text, lists
 
-from arlo_e2e.io import make_file_ref
+from arlo_cvre.io import make_file_ref
 
 
 class FileNameAndContents(NamedTuple):

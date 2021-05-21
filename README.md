@@ -1,5 +1,5 @@
-# Arlo E2E Tooling
-![check](https://github.com/votingworks/arlo-e2e/actions/workflows/check.yml/badge.svg)
+# Arlo CVR Encryption
+![check](https://github.com/votingworks/arlo-cvr-encryption/actions/workflows/check.yml/badge.svg)
 
 
 This repository contains a set of standalone tools that can be
@@ -8,7 +8,7 @@ with the goal of increasing the *transparency* of a risk-limiting audit.
 
 ## Table of contents
 
-- [Why E2E?](#why-e2e?)
+- [Why CVR Encryption?](#why-cvr-encryption)
 - [Command-line tools](#command-line-tools)
   - [arlo_initialize_keys](#arlo_initialize_keys)
   - [arlo_tally_ballots](#arlo_tally_ballots)
@@ -24,7 +24,7 @@ with the goal of increasing the *transparency* of a risk-limiting audit.
 - [Implementation status](#implementation-status)
 - [Amazon AWS details](#amazon-aws-s3-ec2-iam-details)
 
-## Why E2E?
+## Why CVR encryption?
 
 In a risk limiting audit, the risk limit itself is a function of the margin of victory.
 In the hypothetical where an attacker can compromise the tallying process, the attacker
@@ -37,7 +37,7 @@ The fix to this is to require the election official to:
   electronic ballot records afterward (i.e., any request from the RLA, i.e., "give
   me ballot N" can be proven consistent with the commitment).
 - *Prove* that the election tally and margins of victory are consistent with this
-  commitment (this is where all the e2e machinery comes into play).
+  commitment (this is where all the cryptographic machinery comes into play).
 
 With these, the RLA now has proof that it's working from the right starting point.
 
@@ -46,13 +46,14 @@ from Benaloh, Stark, and Teague ([slides](https://www.e-vote-id.org/wp-content/u
 has exactly the idea that we want to build.
 
 A nice property of this design is that it's completely "on the side" of the regular
-RLA process. You can do a RLA without the e2e part, and you still get something useful.
-The e2e just makes things more robust. You can layer it on to an existing RLA process
+RLA process. You can do a RLA without the encryption part, and you still get something useful.
+The encryption just makes things more robust. You can layer it on to an existing RLA process
 without requiring changes to how votes are cast and tabulated.
 
-And, of course, if you *do* happen to have voting machines that generate e2e ciphertexts,
-now those fit in very nicely here, so this scheme provides something of a stepping stone
-toward e2e technologies that allow voters to verify their votes were correctly tallied.
+And, of course, if you *do* happen to have "end to end" (e2e) cryptographic voting machines,
+that generate these same kinds of ciphertexts,
+now those fit in very nicely. This scheme provides something of a stepping stone
+towards bridging the world of e2e voting machines and risk-limiting audits.
 
 ## Command-line tools
 
@@ -73,7 +74,7 @@ optional arguments:
                         secret_election_keys.json)
 ```
 This command randomly generates a public/private keypair that the election official
-will use for subsequent arlo-e2e computation. The resulting file, by default
+will use for subsequent arlo-cvre computation. The resulting file, by default
 `secret_election_keys.json` should be treated as sensitive data. The public
 key will be separately included in the public tally results.
 
@@ -83,7 +84,7 @@ key will be separately included in the public tally results.
 ```
 usage: arlo_tally_ballots.py [-h] [-k KEYS] [-t TALLIES] [--cluster] cvr_file
 
-Load a Dominion-style ballot CVR file and write out an Arlo-e2e tally
+Load a Dominion-style ballot CVR file and write out an Arlo-cvr-encryption tally
 
 positional arguments:
   cvr_file              filename for the Dominion-style ballot CVR file
@@ -162,7 +163,7 @@ optional arguments:
 This commands allows a desired set of ballots to be decrypted, and then written into
 a separate subdirectory. This is something an election official would do after ballots
 have been selected for an audit. The `ballot_id` names are the internal names used by
-arlo-e2e (e.g., `b0001283` for the ballot in `ballots/b0001/b0001283.json`).
+arlo-cvr-encryption (e.g., `b0001283` for the ballot in `ballots/b0001/b0001283.json`).
 
 ### arlo_decrypt_ballot_batch
 ```
@@ -193,13 +194,13 @@ optional arguments:
 This command is similar to arlo_decrypt_ballots, except that its input is a "batch file"
 written out by the Arlo auditing system, which includes Dominion-style
 ballot "imprinted id" strings (e.g., `2-1-48`), which are then translated into 
-arlo-e2e identifiers.
+arlo-cvr-encryption identifiers.
   
 ### arlo_verify_tally
 ```
 usage: arlo_verify_tally.py [-h] [-t TALLIES] [-r ROOT_HASH] [--totals] [--cluster]
 
-Reads an arlo-e2e tally and verifies all the cryptographic artifacts
+Reads an arlo-cvr-encryption tally and verifies all the cryptographic artifacts
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -221,7 +222,7 @@ but it will use all of the available parallelism on a local computer as well.
 ```
 usage: arlo_verify_rla.py [-h] [-t TALLIES] [-d DECRYPTED] [-v] [-r ROOT_HASH] audit_report
 
-Reads an arlo-e2e tally, decrypted ballots, and Arlo audit report; verifies everything matches
+Reads an arlo-cvr-encryption tally, decrypted ballots, and Arlo audit report; verifies everything matches
 
 positional arguments:
   audit_report          Arlo audit report (in CSV format) to compare to the tally
@@ -267,7 +268,7 @@ A useful utility for identifying the subset of ballots containing a particular c
 ```
 usage: arlo_ballot_style_summary.py [-h] [-t TALLIES]
 
-Reads an arlo-e2e tally and prints statistics about ballot styles and contests
+Reads an arlo-cvr-encryption tally and prints statistics about ballot styles and contests
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -301,7 +302,7 @@ optional arguments:
                         tampered, an error is indicated
 ```
 
-Given some arlo-e2e ballot identifiers (e.g., `b0001283` for the ballot in `ballots/b0001/b0001283.json`),
+Given some arlo-cvr-encryption ballot identifiers (e.g., `b0001283` for the ballot in `ballots/b0001/b0001283.json`),
 prints everything we know about those ballots. If they were previously decrypted, this will print their
 decryptions and verify their equivalence proofs. If the proofs don't check out, this tool flags the issue.
 For ballots that were never decrypted, we at least print the available metadata for the ballot.
@@ -346,7 +347,7 @@ For benchmarking and testing purposes, there are several additional programs
 
 ## Implementation status
 
-The current `arlo-e2e` codebase has detailed unit tests built with [Hypothesis](https://hypothesis.readthedocs.io/en/latest/).
+The current `arlo-cvr-encryption` codebase has detailed unit tests built with [Hypothesis](https://hypothesis.readthedocs.io/en/latest/).
 It can generate a random set of CVRs for a random election (varying the number
 of contests, candidates per contest, and so forth), encrypt them and generate
 all the proofs, serialize them to disk, read them all back in again,
@@ -452,6 +453,6 @@ Running Ray on a big cluster:
   double check that you're not accidentally keeping all these nodes running after
   your computation is complete.
   
-If you want to learn more about the engineering effort it took to get arlo-e2e running
+If you want to learn more about the engineering effort it took to get arlo-cvr-encryption running
 at scale, you may enjoy this [YouTube talk](https://www.youtube.com/watch?v=m7r33EuN6Zw)
 with many of the details.

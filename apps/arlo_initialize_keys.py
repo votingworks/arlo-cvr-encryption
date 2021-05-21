@@ -3,8 +3,8 @@ from sys import exit
 
 from electionguard.serializable import set_serializers, set_deserializers
 
-from arlo_e2e.admin import make_fresh_election_admin, ElectionAdmin
-from arlo_e2e.io import make_file_ref_from_path
+from arlo_cvre.admin import make_fresh_election_admin, ElectionAdmin
+from arlo_cvre.io import make_file_ref_from_path
 
 if __name__ == "__main__":
     set_serializers()

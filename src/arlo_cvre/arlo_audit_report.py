@@ -6,8 +6,8 @@ from typing import Union, Optional, List, Dict
 
 import pandas as pd
 
-from arlo_e2e.dominion import fix_strings
-from arlo_e2e.eg_helpers import log_and_print
+from arlo_cvre.dominion import fix_strings
+from arlo_cvre.eg_helpers import log_and_print
 
 # The data format of an Arlo "audit report" is multiple CSV files, concatenated together,
 # with these separators delineating the sections:

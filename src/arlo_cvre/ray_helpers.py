@@ -3,7 +3,7 @@ from time import sleep
 
 import ray
 
-from arlo_e2e.io import (
+from arlo_cvre.io import (
     set_failure_probability_for_testing,
     init_status_actor,
 )

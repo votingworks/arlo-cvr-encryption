@@ -3,7 +3,7 @@ import unittest
 from hypothesis import given
 from hypothesis.strategies import integers
 
-from arlo_e2e.utils import flatmap, shard_iterable_uniform, shard_iterable, first_n
+from arlo_cvre.utils import flatmap, shard_iterable_uniform, shard_iterable, first_n
 
 
 class FlatmapTest(unittest.TestCase):

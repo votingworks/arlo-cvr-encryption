@@ -14,14 +14,14 @@ from electionguard.decrypt_with_secrets import (
 )
 from electionguard.logs import log_error, log_info
 
-from arlo_e2e.arlo_audit_report import (
+from arlo_cvre.arlo_audit_report import (
     ArloSampledBallot,
     _audit_iid_str,
     _dominion_iid_str,
 )
-from arlo_e2e.decrypt import load_proven_ballot, verify_proven_ballot_proofs
-from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.tally import FastTallyEverythingResults
+from arlo_cvre.decrypt import load_proven_ballot, verify_proven_ballot_proofs
+from arlo_cvre.eg_helpers import log_and_print
+from arlo_cvre.tally import FastTallyEverythingResults
 
 
 def get_imprint_to_ballot_id_map(

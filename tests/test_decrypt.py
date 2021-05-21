@@ -9,16 +9,16 @@ from electionguard.elgamal import elgamal_keypair_from_secret
 from hypothesis import given
 from hypothesis import settings, HealthCheck, Phase
 
-from arlo_e2e.admin import ElectionAdmin
-from arlo_e2e.arlo_audit import get_ballot_ids_from_imprint_ids
-from arlo_e2e.decrypt import (
+from arlo_cvre.admin import ElectionAdmin
+from arlo_cvre.arlo_audit import get_ballot_ids_from_imprint_ids
+from arlo_cvre.decrypt import (
     decrypt_and_write,
     load_proven_ballot,
     exists_proven_ballot,
     r_verify_proven_ballot_proofs,
 )
-from arlo_e2e.ray_helpers import ray_init_localhost
-from arlo_e2e.ray_tally import ray_tally_everything
+from arlo_cvre.ray_helpers import ray_init_localhost
+from arlo_cvre.ray_tally import ray_tally_everything
 from arlo_e2e_testing.dominion_hypothesis import (
     ballots_and_context,
     DominionBallotsAndContext,

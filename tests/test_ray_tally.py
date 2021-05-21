@@ -14,12 +14,12 @@ from electionguardtest.elgamal import elgamal_keypairs
 from hypothesis import settings, given, HealthCheck, Phase
 from hypothesis.strategies import booleans, lists, integers
 
-from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.io import make_file_ref
-from arlo_e2e.manifest import load_existing_manifest
-from arlo_e2e.ray_helpers import ray_init_localhost
-from arlo_e2e.ray_tally import ray_tally_everything
-from arlo_e2e.tally import fast_tally_everything
+from arlo_cvre.dominion import read_dominion_csv
+from arlo_cvre.io import make_file_ref
+from arlo_cvre.manifest import load_existing_manifest
+from arlo_cvre.ray_helpers import ray_init_localhost
+from arlo_cvre.ray_tally import ray_tally_everything
+from arlo_cvre.tally import fast_tally_everything
 from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 
 RTALLY_OUTPUT = "rtally_output"

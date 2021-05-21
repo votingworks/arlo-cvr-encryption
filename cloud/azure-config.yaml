@@ -106,8 +106,8 @@ setup_commands:
     - sudo ln -s /usr/bin/python3.8 /bin/python
     - sudo -H python -m pip install --upgrade pip
     - sudo -H pip install virtualenv==20.0.23 pipenv ray==0.8.7
-    - sudo -H pip install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
-    - sudo -H pip install -e 'git+https://github.com/votingworks/arlo-e2e#egg=arlo_e2e'
+    - sudo pip install -e 'git+https://github.com/votingworks/electionguard-python.git#egg=electionguard'
+    - sudo pip install -e 'git+https://github.com/votingworks/arlo-cvr-transparency#egg=arlo_cvre'
     # we need *lots* of open files to make this work, for some reason
     - sudo sysctl -w fs.file-max=5000000
 

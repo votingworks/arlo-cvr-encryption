@@ -6,19 +6,19 @@ from typing import Optional
 import ray
 from electionguard.serializable import set_serializers, set_deserializers
 
-from arlo_e2e.admin import ElectionAdmin
-from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.io import (
+from arlo_cvre.admin import ElectionAdmin
+from arlo_cvre.dominion import read_dominion_csv
+from arlo_cvre.io import (
     wait_for_zero_pending_writes,
     make_file_ref_from_path,
     validate_directory_input,
 )
-from arlo_e2e.ray_helpers import (
+from arlo_cvre.ray_helpers import (
     ray_init_cluster,
     ray_init_localhost,
     ray_wait_for_workers,
 )
-from arlo_e2e.ray_tally import ray_tally_everything
+from arlo_cvre.ray_tally import ray_tally_everything
 
 if __name__ == "__main__":
     set_serializers()

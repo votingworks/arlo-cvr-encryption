@@ -1,6 +1,6 @@
 import unittest
 
-from arlo_e2e.memo import make_memo_lambda, make_memo_value
+from arlo_cvre.memo import make_memo_lambda, make_memo_value
 
 
 class TestMemo(unittest.TestCase):

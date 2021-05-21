@@ -18,9 +18,9 @@ from electionguardtest.elgamal import elgamal_keypairs
 from hypothesis import settings, HealthCheck, given
 from hypothesis.strategies import lists, integers, text
 
-from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.ray_helpers import ray_init_localhost
-from arlo_e2e.ray_map_reduce import MapReduceContext, RayMapReducer
+from arlo_cvre.eg_helpers import log_and_print
+from arlo_cvre.ray_helpers import ray_init_localhost
+from arlo_cvre.ray_map_reduce import MapReduceContext, RayMapReducer
 
 
 class StringLengthContext(MapReduceContext[str, int]):

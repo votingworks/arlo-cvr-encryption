@@ -16,8 +16,8 @@ from hypothesis.strategies import (
     tuples,
 )
 
-from arlo_e2e.dominion import DominionCSV, read_dominion_csv
-from arlo_e2e.utils import flatmap
+from arlo_cvre.dominion import DominionCSV, read_dominion_csv
+from arlo_cvre.utils import flatmap
 
 
 @composite

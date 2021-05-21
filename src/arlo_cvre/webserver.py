@@ -3,7 +3,7 @@ from typing import Optional
 from flask import Flask, request
 from werkzeug.datastructures import FileStorage
 
-from arlo_e2e.webserver_commands import (
+from arlo_cvre.webserver_commands import (
     w_initialize_keys,
     flash_error,
     SimpleResponse,

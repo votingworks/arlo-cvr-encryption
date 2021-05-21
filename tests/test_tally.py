@@ -18,8 +18,8 @@ from electionguardtest.elgamal import elgamal_keypairs
 from hypothesis import settings, given, HealthCheck, Phase
 from hypothesis.strategies import booleans
 
-from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.tally import (
+from arlo_cvre.dominion import read_dominion_csv
+from arlo_cvre.tally import (
     fast_tally_everything,
     _interpret_ballot,
     _is_overvoted_ballot,

@@ -10,11 +10,11 @@ from flask import get_flashed_messages, flash, Flask
 from typing.io import BinaryIO
 from werkzeug.utils import secure_filename
 
-from arlo_e2e.admin import make_fresh_election_admin, ElectionAdmin
+from arlo_cvre.admin import make_fresh_election_admin, ElectionAdmin
 
 # File extensions that we'll allow for file uploads
-from arlo_e2e.constants import NUM_WRITE_RETRIES
-from arlo_e2e.io import make_file_ref
+from arlo_cvre.constants import NUM_WRITE_RETRIES
+from arlo_cvre.io import make_file_ref
 
 # Design note: we're putting as much of the web functionality here, without the actual Flask web
 # server present, to make these methods easier to test. We're prefixing all of these methods

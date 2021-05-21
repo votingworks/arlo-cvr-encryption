@@ -6,10 +6,10 @@ import PIL.Image
 import qrcode
 
 # centering is awful: https://css-tricks.com/centering-a-div-that-maintains-aspect-ratio-when-theres-body-margin/
-from arlo_e2e.constants import NUM_WRITE_RETRIES
-from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.io import FileRef
-from arlo_e2e.manifest import load_existing_manifest
+from arlo_cvre.constants import NUM_WRITE_RETRIES
+from arlo_cvre.eg_helpers import log_and_print
+from arlo_cvre.io import FileRef
+from arlo_cvre.manifest import load_existing_manifest
 
 root_start_text = """<!DOCTYPE html>
 <html>

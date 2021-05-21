@@ -6,13 +6,13 @@ from typing import Optional, Set, Dict, Tuple, Union
 
 from electionguard.serializable import set_serializers, set_deserializers
 
-from arlo_e2e.eg_helpers import log_nothing_to_stdout
-from arlo_e2e.io import validate_directory_input
-from arlo_e2e.metadata import SelectionMetadata
-from arlo_e2e.publish import load_fast_tally, load_ray_tally
-from arlo_e2e.ray_helpers import ray_init_cluster
-from arlo_e2e.ray_tally import RayTallyEverythingResults
-from arlo_e2e.tally import FastTallyEverythingResults, SelectionInfo
+from arlo_cvre.eg_helpers import log_nothing_to_stdout
+from arlo_cvre.io import validate_directory_input
+from arlo_cvre.metadata import SelectionMetadata
+from arlo_cvre.publish import load_fast_tally, load_ray_tally
+from arlo_cvre.ray_helpers import ray_init_cluster
+from arlo_cvre.ray_tally import RayTallyEverythingResults
+from arlo_cvre.tally import FastTallyEverythingResults, SelectionInfo
 
 if __name__ == "__main__":
     set_serializers()

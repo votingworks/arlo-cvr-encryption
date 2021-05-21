@@ -39,26 +39,26 @@ from electionguard.nonces import Nonces
 from electionguard.utils import flatmap_optional
 from ray import ObjectRef
 
-from arlo_e2e.constants import (
+from arlo_cvre.constants import (
     NUM_WRITE_RETRIES,
     MAX_CONCURRENT_TASKS,
     BALLOTS_PER_SHARD,
     PARTIAL_TALLIES_PER_SHARD,
 )
-from arlo_e2e.dominion import DominionCSV, BallotPlaintextFactory
-from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.html_index import generate_index_html_files
-from arlo_e2e.io import FileRef, make_file_ref_from_path, validate_directory_input
-from arlo_e2e.manifest import (
+from arlo_cvre.dominion import DominionCSV, BallotPlaintextFactory
+from arlo_cvre.eg_helpers import log_and_print
+from arlo_cvre.html_index import generate_index_html_files
+from arlo_cvre.io import FileRef, make_file_ref_from_path, validate_directory_input
+from arlo_cvre.manifest import (
     Manifest,
     build_manifest_for_directory,
     load_existing_manifest,
 )
-from arlo_e2e.metadata import ElectionMetadata
-from arlo_e2e.ray_helpers import ray_wait_for_workers
-from arlo_e2e.ray_map_reduce import MapReduceContext, RayMapReducer
-from arlo_e2e.root_qrcode import gen_root_qrcode
-from arlo_e2e.tally import (
+from arlo_cvre.metadata import ElectionMetadata
+from arlo_cvre.ray_helpers import ray_wait_for_workers
+from arlo_cvre.ray_map_reduce import MapReduceContext, RayMapReducer
+from arlo_cvre.root_qrcode import gen_root_qrcode
+from arlo_cvre.tally import (
     FastTallyEverythingResults,
     TALLY_TYPE,
     DECRYPT_TALLY_OUTPUT_TYPE,
@@ -73,7 +73,7 @@ from arlo_e2e.tally import (
     write_tally_metadata,
     interpret_and_encrypt_ballot,
 )
-from arlo_e2e.utils import shard_iterable_uniform
+from arlo_cvre.utils import shard_iterable_uniform
 
 
 # Nomenclature in this file: methods starting with "ray_" are meant to be called from the

@@ -34,9 +34,9 @@ from mypy_boto3_s3 import S3Client, ListObjectsV2Paginator
 from mypy_boto3_s3.type_defs import ListObjectsV2OutputTypeDef
 from ray.actor import ActorHandle
 
-from arlo_e2e.constants import BALLOT_FILENAME_PREFIX_DIGITS
-from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.utils import sha256_hash
+from arlo_cvre.constants import BALLOT_FILENAME_PREFIX_DIGITS
+from arlo_cvre.eg_helpers import log_and_print
+from arlo_cvre.utils import sha256_hash
 
 S = TypeVar("S", bound=Serializable)
 

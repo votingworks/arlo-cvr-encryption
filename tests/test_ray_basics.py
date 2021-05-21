@@ -12,7 +12,7 @@ from electionguard.group import ElementModP, ElementModQ, int_to_q
 from electionguard.nonces import Nonces
 from ray import ObjectRef
 
-from arlo_e2e.ray_helpers import ray_init_localhost
+from arlo_cvre.ray_helpers import ray_init_localhost
 
 
 @ray.remote

@@ -15,22 +15,22 @@ from electionguardtest.elgamal import elgamal_keypairs
 from hypothesis import settings, given, HealthCheck, Phase, reproduce_failure
 from hypothesis.strategies import booleans
 
-from arlo_e2e.decrypt import (
+from arlo_cvre.decrypt import (
     decrypt_ballots,
     verify_proven_ballot_proofs,
     exists_proven_ballot,
     write_proven_ballot,
     load_proven_ballot,
 )
-from arlo_e2e.dominion import read_dominion_csv
-from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.publish import (
+from arlo_cvre.dominion import read_dominion_csv
+from arlo_cvre.eg_helpers import log_and_print
+from arlo_cvre.publish import (
     load_fast_tally,
     load_ray_tally,
 )
-from arlo_e2e.ray_helpers import ray_init_localhost
-from arlo_e2e.ray_tally import ray_tally_everything
-from arlo_e2e.tally import fast_tally_everything
+from arlo_cvre.ray_helpers import ray_init_localhost
+from arlo_cvre.ray_tally import ray_tally_everything
+from arlo_cvre.tally import fast_tally_everything
 from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
 
 TALLY_TESTING_DIR = "tally_test"

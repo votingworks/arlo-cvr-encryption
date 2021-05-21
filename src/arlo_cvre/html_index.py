@@ -5,8 +5,8 @@ from typing import List
 import ray
 from ray import ObjectRef
 
-from arlo_e2e.eg_helpers import log_and_print
-from arlo_e2e.io import FileRef
+from arlo_cvre.eg_helpers import log_and_print
+from arlo_cvre.io import FileRef
 
 index_start_text = """<!DOCTYPE html>
 <html>

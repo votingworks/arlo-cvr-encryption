@@ -7,20 +7,20 @@ from electionguard.decrypt_with_secrets import ProvenPlaintextBallot
 from electionguard.logs import log_info
 from electionguard.serializable import set_serializers, set_deserializers
 
-from arlo_e2e.arlo_audit import (
+from arlo_cvre.arlo_audit import (
     compare_audit_ballots,
     validate_plaintext_and_encrypted_ballot,
     get_imprint_to_ballot_id_map,
     get_decrypted_ballots_with_proofs_from_imprint_ids,
 )
-from arlo_e2e.arlo_audit_report import (
+from arlo_cvre.arlo_audit_report import (
     ArloSampledBallot,
     arlo_audit_report_to_sampled_ballots,
 )
-from arlo_e2e.eg_helpers import log_nothing_to_stdout
-from arlo_e2e.io import validate_directory_input
-from arlo_e2e.publish import load_fast_tally
-from arlo_e2e.tally import FastTallyEverythingResults
+from arlo_cvre.eg_helpers import log_nothing_to_stdout
+from arlo_cvre.io import validate_directory_input
+from arlo_cvre.publish import load_fast_tally
+from arlo_cvre.tally import FastTallyEverythingResults
 
 if __name__ == "__main__":
     set_serializers()

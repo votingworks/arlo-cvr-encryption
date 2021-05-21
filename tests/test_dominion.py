@@ -16,15 +16,15 @@ from electionguardtest.group import elements_mod_q
 from hypothesis import given, settings, HealthCheck, Phase
 from hypothesis.strategies import integers
 
-from arlo_e2e.dominion import (
+from arlo_cvre.dominion import (
     fix_strings,
     dominion_row_to_uid,
     read_dominion_csv,
     DominionCSV,
 )
-from arlo_e2e.eg_helpers import decrypt_tally_with_secret, UidMaker
-from arlo_e2e.metadata import SelectionMetadata
-from arlo_e2e.tally import interpret_and_encrypt_ballot
+from arlo_cvre.eg_helpers import decrypt_tally_with_secret, UidMaker
+from arlo_cvre.metadata import SelectionMetadata
+from arlo_cvre.tally import interpret_and_encrypt_ballot
 from arlo_e2e_testing.dominion_hypothesis import (
     dominion_cvrs,
     ballots_and_context,

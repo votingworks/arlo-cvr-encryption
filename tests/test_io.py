@@ -8,7 +8,7 @@ from typing import cast
 import ray
 from electionguard.serializable import Serializable
 
-from arlo_e2e.io import (
+from arlo_cvre.io import (
     set_failure_probability_for_testing,
     wait_for_zero_pending_writes,
     reset_status_actor,
@@ -18,8 +18,8 @@ from arlo_e2e.io import (
     validate_directory_input,
     S3FileRef,
 )
-from arlo_e2e.ray_helpers import ray_init_localhost
-from arlo_e2e.utils import sha256_hash
+from arlo_cvre.ray_helpers import ray_init_localhost
+from arlo_cvre.utils import sha256_hash
 
 poop_emoji = "💩"  # used for testing encoding/decoding
 

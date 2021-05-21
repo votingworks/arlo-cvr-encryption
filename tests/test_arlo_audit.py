@@ -15,8 +15,8 @@ from electionguard.elgamal import elgamal_keypair_from_secret
 from hypothesis import given
 from hypothesis import settings, HealthCheck, Phase
 
-from arlo_e2e.admin import ElectionAdmin
-from arlo_e2e.arlo_audit import (
+from arlo_cvre.admin import ElectionAdmin
+from arlo_cvre.arlo_audit import (
     get_ballot_ids_from_imprint_ids,
     get_imprint_to_ballot_id_map,
     compare_audit_ballots,
@@ -24,7 +24,7 @@ from arlo_e2e.arlo_audit import (
     validate_plaintext_and_encrypted_ballot,
     get_imprint_ids_from_ballot_retrieval_csv,
 )
-from arlo_e2e.arlo_audit_report import (
+from arlo_cvre.arlo_audit_report import (
     ArloSampledBallot,
     _dominion_iid_str,
     _audit_result,
@@ -32,12 +32,12 @@ from arlo_e2e.arlo_audit_report import (
     _discrepancy,
     _audit_iid_str,
 )
-from arlo_e2e.decrypt import (
+from arlo_cvre.decrypt import (
     decrypt_and_write,
 )
-from arlo_e2e.ray_helpers import ray_init_localhost
-from arlo_e2e.ray_tally import ray_tally_everything
-from arlo_e2e.tally import FastTallyEverythingResults
+from arlo_cvre.ray_helpers import ray_init_localhost
+from arlo_cvre.ray_tally import ray_tally_everything
+from arlo_cvre.tally import FastTallyEverythingResults
 from arlo_e2e_testing.dominion_hypothesis import (
     ballots_and_context,
     DominionBallotsAndContext,
