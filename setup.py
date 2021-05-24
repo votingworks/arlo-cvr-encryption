@@ -15,7 +15,7 @@ VERSION = "0.1.0"
 LICENSE = "GNU Affero General Public License v3"
 DESCRIPTION = "Arlo-cvr-encryption: Support for verified risk-limiting audits."
 AUTHOR = "VotingWorks"
-AUTHOR_EMAIL = "dwallach@voting.works"
+AUTHOR_EMAIL = "dwallach@gmail.com"
 URL = "https://github.com/votingworks/arlo-cvr-encryption"
 PROJECT_URLS = {
     "Changelog": "https://github.com/votingworks/arlo-cvr-encryption/blob/master/CHANGELOG.rst",
@@ -63,7 +63,7 @@ setup(
         "tqdm==4.56.2",
         "cryptography==3.4.7",
         "flask==1.1.2",
-        "ray==1.3.0",
+        "ray[default]==1.3.0",
         "pillow==8.1.2",
         "qrcode==6.1",
         "more-itertools==8.7.0",
