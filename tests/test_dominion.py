@@ -25,7 +25,7 @@ from arlo_cvre.dominion import (
 from arlo_cvre.eg_helpers import decrypt_tally_with_secret, UidMaker
 from arlo_cvre.metadata import SelectionMetadata
 from arlo_cvre.tally import interpret_and_encrypt_ballot
-from arlo_e2e_testing.dominion_hypothesis import (
+from arlo_cvre_testing.dominion_hypothesis import (
     dominion_cvrs,
     ballots_and_context,
     DominionBallotsAndContext,

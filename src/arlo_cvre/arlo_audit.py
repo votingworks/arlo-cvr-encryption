@@ -42,8 +42,8 @@ def get_ballot_ids_from_imprint_ids(
     imprint_ids: List[str],
 ) -> List[str]:
     """
-    Given a set of election results and a list of Dominion imprint-ids, returns a list of arlo-e2e
-    ballot-ids. (Arlo-e2e ballot-ids are used throughout the encryption and decryption process, and
+    Given a set of election results and a list of Dominion imprint-ids, returns a list of arlo-cvr-encryption
+    ballot-ids. (Arlo-cvr-encryption ballot-ids are used throughout the encryption and decryption process, and
     map one-to-one with the Dominion imprint ids.)
     """
     map: Dict[str, str] = get_imprint_to_ballot_id_map(tally, imprint_ids)
@@ -234,7 +234,7 @@ def compare_audit_ballot(
             if s.contest_name == contest_name and s.choice_name in winners
         ]
 
-        # Arlo-e2e will generate selection names like "Write-in" and "Write-in (2)", but
+        # Arlo-cvr-encryption will generate selection names like "Write-in" and "Write-in (2)", but
         # during the RLA those are completely ignored, so we need to filter them out here.
         empty_selection_object_ids = [
             s.object_id
@@ -257,9 +257,9 @@ def compare_audit_ballot(
             bdict[id] for id in winning_selection_object_ids
         ]
 
-        # weird case: sometimes Arlo-e2e thinks a race is completely absent from a ballot but Arlo
+        # weird case: sometimes Arlo-cvr-encryption thinks a race is completely absent from a ballot but Arlo
         # thinks that it's present with no selections. This could be a consequence of problems with
-        # how Arlo-e2e infers what contests are present on which ballots. Anyway, the workaround is
+        # how Arlo-cvr-encryption infers what contests are present on which ballots. Anyway, the workaround is
         # is that little "if id in bdict" bit at the end, which means that in this particular case,
         # we have fewer empties than we think, but the verification will still continue.
         # TODO: go over this with the Arlo people, see in particular ballot #9045 (bid b0009044)

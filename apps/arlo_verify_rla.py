@@ -28,7 +28,7 @@ if __name__ == "__main__":
     log_nothing_to_stdout()
 
     parser = argparse.ArgumentParser(
-        description="Reads an arlo-e2e tally, decrypted ballots, and Arlo audit report; verifies everything matches"
+        description="Reads an arlo-cvr-encryption tally, decrypted ballots, and Arlo audit report; verifies everything matches"
     )
 
     parser.add_argument(

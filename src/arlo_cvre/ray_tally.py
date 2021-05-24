@@ -237,7 +237,7 @@ def ray_tally_everything(
 ) -> "RayTallyEverythingResults":
     """
     This top-level function takes a collection of Dominion CVRs and produces everything that
-    we might want for arlo-e2e: a list of encrypted ballots, their encrypted and decrypted tally,
+    we might want for arlo-cvr-encryption: a list of encrypted ballots, their encrypted and decrypted tally,
     and proofs of the correctness of the whole thing. The election `secret_key` is an optional
     parameter. If absent, a random keypair is generated and used. Similarly, if a `seed_hash` or
     `master_nonce` is not provided, random ones are generated and used.
@@ -250,7 +250,12 @@ def ray_tally_everything(
     ballots to be read back in again. Conversely, if `root_dir` is `None`, then nothing is
     written to disk, and the result will not have access to individual ballots.
 
-    Similarly, there will only be a manifest in the results if there was a `root_dir`.
+    Note that hash manifests and HTML index files are also written out, alongside the ballots.
+
+    And, lastly, the `root_dir` can specify a local directory, or it can be of the form
+    `s3://bucket/subdirectory`, which will then be used with the `boto3` library to work
+    with AWS S3, or anything that's compatible with S3 and boto3's interpretation of this
+    sort of URI). For more details, see the code in `io.py`.
     """
 
     rows, cols = cvrs.data.shape

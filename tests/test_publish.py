@@ -31,7 +31,7 @@ from arlo_cvre.publish import (
 from arlo_cvre.ray_helpers import ray_init_localhost
 from arlo_cvre.ray_tally import ray_tally_everything
 from arlo_cvre.tally import fast_tally_everything
-from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
+from arlo_cvre_testing.dominion_hypothesis import dominion_cvrs
 
 TALLY_TESTING_DIR = "tally_test"
 DECRYPTED_DIR = "decrypted_test"

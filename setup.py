@@ -10,16 +10,16 @@ from os.path import splitext
 from setuptools import find_packages
 from setuptools import setup
 
-NAME = "arlo-e2e"
+NAME = "arlo-cvr-encryption"
 VERSION = "0.1.0"
 LICENSE = "GNU Affero General Public License v3"
-DESCRIPTION = "Arlo-e2e: Support for e2e verified risk-limiting audits."
+DESCRIPTION = "Arlo-cvr-encryption: Support for verified risk-limiting audits."
 AUTHOR = "VotingWorks"
 AUTHOR_EMAIL = "dwallach@voting.works"
-URL = "https://github.com/votingworks/arlo-e2e"
+URL = "https://github.com/votingworks/arlo-cvr-encryption"
 PROJECT_URLS = {
-    "Changelog": "https://github.com/votingworks/arlo-e2e/blob/master/CHANGELOG.rst",
-    "Issue Tracker": "https://github.com/votingworks/arlo-e2e/issues",
+    "Changelog": "https://github.com/votingworks/arlo-cvr-encryption/blob/master/CHANGELOG.rst",
+    "Issue Tracker": "https://github.com/votingworks/arlo-cvr-encryption/issues",
 }
 CLASSIFIERS = [
     # http://pypi.python.org/pypi?%3Aaction=list_classifiers

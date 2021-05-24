@@ -19,7 +19,7 @@ from arlo_cvre.decrypt import (
 )
 from arlo_cvre.ray_helpers import ray_init_localhost
 from arlo_cvre.ray_tally import ray_tally_everything
-from arlo_e2e_testing.dominion_hypothesis import (
+from arlo_cvre_testing.dominion_hypothesis import (
     ballots_and_context,
     DominionBallotsAndContext,
 )

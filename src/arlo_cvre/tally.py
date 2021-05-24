@@ -875,7 +875,7 @@ def fast_tally_everything(
 ) -> FastTallyEverythingResults:
     """
     This top-level function takes a collection of Dominion CVRs and produces everything that
-    we might want for arlo-e2e: a list of encrypted ballots, their encrypted and decrypted tally,
+    we might want for arlo-cvr-encryption: a list of encrypted ballots, their encrypted and decrypted tally,
     and proofs of the correctness of the whole thing. The election `secret_key` is an optional
     parameter. If absent, a random keypair is generated and used. Similarly, if a `seed_hash` or
     `master_nonce` is not provided, random ones are generated and used.

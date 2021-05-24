@@ -19,7 +19,7 @@ from arlo_cvre.eg_helpers import log_and_print
 # ######## ROUNDS ########
 # ######## SAMPLED BALLOTS ########
 
-# For arlo-e2e, we're only interested in the SAMPLED BALLOTS section. It then had the following
+# For arlo-cvr-encryption, we're only interested in the SAMPLED BALLOTS section. It then had the following
 # headers (here: examples from Inyo County, CA in 2020):
 # https://docs.google.com/spreadsheets/d/13y8ZKzq1ZtYdZifqZ2RdHbU-8k8n2qFJsaeC4IW5NxQ/edit#gid=121212966
 
@@ -60,7 +60,7 @@ from arlo_cvre.eg_helpers import log_and_print
 # Discrepancy: Measure P - The Bishop Community Safety And Essential Services Measure
 
 # The "Imprinted ID" field is how we're going to connect this data to everything else
-# in arlo-e2e. That field is our ballot UID.
+# in arlo-cvr-encryption. That field is our ballot UID.
 
 # The Audited? field should be "AUDITED" otherwise we'll ignore it and move on.
 
@@ -96,7 +96,7 @@ def fix_contest_name(input: str) -> str:
     """
     Removes any of the common prefix strings (e.g., "CVR Result: ") as well as
     removes any "Vote for" suffix on the name of the contest; we have the necessary
-    metadata from the arlo-e2e metadata on disk to know about k-of-n contests, and
+    metadata from the arlo-cvr-encryption metadata on disk to know about k-of-n contests, and
     we'd prefer for the contest names to match up.
     """
 

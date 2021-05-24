@@ -11,7 +11,7 @@ from hypothesis.strategies import integers
 from arlo_cvre.io import make_file_ref
 from arlo_cvre.manifest import load_existing_manifest, build_manifest_for_directory
 from arlo_cvre.ray_helpers import ray_init_localhost
-from arlo_e2e_testing.manifest_hypothesis import (
+from arlo_cvre_testing.manifest_hypothesis import (
     FileNameAndContents,
     list_file_names_contents,
 )

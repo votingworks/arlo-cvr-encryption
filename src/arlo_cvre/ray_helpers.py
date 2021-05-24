@@ -47,7 +47,7 @@ def ray_init_cluster(
 def ray_post_init(write_failure_probability: float = 0.0) -> None:
     """
     If you've already called ray.init() yourself and you just need to initialize
-    the things that arlo-e2e cares about, call this method instead.
+    the things that arlo-cvr-encryption cares about, call this method instead.
     """
     init_status_actor()
     set_failure_probability_for_testing(write_failure_probability)

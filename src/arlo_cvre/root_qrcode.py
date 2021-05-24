@@ -36,7 +36,7 @@ root_start_text = """<!DOCTYPE html>
     
     <p>This data helps validate the integrity of a risk limiting audit and is means to be
     read by software like <a href="https://voting.works">VotingWorks</a>'s 
-    <a href="https://github.com/votingworks/arlo-e2e">arlo-e2e</a> system.</p>
+    <a href="https://github.com/votingworks/arlo-cvr-encryption">arlo-cvr-encryption</a> system.</p>
     <hr>
     <ul>
 """

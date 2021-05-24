@@ -24,7 +24,7 @@ from arlo_cvre.tally import (
     _interpret_ballot,
     _is_overvoted_ballot,
 )
-from arlo_e2e_testing.dominion_hypothesis import dominion_cvrs
+from arlo_cvre_testing.dominion_hypothesis import dominion_cvrs
 
 
 def _overvote_contest(c: PlaintextBallotContest) -> PlaintextBallotContest:

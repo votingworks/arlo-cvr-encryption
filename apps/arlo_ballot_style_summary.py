@@ -13,7 +13,7 @@ if __name__ == "__main__":
     set_deserializers()
 
     parser = argparse.ArgumentParser(
-        description="Reads an arlo-e2e tally and prints statistics about ballot styles and contests"
+        description="Reads an arlo-cvr-encryption tally and prints statistics about ballot styles and contests"
     )
 
     parser.add_argument(

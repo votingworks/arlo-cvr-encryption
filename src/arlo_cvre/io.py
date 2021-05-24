@@ -499,7 +499,7 @@ def make_file_ref(
     if root_dir.startswith("s3://"):
         root_dir = root_dir[5:]
         parts = list(Path(root_dir).parts)
-        assert len(parts) >= 1, "can't make an S3 refrence without a bucket name"
+        assert len(parts) >= 1, "can't make an S3 reference without a bucket name"
 
         root_dir = parts[0]
         subdirectories = parts[1:] + subdirectories

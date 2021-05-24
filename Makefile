@@ -5,22 +5,28 @@ WINDOWS_32BIT_GMPY2 ?= packages/gmpy2-2.0.8-cp38-cp38-win32.whl
 WINDOWS_64BIT_GMPY2 ?= packages/gmpy2-2.0.8-cp38-cp38-win_amd64.whl
 OS ?= $(shell python -c 'import platform; print(platform.system())')
 IS_64_BIT ?= $(shell python -c 'from sys import maxsize; print(maxsize > 2**32)')
+
+# Change these if necessary for your local platform; maybe we need to do some kind of autoconf
+# to detect these things?
+
 PIPENV = python3.8 -m pipenv
+PYTHON38 = python3.8
+PIP38 = pip3.8
 
 all: environment install validate lint coverage
 
 requirements.txt: Pipfile
-	pip freeze > requirements.txt
+	$(PIP38) freeze > requirements.txt
 
 # Generates the `typings` directory with boto3 stubs, which we commit as
 # part of the repository, rather than regenerating every time.
 boto3_stubs:
-	pip3.8 install mypy_boto3_builder
-	python -m mypy_boto3_builder --installed --skip-services typings -d -s s3 ec2
+	$(PIP38) install mypy_boto3_builder
+	$(PYTHON38) -m mypy_boto3_builder --installed --skip-services typings -d -s s3 ec2
 
 environment:
 	@echo 🔧 PIPENV SETUP
-	pip3.8 install pipenv
+	$(PIP38) install pipenv
 	$(PIPENV) install --dev
 
 install:
@@ -44,7 +50,7 @@ install-mac:
 # gmpy2 requirements
 	brew install gmp || true
 # install module
-	pipenv run python -m pip install -e .
+	$(PIPENV) run python -m pip install -e .
 
 install-linux:
 	@echo 🐧 LINUX INSTALL
@@ -53,16 +59,16 @@ install-linux:
 	sudo apt-get install libmpfr-dev
 	sudo apt-get install libmpc-dev
 # install module
-	pipenv run python -m pip install -e .
+	$(PIPENV) run python -m pip install -e .
 
 install-windows:
 	@echo 🏁 WINDOWS INSTALL
 # install module with local gmpy2 package
 ifeq ($(IS_64_BIT), True)
-	pipenv run python -m pip install -f $(WINDOWS_64BIT_GMPY2) -e . 
+	$(PIPENV) run python -m pip install -f $(WINDOWS_64BIT_GMPY2) -e .
 endif
 ifeq ($(IS_64_BIT), False)
-	pipenv run python -m pip install -f $(WINDOWS_32BIT_GMPY2) -e . 
+	$(PIPENV) run python -m pip install -f $(WINDOWS_32BIT_GMPY2) -e .
 endif
 
 black:
@@ -71,13 +77,13 @@ black:
 lint:
 	@echo 💚 LINT
 	@echo 1.Pylint
-	pipenv run pylint .
+	$(PIPENV) run pylint .
 	@echo 2.Black Formatting
-	pipenv run black --check apps src tests setup.py
+	$(PIPENV) run black --check apps src tests setup.py
 	@echo 3.Mypy Static Typing
-	pipenv run mypy apps src tests setup.py
+	$(PIPENV) run mypy apps src tests setup.py
 	@echo 4.Package Metadata
-	pipenv run python setup.py check --strict --metadata --restructuredtext
+	$(PIPENV) run python setup.py check --strict --metadata --restructuredtext
 # 	@echo 5.Docstring
 # 	pipenv run pydocstyle
 
@@ -85,27 +91,27 @@ auto-lint: black lint
 
 validate: 
 	@echo ✅ VALIDATE
-	@pipenv run python -c 'import electionguard; print(electionguard.__package__ + " successfully imported")'
+	@$(PIPENV) run python -c 'import electionguard; print(electionguard.__package__ + " successfully imported")'
 
 test: 
 	@echo ✅ TEST
-	pipenv run pytest . -x
+	$(PIPENV) run pytest . -x
 
 coverage:
 	@echo ✅ COVERAGE
-	pipenv run coverage run -m pytest
-	pipenv run coverage report --fail-under=$(CODE_COVERAGE)
+	$(PIPENV) run coverage run -m pytest
+	$(PIPENV) run coverage report --fail-under=$(CODE_COVERAGE)
 
 coverage-html:
-	pipenv run coverage html -d coverage
+	$(PIPENV) run coverage html -d coverage
 
 coverage-xml:
-	pipenv run coverage xml
+	$(PIPENV) run coverage xml
 
 coverage-erase:
-	@pipenv run coverage erase
+	@$(PIPENV) run coverage erase
 
 upgrade-electionguard:
-	pipenv uninstall electionguard
-	pipenv install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
+	$(PIPENV) uninstall electionguard
+	$(PIPENV) install -e 'git+https://github.com/microsoft/electionguard-python.git@feature/generic_chaum_petersen#egg=electionguard'
 #	pipenv install -e 'git+https://github.com/microsoft/electionguard-python.git#egg=electionguard'

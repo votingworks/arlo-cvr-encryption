@@ -25,7 +25,7 @@ if __name__ == "__main__":
     set_deserializers()
 
     parser = argparse.ArgumentParser(
-        description="Load a Dominion-style ballot CVR file and write out an Arlo-e2e tally"
+        description="Load a Dominion-style ballot CVR file and write out an Arlo-cvr-encryption tally"
     )
     parser.add_argument(
         "-k",

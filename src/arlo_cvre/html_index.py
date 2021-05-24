@@ -13,11 +13,11 @@ index_start_text = """<!DOCTYPE html>
 <head><title>{title_text}: {path}</title></head>
 <body>
     <h2>{title_text}: {path}</h2>
-    This directory has data associated with <a href="https://voting.works">VotingWorks</a>'s arlo-e2e auditing system.
-    These files are meant to be read by software, like <a href="https://github.com/votingworks/arlo-e2e">arlo-e2e</a>,
+    This directory has data associated with <a href="https://voting.works">VotingWorks</a>'s arlo-cvr-encryption auditing system.
+    These files are meant to be read by software, like <a href="https://github.com/votingworks/arlo-cvr-encryption">arlo-cvr-encryption</a>,
     which is auditing the correct outcome of an election. These files describe an <i>encrypted</i> version of every
-    ballot. For more information about how arlo-e2e works, see the 
-    <a href="https://github.com/votingworks/arlo-e2e">arlo-e2e page</a>.
+    ballot. For more information about how arlo-cvr-encryption works, see the 
+    <a href="https://github.com/votingworks/arlo-cvr-encryption">arlo-cvr-encryption page</a>.
     <hr>
     <ul>
 """

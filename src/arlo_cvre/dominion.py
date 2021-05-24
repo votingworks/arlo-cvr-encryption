@@ -44,7 +44,7 @@ from arlo_cvre.metadata import (
 from arlo_cvre.utils import flatmap
 
 
-# Arlo-e2e support for CVR files from Dominion ballot scanners.
+# Arlo-cvr-encryption support for CVR files from Dominion ballot scanners.
 # Each data file looks something like this:
 # Line 1: Name of election,unknown field (probably a version number),lots of blank fields
 # Line 2: Seven commas,contest title,contest title,... [titles repeat; columns represent a specific candidate or choice]
@@ -685,10 +685,10 @@ def read_dominion_csv(file: Union[str, StringIO]) -> Optional[DominionCSV]:
     # Potential degenerate result: in a race with very few ballots cast, it's conceivable that
     # every single ballot will undervote an entire contest. In this specific circumstance,
     # the style map will be "wrong", which would mean that that entire contest would be
-    # completely missing from subsequent e2e crypto results. Hopefully, actual Dominion CVRs
-    # will have zeros rather than blank cells to represent these undervotes, and then this case
-    # will never occur. Otherwise, it's unclear how we'd ever be able to distinguish between
-    # a contest that's completely undervoted versus a contest that's not part of a ballot style.
+    # completely missing. Hopefully, actual Dominion CVRs will have zeros rather than blank
+    # cells to represent these undervotes, and then this case will never occur. Otherwise,
+    # it's unclear how we'd ever be able to distinguish between a contest that's completely
+    # undervoted versus a contest that's not part of a ballot style.
 
     #  For each ballot style:
     #    - fetch all the rows of a given ballot type (e.g., b24 = df[df['BallotType'] == "Ballot 24 - Type 24"])
