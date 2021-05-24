@@ -127,7 +127,6 @@ setup_commands:
     # - sudo -H ubuntu-setup.sh
 
     # get any updates that might be newer than what's in the AMI
-    # - sudo -H pip install boto3==1.15.12
     - sudo pip install -e 'git+https://github.com/votingworks/electionguard-python.git#egg=electionguard'
     - sudo pip install -e 'git+https://github.com/votingworks/arlo-cvr-encryption#egg=arlo-cvr-encryption'
 
