@@ -9,7 +9,7 @@ IS_64_BIT ?= $(shell python -c 'from sys import maxsize; print(maxsize > 2**32)'
 # Change these if necessary for your local platform; maybe we need to do some kind of autoconf
 # to detect these things?
 
-PIPENV = python3.8 -m pipenv
+PIPENV = pipenv
 PYTHON38 = python3.8
 PIP38 = pip3.8
 
@@ -72,7 +72,7 @@ ifeq ($(IS_64_BIT), False)
 endif
 
 black:
-	black apps src tests setup.py
+	$(PIPENV) run black apps src tests setup.py
 
 lint:
 	@echo 💚 LINT
