@@ -127,6 +127,9 @@ if __name__ == "__main__":
     printed_iids = iids if validate_decryptions else failed_iids
 
     iid_to_bid_map = get_imprint_to_ballot_id_map(tally, printed_iids)
+
+    # This runs at about one ballot per second, sequentially; we could improve it
+    # with parallelism, but we probably don't care.
     for iid in printed_iids:
         log_info(f"Verifying imprint id: iid")
         plaintext = decrypted_ballots_with_proofs[iid]

@@ -131,8 +131,8 @@ def load_ray_tally(
     Given the directory name / path-name to a disk representation of a fast-tally structure, this reads
     it back in, makes sure it's well-formed, and optionally checks the cryptographic proofs. If any
     checks fail, `None` is returned. Errors are logged. This is executed across a Ray cluster, resulting
-    in significant speedups, as well as having the ballot ciphertexts, themselves, spread across the
-    cluster, for improved concurrency later on.
+    in significant speedups. The ballot ciphertexts are loaded lazily, on demand, when needed, and
+    cached in memory.
     """
 
     result = _load_tally_shared(results_dir, root_hash)
@@ -178,8 +178,9 @@ def load_fast_tally(
     """
     Given the directory name / path-name to a disk representation of a fast-tally structure, this reads
     it back in, makes sure it's well-formed, and optionally checks the cryptographic proofs. If any
-    checks fail, `None` is returned. Errors are logged. Optional `pool` allows for some parallelism
-    in the verification process.
+    checks fail, `None` is returned. Errors are logged. Optional multiprocessing `pool` allows for
+    some parallelism in the verification process; use `load_ray_tally`, instead, for more parallelism.
+    The ballot ciphertexts are loaded lazily, on demand, when needed, and cached in memory.
     """
 
     result = _load_tally_shared(results_dir, root_hash)

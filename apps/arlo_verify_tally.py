@@ -1,18 +1,16 @@
 import argparse
-import os
-from multiprocessing import Pool
 from sys import exit
-from typing import Optional, Set, Dict, Tuple, Union
+from typing import Set, Dict, Tuple
 
+import ray
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_cvre.eg_helpers import log_nothing_to_stdout
 from arlo_cvre.io import validate_directory_input
 from arlo_cvre.metadata import SelectionMetadata
-from arlo_cvre.publish import load_fast_tally, load_ray_tally
-from arlo_cvre.ray_helpers import ray_init_cluster
-from arlo_cvre.ray_tally import RayTallyEverythingResults
-from arlo_cvre.tally import FastTallyEverythingResults, SelectionInfo
+from arlo_cvre.publish import load_ray_tally
+from arlo_cvre.ray_helpers import ray_init_cluster, ray_init_localhost
+from arlo_cvre.tally import SelectionInfo
 
 if __name__ == "__main__":
     set_serializers()
@@ -58,34 +56,18 @@ if __name__ == "__main__":
     use_cluster = args.cluster
     root_hash = args.root_hash
 
-    results: Optional[Union[RayTallyEverythingResults, FastTallyEverythingResults]]
-
     print(f"Loading and verifying tallies and ballots from {tallydir}.")
     if use_cluster:
         ray_init_cluster()
-
-        ray_results = load_ray_tally(
-            tallydir,
-            check_proofs=True,
-            recheck_ballots_and_tallies=True,
-            root_hash=root_hash,
-        )
-
-        results = ray_results
-
     else:
-        pool = Pool(os.cpu_count())
+        ray_init_localhost()
 
-        fast_results = load_fast_tally(
-            tallydir,
-            check_proofs=True,
-            pool=pool,
-            recheck_ballots_and_tallies=True,
-            root_hash=root_hash,
-        )
-
-        pool.close()
-        results = fast_results
+    results = load_ray_tally(
+        tallydir,
+        check_proofs=True,
+        recheck_ballots_and_tallies=True,
+        root_hash=root_hash,
+    )
 
     if results is None:
         print(f"Failed to load results from {tallydir}")
@@ -151,3 +133,5 @@ if __name__ == "__main__":
                 winners + losers, key=lambda ss: ss[2]
             ):
                 print(f"    {name}: {result}{asterisk}")
+
+    ray.shutdown()

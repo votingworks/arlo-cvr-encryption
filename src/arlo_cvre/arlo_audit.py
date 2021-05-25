@@ -83,8 +83,12 @@ def get_imprint_ids_from_ballot_retrieval_csv(file: Union[str, StringIO]) -> Lis
         log_and_print(f"CSV parsing error: {file}")
         return []
 
-    iids = df[_audit_iid_str]
-    return list(iids)
+    if _audit_iid_str not in df:
+        log_and_print(f"malformed ballot manifest file: {file}")
+        return []
+    else:
+        iids = df[_audit_iid_str]
+        return list(iids)
 
 
 def get_decrypted_ballots_with_proofs_from_imprint_ids(

@@ -193,18 +193,22 @@ def r_decrypt_and_write_one(
     successfully written to disk (usually 1, 0 for failure), suitable for adding up later to
     see how many successes we had.
     """
+    progressbar_actor.update_num_concurrent.remote("Ballots", 1)
     encrypted_ballot = results.get_encrypted_ballot(ballot_id)
     if encrypted_ballot is None:
         progressbar_actor.update_completed.remote("Ballots", 1)
+        progressbar_actor.update_num_concurrent.remote("Ballots", -1)
         return 0
 
     plaintext = _decrypt(ied, extended_base_hash, keypair, encrypted_ballot)
     if plaintext is None:
         progressbar_actor.update_completed.remote("Ballots", 1)
+        progressbar_actor.update_num_concurrent.remote("Ballots", -1)
         return 0
 
     write_proven_ballot(plaintext, decrypted_dir, num_attempts=NUM_WRITE_RETRIES)
     progressbar_actor.update_completed.remote("Ballots", 1)
+    progressbar_actor.update_num_concurrent.remote("Ballots", -1)
     return 1
 
 
@@ -252,6 +256,10 @@ def decrypt_and_write(
     r_results = ray.put(results)
     r_decrypted_dir = ray.put(decrypted_dir)
 
+    # This is not really a fit for our map-reduce infrastructure, since we're
+    # mapping but not reducing; the number of ballots we're decrypting is going
+    # to be in the hundreds, so this isn't going to be a big deal. If we were
+    # to try this with a million ballots, Ray would probably croak.
     plaintexts_future = [
         r_decrypt_and_write_one.remote(
             r_keypair,

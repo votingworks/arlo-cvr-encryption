@@ -2,6 +2,7 @@ import argparse
 from sys import exit
 from typing import Optional
 
+import ray
 from electionguard.serializable import set_serializers, set_deserializers
 
 from arlo_cvre.admin import ElectionAdmin
@@ -120,3 +121,5 @@ if __name__ == "__main__":
     num_failures = wait_for_zero_pending_writes()
     if num_failures > 0:
         print(f"WARNING: Failed to write {num_failures} files. Something bad happened.")
+
+    ray.shutdown()
