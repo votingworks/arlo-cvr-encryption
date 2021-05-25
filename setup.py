@@ -57,7 +57,7 @@ setup(
         "gmpy2==2.1.0b5",
         "numpy==1.18.2",
         "pandas==1.2.2",
-        "hypothesis==6.1.1",
+        "hypothesis==6.13.5",
         "typish==1.7.0",
         "jsons==1.1.2",
         "tqdm==4.56.2",
