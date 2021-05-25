@@ -40,7 +40,7 @@ class TestManifestPublishing(unittest.TestCase):
 
     @given(integers(1, 20).flatmap(lambda n: list_file_names_contents(n)))
     @settings(
-        deadline=timedelta(milliseconds=50000),
+        deadline=None,
         suppress_health_check=[HealthCheck.too_slow],
         max_examples=20,
         # disabling the "shrink" phase, because it runs very slowly

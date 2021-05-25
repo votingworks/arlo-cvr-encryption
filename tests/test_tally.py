@@ -54,7 +54,7 @@ def _overvote_ballot(b: PlaintextBallot) -> PlaintextBallot:
 class TestBallotInterpretation(unittest.TestCase):
     @given(elections_and_ballots(num_ballots=1))
     @settings(
-        deadline=timedelta(milliseconds=50000),
+        deadline=None,
         suppress_health_check=[HealthCheck.too_slow],
         max_examples=5,
         # disabling the "shrink" phase, because it runs very slowly
@@ -85,7 +85,7 @@ class TestFastTallies(unittest.TestCase):
 
     @given(dominion_cvrs(max_rows=50), elgamal_keypairs(), booleans())
     @settings(
-        deadline=timedelta(milliseconds=50000),
+        deadline=None,
         suppress_health_check=[HealthCheck.too_slow],
         max_examples=5,
         # disabling the "shrink" phase, because it runs very slowly

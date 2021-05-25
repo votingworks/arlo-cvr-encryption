@@ -49,7 +49,7 @@ class TestRayTallies(unittest.TestCase):
 
     @given(dominion_cvrs(max_rows=120), elgamal_keypairs(), booleans())
     @settings(
-        deadline=timedelta(milliseconds=50000),
+        deadline=None,
         suppress_health_check=[HealthCheck.too_slow],
         max_examples=10,
         # disabling the "shrink" phase, because it runs very slowly
@@ -98,7 +98,7 @@ class TestRayTallies(unittest.TestCase):
 
     @given(dominion_cvrs(max_rows=5), elgamal_keypairs())
     @settings(
-        deadline=timedelta(milliseconds=50000),
+        deadline=None,
         suppress_health_check=[HealthCheck.too_slow],
         max_examples=5,
         # disabling the "shrink" phase, because it runs very slowly

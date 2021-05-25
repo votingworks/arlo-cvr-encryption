@@ -65,7 +65,7 @@ class TestArloAudit(unittest.TestCase):
 
     @given(ballots_and_context(max_rows=20))
     @settings(
-        deadline=timedelta(milliseconds=50000),
+        deadline=None,
         suppress_health_check=[HealthCheck.too_slow],
         max_examples=4,
         # disabling the "shrink" phase, because it runs very slowly

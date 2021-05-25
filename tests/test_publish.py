@@ -59,7 +59,7 @@ class TestTallyPublishing(unittest.TestCase):
 
     @given(dominion_cvrs(max_rows=50), booleans(), elgamal_keypairs())
     @settings(
-        deadline=timedelta(milliseconds=50000),
+        deadline=None,
         suppress_health_check=[HealthCheck.too_slow],
         max_examples=5,
         # disabling the "shrink" phase, because it runs very slowly
@@ -163,7 +163,7 @@ class TestTallyPublishing(unittest.TestCase):
 
     @given(dominion_cvrs(max_rows=50), booleans(), elgamal_keypairs())
     @settings(
-        deadline=timedelta(milliseconds=50000),
+        deadline=None,
         suppress_health_check=[HealthCheck.too_slow],
         max_examples=5,
         # disabling the "shrink" phase, because it runs very slowly

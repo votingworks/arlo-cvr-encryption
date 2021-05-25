@@ -116,7 +116,7 @@ def fix_excel_thinks_its_a_date(input: str) -> str:
     There are memes about this, and it happens here as well. This function tries
     to convert these monstrosities back to their proper imprint-ids.
     """
-    m = re.match("(\d+-\d+)-(\d+)", input)
+    m = re.match(r"(\d+-\d+)-(\d+)", input)
     if not m:
         return input
 

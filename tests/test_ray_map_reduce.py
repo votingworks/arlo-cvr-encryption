@@ -107,7 +107,7 @@ class TestRayMapReduce(unittest.TestCase):
         self.assertEqual(expected_result, actual_result)
 
     @settings(
-        deadline=timedelta(milliseconds=50000),
+        deadline=None,
         suppress_health_check=[HealthCheck.too_slow],
         max_examples=10,
     )
