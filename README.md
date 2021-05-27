@@ -382,7 +382,9 @@ Other libraries that we're *not* using, but ostensibly could at some point:
 ## Installation
 
 To install `arlo-cvr-encryption` on your computer to play with it, you'll need
-to do a few other things first. **If you're on a Mac**:
+to do a few other things first. 
+
+**If you're on a Mac**:
 - Install the XCode tools (`xcode-select --install`)
 - Install [Homebrew](https://brew.sh/)
   - This typically also installs Python 3.8, but doesn't put it in your path. You can run `brew install python@3.8` 
@@ -411,7 +413,7 @@ to do a few other things first. **If you're on a Mac**:
 - If you need to make a change to the library dependencies (editing `Pipfile` and `setup.py`, which
   should be kept in sync), then go back to the command-line and run `make` again.
   
-**If you're trying to use `arlo-cvr-encryption` in a continous integration (CI) environment**
+**If you're trying to use `arlo-cvr-encryption` in a continous integration (CI) environment**:
 - Make sure you look at the existing files in the `.github` or `.circleci` directories. They
   break out the steps that happen when you run `make` by hand, so it's a bit easier to look
   at the CI output.
