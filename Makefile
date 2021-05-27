@@ -13,7 +13,7 @@ PIPENV = pipenv
 PYTHON38 = python3.8
 PIP38 = pip3.8
 
-all: environment install validate lint coverage
+all: environment sys-dependencies install validate lint coverage
 
 requirements.txt: Pipfile
 	$(PIP38) freeze > requirements.txt
@@ -28,6 +28,23 @@ environment:
 	@echo 🔧 PIPENV SETUP
 	$(PIP38) install pipenv
 	$(PIPENV) install --dev
+
+sys-dependencies:
+	@echo 📦 Install System Dependencies
+	@echo Operating System identified as $(OS)
+ifeq ($(OS), Linux)
+	make sys-dependencies-linux
+endif
+ifeq ($(OS), Darwin)
+	make sys-dependencies-mac
+endif
+ifeq ($(OS), Windows)
+	make sys-dependencies-windows
+endif
+ifeq ($(OS), Windows_NT)
+	make sys-dependencies-windows
+endif
+
 
 install:
 	@echo 📦 Install Module
@@ -45,25 +62,32 @@ ifeq ($(OS), Windows_NT)
 	make install-windows
 endif
 
-install-mac:
-	@echo 🍎 MACOS INSTALL
+sys-dependencies-mac:
+	@echo 🍎 MACOS DEPENDENCIES
 # gmpy2 requirements
 	brew install gmp || true
-# install module
+
+install-mac:
+	@echo 🍎 MACOS INSTALL
 	$(PIPENV) run python -m pip install -e .
 
-install-linux:
-	@echo 🐧 LINUX INSTALL
+sys-dependencies-linux:
+	@echo 🐧 LINUX DEPENDENCIES
 # gmpy2 requirements
 	sudo apt-get install libgmp-dev
 	sudo apt-get install libmpfr-dev
 	sudo apt-get install libmpc-dev
-# install module
+
+install-linux:
+	@echo 🐧 LINUX INSTALL
 	$(PIPENV) run python -m pip install -e .
+
+sys-dependencies-windows:
+	@echo 🏁 WINDOWS DEPENDENCIES
+	# currently nothing?
 
 install-windows:
 	@echo 🏁 WINDOWS INSTALL
-# install module with local gmpy2 package
 ifeq ($(IS_64_BIT), True)
 	$(PIPENV) run python -m pip install -f $(WINDOWS_64BIT_GMPY2) -e .
 endif
@@ -72,7 +96,7 @@ ifeq ($(IS_64_BIT), False)
 endif
 
 black:
-	$(PIPENV) run black apps src tests setup.py
+	black apps src tests setup.py
 
 lint:
 	@echo 💚 LINT

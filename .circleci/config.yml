@@ -8,11 +8,7 @@ jobs:
       - run:
           name: Install Dependencies
           command: |
-            sudo apt-get install libgmp-dev
-            sudo apt-get install libmpfr-dev
-            sudo apt-get install libmpc-dev
-            python -m pip install --upgrade pip
-            make environment
+            make environment sys-dependencies
       - run:
           name: Install Modules
           command: |
