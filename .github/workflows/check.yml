@@ -16,9 +16,12 @@ jobs:
 #         with:
 #           python-version: '3.8.9'
 #           architecture: 'x64'
-      - name: Install Homebrew, Update Pip
+      - name: Install Homebrew
         run: |
           bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      - name: Install Python 3.8 / Pip
+        run: |
+          brew install python@3.8
           python -m pip install --upgrade pip
       - name: Install Dependencies
         run: |
