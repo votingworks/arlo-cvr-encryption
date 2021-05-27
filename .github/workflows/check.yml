@@ -15,9 +15,8 @@ jobs:
           architecture: 'x64'
       - name: Install Dependencies
         run: |
-          sudo apt-get install libgmp-dev
-          sudo apt-get install libmpfr-dev
-          sudo apt-get install libmpc-dev
+          # install Homebrew
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           python -m pip install --upgrade pip
           make environment
       - name: Install Modules
