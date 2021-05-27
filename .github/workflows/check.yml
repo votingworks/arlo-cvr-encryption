@@ -16,15 +16,15 @@ jobs:
 #         with:
 #           python-version: '3.8.9'
 #           architecture: 'x64'
-      - name: Install Homebrew
-        run: |
-          bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          export PATH=/usr/local/opt/python@3.8/bin:$PATH
-          export LDFLAGS=-L/usr/local/opt/python@3.8/lib;
-          export PKG_CONFIG_PATH=/usr/local/opt/python@3.8/lib/pkgconfig;
-      - name: Install Python 3.8 / Pip
+      - name: Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@master
+      - name: Install Python 3.8
         run: |
           brew install python@3.8
+          echo "/usr/local/opt/python@3.8/bin" >> $GITHUB_PATH
+      - name: Update Pip
+        run: |
           python -m pip install --upgrade pip
       - name: Install Dependencies
         run: |
