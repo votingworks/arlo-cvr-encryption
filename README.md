@@ -404,7 +404,7 @@ to do a few other things first.
   
 **To use the different app tools**:
 - `arlo-cvr-encryption` is a family of command-line tools, documented above.
-- First, you should enter the Python virtula environment you just made (e.g., run `pipenv shell`)
+- First, you should enter the Python virtual environment you just made (e.g., run `pipenv shell`).
 - At that point, you can run `python app/your_favorite_command args` and it should "just work".
   
 **If you want to use an IDE like PyCharm**:
