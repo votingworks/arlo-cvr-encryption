@@ -23,7 +23,8 @@ jobs:
           python -m pip install --upgrade pip
       - name: Install Dependencies
         run: |
-          make environment sys-dependencies
+          make sys-dependencies
+          make environment
       - name: Install Modules
         run: |
           make install validate
@@ -50,7 +51,8 @@ jobs:
         python -m pip install --upgrade pip
     - name: Install Dependencies
       run: |
-        make environment sys-dependencies
+        make sys-dependencies
+        make environment
     - name: Install Modules
       run: |
         make install validate

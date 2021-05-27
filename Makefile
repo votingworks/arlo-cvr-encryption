@@ -13,7 +13,7 @@ PIPENV = pipenv
 PYTHON38 = python3.8
 PIP38 = pip3.8
 
-all: environment sys-dependencies install validate lint coverage
+all: sys-dependencies environment install validate lint coverage
 
 requirements.txt: Pipfile
 	$(PIP38) freeze > requirements.txt

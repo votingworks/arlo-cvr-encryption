@@ -8,7 +8,8 @@ jobs:
       - run:
           name: Install Dependencies
           command: |
-            make environment sys-dependencies
+            make sys-dependencies
+            make environment
       - run:
           name: Install Modules
           command: |
