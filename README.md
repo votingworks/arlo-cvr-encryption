@@ -400,6 +400,23 @@ to do a few other things first. **If you're on a Mac**:
   the external dependencies, and eventually even run the unit tests. If they all pass,
   you're good to go.
   
+**If you want to use an IDE like PyCharm**:
+- First, make sure you've done the installation instructions above. This creates a suitable
+  Python virtual environment. You then need to tell PyCharm to use
+  the virtual environment you just made. If you're not sure where the venv files actually
+  are, then you can run `pipenv --venv` and it will tell you.
+  
+- PyCharm will then use that specific virtual environment, and everything should "just work".
+
+- If you need to make a change to the library dependencies (editing `Pipfile` and `setup.py`, which
+  should be kept in sync), then go back to the command-line and run `make` again.
+  
+**If you're trying to use `arlo-cvr-encryption` in a continous integration (CI) environment**
+- Make sure you look at the existing files in the `.github` or `.circleci` directories. They
+  break out the steps that happen when you run `make` by hand, so it's a bit easier to look
+  at the CI output.
+
+
 ## Amazon AWS (S3, EC2, IAM) details
 
 To generate or verify tallies of large elections, one desktop computer does not
