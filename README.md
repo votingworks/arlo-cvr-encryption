@@ -22,6 +22,7 @@ with the goal of increasing the *transparency* of a risk-limiting audit.
   - [arlo_write_root_hash](#arlo_write_root_hash)
   - [Benchmarks](#benchmarks)
 - [Implementation status](#implementation-status)
+- [Installation](#installation)
 - [Amazon AWS details](#amazon-aws-s3-ec2-iam-details)
 
 ## Why CVR encryption?
@@ -377,6 +378,27 @@ Other libraries that we're *not* using, but ostensibly could at some point:
   - Code is all MIT licensed
   - Core libraries in C
   - Alternative implementations in Java (server-side) and JavaScript (for embedding in a hypothetical voting machine)
+  
+## Installation
+
+To install `arlo-cvr-encryption` on your computer to play with it, you'll need
+to do a few other things first. **If you're on a Mac**:
+- Install the XCode tools (`xcode-select --install`)
+- Install [Homebrew](https://brew.sh/)
+  - This typically also installs Python 3.8, but doesn't put it in your path. You can run `brew install python@3.8` 
+    if you're not sure.
+  - Make sure you have `/usr/local/opt/python@3.8/bin` early in your directory path.
+- Make sure you've got an updated `pip` (`python -m pip install --upgrade pip`)
+- Then, you can just run `make`, which will create a Python virtual environment, install
+  the external dependencies, and eventually even run the unit tests. If they all pass,
+  you're good to go.
+  
+**If you're on a Linux machine**:
+- Make sure you've got Python 3.8 properly installed ([Ubuntu instructions](https://linuxize.com/post/how-to-install-python-3-8-on-ubuntu-18-04/))
+- Make sure you've got an updated `pip` (`python -m pip install --upgrade pip`)
+- Then, you can just run `make`, which will create a Python virtual environment, install
+  the external dependencies, and eventually even run the unit tests. If they all pass,
+  you're good to go.
   
 ## Amazon AWS (S3, EC2, IAM) details
 
