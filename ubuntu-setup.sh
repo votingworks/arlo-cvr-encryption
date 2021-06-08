@@ -5,7 +5,7 @@ apt update
 dpkg --configure -a
 add-apt-repository ppa:deadsnakes/ppa -y
 apt update
-# apt upgrade
+apt upgrade
 apt install --assume-yes make python3-pip python3.8 libgmp-dev libmpfr-dev libmpc-dev python3.8-dev
 apt install --assume-yes python3.8-distutils htop
 # apt update libcurl4

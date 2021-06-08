@@ -69,7 +69,8 @@ head_node_type: head_x64
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 head_node:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-    ImageId: ami-0f542b2b48007b168  # customized Ubuntu 20.04; 12 Feb 2021
+#    ImageId: ami-0f542b2b48007b168  # customized Ubuntu 20.04; 12 Feb 2021
+    ImageId: ami-05ff13be218318416  # customized Ubuntu 20.04; 8 June 2021
 
     IamInstanceProfile:
       Arn: arn:aws:iam::339914263940:instance-profile/ray-head-arlo-v1
@@ -88,7 +89,8 @@ head_node:
 # http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
 worker_nodes:
 #    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-    ImageId: ami-0f542b2b48007b168  # customized Ubuntu 20.04; 12 Feb 2021
+#    ImageId: ami-0f542b2b48007b168  # customized Ubuntu 20.04; 12 Feb 2021
+    ImageId: ami-05ff13be218318416  # customized Ubuntu 20.04; 8 June 2021
 
     IamInstanceProfile:
       Arn: arn:aws:iam::339914263940:instance-profile/ray-worker-arlo-v1
