@@ -41,6 +41,17 @@ available_node_types:
             InstanceType: c5.12xlarge
         #            InstanceMarketOptions:
         #                MarketType: spot
+            ImageId: ami-05ff13be218318416  # customized Ubuntu 20.04; 8 June 2021
+
+            IamInstanceProfile:
+                Arn: arn:aws:iam::339914263940:instance-profile/ray-worker-arlo-v1
+
+            # You can provision additional disk space with a conf as follows
+            BlockDeviceMappings:
+                - DeviceName: /dev/sda1
+                  Ebs:
+                      VolumeSize: 100
+
         resources: {"CPU": 48}
         max_workers: 100
     worker_x64_amd:
@@ -48,6 +59,17 @@ available_node_types:
             InstanceType: c5a.16xlarge
 #            InstanceMarketOptions:
 #                MarketType: spot
+            ImageId: ami-05ff13be218318416  # customized Ubuntu 20.04; 8 June 2021
+
+            IamInstanceProfile:
+                Arn: arn:aws:iam::339914263940:instance-profile/ray-worker-arlo-v1
+
+            # You can provision additional disk space with a conf as follows
+            BlockDeviceMappings:
+                - DeviceName: /dev/sda1
+                  Ebs:
+                      VolumeSize: 100
+
         resources: {"CPU": 64}
         max_workers: 100
         min_workers: 19
@@ -55,6 +77,17 @@ available_node_types:
         node_config:
             InstanceType: m5a.xlarge
             # InstanceType: c5a.24xlarge
+            ImageId: ami-05ff13be218318416  # customized Ubuntu 20.04; 8 June 2021
+
+            IamInstanceProfile:
+                Arn: arn:aws:iam::339914263940:instance-profile/ray-head-arlo-v1
+
+            # You can provision additional disk space with a conf as follows
+            BlockDeviceMappings:
+                - DeviceName: /dev/sda1
+                  Ebs:
+                      VolumeSize: 100
+
         resources: {"CPU": 0}  # zero because we don't want workers on the head node
         max_workers: 0
 
@@ -62,44 +95,6 @@ available_node_types:
 # https://github.com/ray-project/ray/issues/10929
 worker_default_node_type: worker_x64_amd
 head_node_type: head_x64
-
-# Provider-specific config for the head node, e.g. instance type. By default
-# Ray will auto-configure unspecified fields such as SubnetId and KeyName.
-# For more documentation on available fields, see:
-# http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
-head_node:
-#    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-#    ImageId: ami-0f542b2b48007b168  # customized Ubuntu 20.04; 12 Feb 2021
-    ImageId: ami-05ff13be218318416  # customized Ubuntu 20.04; 8 June 2021
-
-    IamInstanceProfile:
-      Arn: arn:aws:iam::339914263940:instance-profile/ray-head-arlo-v1
-
-    # You can provision additional disk space with a conf as follows
-    BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-              VolumeSize: 100
-
-    # Additional options in the boto docs.
-
-# Provider-specific config for worker nodes, e.g. instance type. By default
-# Ray will auto-configure unspecified fields such as SubnetId and KeyName.
-# For more documentation on available fields, see:
-# http://boto3.readthedocs.io/en/latest/reference/services/ec2.html#EC2.ServiceResource.create_instances
-worker_nodes:
-#    ImageId: ami-07fb7bd53bacdfc16 # Ubuntu 20.04
-#    ImageId: ami-0f542b2b48007b168  # customized Ubuntu 20.04; 12 Feb 2021
-    ImageId: ami-05ff13be218318416  # customized Ubuntu 20.04; 8 June 2021
-
-    IamInstanceProfile:
-      Arn: arn:aws:iam::339914263940:instance-profile/ray-worker-arlo-v1
-
-    # You can provision additional disk space with a conf as follows
-    BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-              VolumeSize: 100
 
 # Files or directories to copy to the head and worker nodes. The format is a
 # dictionary from REMOTE_PATH: LOCAL_PATH, e.g.
