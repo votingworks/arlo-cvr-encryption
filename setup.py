@@ -63,7 +63,7 @@ setup(
         "tqdm==4.56.2",
         "cryptography==3.4.7",
         "flask==1.1.2",
-        "ray[default]==1.3.0",
+        "ray[default]==1.4.1",
         "pillow==8.1.2",
         "qrcode==6.1",
         "more-itertools==8.7.0",

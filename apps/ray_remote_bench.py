@@ -104,7 +104,6 @@ if __name__ == "__main__":
 
     print("Writing Ray timelines to disk.")
     ray.timeline("ray-timeline.json")
-    ray.object_transfer_timeline("ray-object-transfer-timeline.json")
 
     num_failures = wait_for_zero_pending_writes()
     if num_failures > 0:

@@ -41,7 +41,7 @@ boto3-stubs = {extras = ["s3", "ec2"], version = "1.17.44"}
 # https://github.com/python-poetry/poetry/issues/2138
 #ray_mac = {file = "https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-macosx_10_13_x86_64.whl", markers = "sys_platform == 'darwin'"}
 #ray_linux = {file = "https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-1.1.0.dev0-cp38-cp38-manylinux1_x86_64.whl", markers = "sys_platform == 'linux'"}
-ray = { extras = ["default"], version = "1.3.0"}
+ray = { extras = ["default"], version = "1.4.1"}
 
 electionguard = {editable = true, git = "https://github.com/votingworks/electionguard-python.git", ref = "main"}
 
