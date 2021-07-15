@@ -164,6 +164,7 @@ class BallotTallyContext(
     _nonces: Nonces
 
     def map(self, tuple: TALLY_MAP_INPUT_TYPE) -> Optional[TALLY_TYPE]:
+        self._cec.elgamal_public_key.accelerate_pow()
         pballot_dict, nonce_index = tuple
         pballot = self._bpf.row_to_plaintext_ballot(pballot_dict)
         cballot_option = interpret_and_encrypt_ballot(
@@ -445,6 +446,7 @@ class BallotVerifyContext(
     _manifest: Manifest
 
     def map(self, filename: str) -> Optional[TALLY_TYPE]:
+        self._public_key.accelerate_pow()
         cballot = self._manifest.load_ciphertext_ballot(filename)
 
         if cballot is None:
@@ -501,6 +503,7 @@ def r_verify_tally_selection_proofs(
     """
     Given a list of tally selections, verifies that every one's internal proof is correct.
     """
+    public_key.accelerate_pow()
     try:
         results = [s.is_valid_proof(public_key, hash_header) for s in selections]
         return all(results)
