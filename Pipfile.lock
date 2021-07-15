@@ -259,7 +259,7 @@
         "electionguard": {
             "editable": true,
             "git": "https://github.com/votingworks/electionguard-python.git",
-            "ref": "d2ecb7011e1832433b572677e90cf232fb270f76"
+            "ref": "8f408017c9945cf4454e3a33e274e144a2bc47cc"
         },
         "filelock": {
             "hashes": [
