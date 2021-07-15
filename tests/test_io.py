@@ -25,7 +25,7 @@ poop_emoji = "💩"  # used for testing encoding/decoding
 
 
 @dataclass(eq=True)
-class TestSerializable(Serializable):
+class SerializableExample(Serializable):
     text: str
     emoji: str
 
@@ -54,7 +54,7 @@ def write_all_files(num_files: int, num_attempts: int = 10) -> int:
         results = ray.get(
             [
                 r_write_file.remote(
-                    fr, TestSerializable(fr.file_name, poop_emoji), num_attempts
+                    fr, SerializableExample(fr.file_name, poop_emoji), num_attempts
                 )
                 for fr in file_refs
             ]
@@ -62,7 +62,7 @@ def write_all_files(num_files: int, num_attempts: int = 10) -> int:
     else:
         results = [
             fr.write_json(
-                TestSerializable(fr.file_name, poop_emoji), num_attempts=num_attempts
+                SerializableExample(fr.file_name, poop_emoji), num_attempts=num_attempts
             )
             for fr in file_refs
         ]
@@ -76,10 +76,10 @@ def verify_all_files(num_files: int) -> bool:
     for f in range(0, num_files):
         name = f"file{f:03d}"
         fr = make_file_ref(name, "write_output")
-        expected_contents = TestSerializable(name, poop_emoji)
+        expected_contents = SerializableExample(name, poop_emoji)
         expected_json = expected_contents.to_json()
         contents = fr.read_json(
-            TestSerializable, expected_sha256_hash=sha256_hash(expected_json)
+            SerializableExample, expected_sha256_hash=sha256_hash(expected_json)
         )
         length = fr.size()
         exists = fr.exists()
