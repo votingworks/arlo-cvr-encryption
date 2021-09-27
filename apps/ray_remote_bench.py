@@ -87,10 +87,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     files = args.cvr_file
-    file_dir = args.dir[0] if args.dir else None
+    file_dir = (
+        validate_directory_input(args.dir[0], "tally", error_if_absent=True)
+        if args.dir
+        else None
+    )
     use_progressbar = args.progress
-
-    file_dir = validate_directory_input(file_dir, "tally", error_if_absent=True)
 
     if args.local:
         print("Using Ray locally")

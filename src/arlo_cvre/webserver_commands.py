@@ -2,7 +2,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import copyfileobj
-from typing import List, Tuple
 
 import flask
 from electionguard.serializable import set_serializers, set_deserializers
@@ -78,9 +77,7 @@ class SimpleResponse:
         ("info" or "error") and the latter is a general-purpose string that might
         be displayed to the user.
         """
-        flashed_messages: List[Tuple[str, str]] = get_flashed_messages(
-            with_categories=True
-        )
+        flashed_messages = get_flashed_messages(with_categories=True)
 
         return_me = {
             "success": self.success,

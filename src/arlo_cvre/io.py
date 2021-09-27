@@ -31,7 +31,6 @@ from electionguard.logs import log_warning, log_error, log_info
 from electionguard.serializable import Serializable
 from jsons import DecodeError, UnfulfilledArgumentError
 from mypy_boto3_s3 import S3Client, ListObjectsV2Paginator
-from mypy_boto3_s3.type_defs import ListObjectsV2OutputTypeDef
 from ray.actor import ActorHandle
 
 from arlo_cvre.constants import BALLOT_FILENAME_PREFIX_DIGITS
@@ -763,9 +762,7 @@ class S3FileRef(FileRef):
             # https://stackoverflow.com/a/59816089/4048276
 
             paginator: ListObjectsV2Paginator = client.get_paginator("list_objects_v2")
-            pages: Iterator[ListObjectsV2OutputTypeDef] = paginator.paginate(
-                Bucket=s3_bucket, Prefix=s3_key, Delimiter="/"
-            )
+            pages = paginator.paginate(Bucket=s3_bucket, Prefix=s3_key, Delimiter="/")
 
             for page in pages:
                 if "Contents" in page:
