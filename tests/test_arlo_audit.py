@@ -86,6 +86,7 @@ class TestArloAudit(unittest.TestCase):
             secret_key=secret_key,
             use_progressbar=False,
             root_dir=_encrypted_ballot_dir,
+            should_verify_proofs=True
         ).to_fast_tally()
         keypair = elgamal_keypair_from_secret(secret_key)
 

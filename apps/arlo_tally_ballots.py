@@ -91,6 +91,7 @@ if __name__ == "__main__":
         verbose=False,
         secret_key=admin_state.keypair.secret_key,
         root_dir=tallydir,
+        should_verify_proofs=False   # makes it run a lot faster
     )
     tally_end = time.perf_counter()
     print(f"Tally rate:    {rows / (tally_end - tally_start): .3f} ballots/sec")

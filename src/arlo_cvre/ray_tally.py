@@ -162,6 +162,7 @@ class BallotTallyContext(
     _root_dir_ref: Optional[FileRef]
     _bpf: BallotPlaintextFactory
     _nonces: Nonces
+    _should_verify_proofs: bool
 
     def map(self, tuple: TALLY_MAP_INPUT_TYPE) -> Optional[TALLY_TYPE]:
         self._cec.elgamal_public_key.accelerate_pow()
@@ -173,7 +174,7 @@ class BallotTallyContext(
             self._cec,
             self._seed_hash,
             self._nonces[nonce_index],
-            should_verify_proofs=False,
+            should_verify_proofs=self._should_verify_proofs,
         )
         if cballot_option is None:
             log_error(f"failed to encrypt ballot {nonce_index}: {pballot_dict}")
@@ -217,6 +218,7 @@ class BallotTallyContext(
         root_dir_ref: Optional[FileRef],
         bpf: BallotPlaintextFactory,
         nonces: Nonces,
+        should_verify_proofs: bool,
     ):
         self._ied = ied
         self._cec = cec
@@ -224,6 +226,7 @@ class BallotTallyContext(
         self._root_dir_ref = root_dir_ref
         self._bpf = bpf
         self._nonces = nonces
+        self._should_verify_proofs = should_verify_proofs
 
 
 def ray_tally_everything(
@@ -235,6 +238,7 @@ def ray_tally_everything(
     master_nonce: Optional[ElementModQ] = None,
     secret_key: Optional[ElementModQ] = None,
     root_dir: Optional[str] = None,
+    should_verify_proofs: bool = False,
 ) -> "RayTallyEverythingResults":
     """
     This top-level function takes a collection of Dominion CVRs and produces everything that
@@ -253,10 +257,13 @@ def ray_tally_everything(
 
     Note that hash manifests and HTML index files are also written out, alongside the ballots.
 
-    And, lastly, the `root_dir` can specify a local directory, or it can be of the form
+    The `root_dir` can specify a local directory, or it can be of the form
     `s3://bucket/subdirectory`, which will then be used with the `boto3` library to work
     with AWS S3, or anything that's compatible with S3 and boto3's interpretation of this
     sort of URI). For more details, see the code in `io.py`.
+
+    The `should_verify_proofs' parameter specifies if the proofs should be verified as
+    part of the encryption and tallying process (default False)
     """
 
     rows, cols = cvrs.data.shape
@@ -314,7 +321,9 @@ def ray_tally_everything(
         root_dir = validate_directory_input(root_dir, "tally")
 
     root_dir_ref = make_file_ref_from_path(root_dir) if root_dir else None
-    btc = BallotTallyContext(ied, cec, seed_hash, root_dir_ref, bpf, nonces)
+    btc = BallotTallyContext(
+        ied, cec, seed_hash, root_dir_ref, bpf, nonces, should_verify_proofs
+    )
 
     nonce_indices = range(num_ballots)
     inputs = zip(ballot_dicts, nonce_indices)
