@@ -74,11 +74,15 @@ class TestRayTallies(unittest.TestCase):
                 secret_key=keypair.secret_key,
                 root_dir=RTALLY_OUTPUT,
                 use_progressbar=False,
-                should_verify_proofs=True
+                should_verify_proofs=False,
             )
         else:
             rtally = ray_tally_everything(
-                cvrs, verbose=True, root_dir=RTALLY_OUTPUT, use_progressbar=False, should_verify_proofs = True
+                cvrs,
+                verbose=True,
+                root_dir=RTALLY_OUTPUT,
+                use_progressbar=False,
+                should_verify_proofs=False,
             )
 
         self.assertTrue(rtally.all_proofs_valid(verbose=False))
@@ -143,7 +147,7 @@ class TestRayTallies(unittest.TestCase):
             master_nonce=master_nonce,
             root_dir=RTALLY_OUTPUT,
             use_progressbar=False,
-            should_verify_proofs=True
+            should_verify_proofs=False,
         )
 
         self.assertEqual(tally, rtally.to_fast_tally())

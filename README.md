@@ -97,6 +97,8 @@ optional arguments:
   -t TALLIES, --tallies TALLIES
                         directory name for where the tally is written (default: tally_output)
   --cluster             uses a Ray cluster for distributed computation
+  --verify              verifies every ballot proof as it's generated (default: False); note, this slows the process
+                        significantly
 ```
 This command reads a Dominion-style CVR file and ultimately writes out a directory full
 of encrypted ballots and their associated proofs, as well as the tallies and their

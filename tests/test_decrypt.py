@@ -63,7 +63,7 @@ class EncryptionAndDecryption(unittest.TestCase):
             secret_key=secret_key,
             use_progressbar=False,
             root_dir=_encrypted_ballot_dir,
-            should_verify_proofs=True
+            should_verify_proofs=False,
         ).to_fast_tally()
         extended_base_hash = tally.context.crypto_extended_base_hash
         keypair = elgamal_keypair_from_secret(secret_key)

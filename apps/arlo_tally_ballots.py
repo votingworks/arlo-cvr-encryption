@@ -47,6 +47,11 @@ if __name__ == "__main__":
         help="uses a Ray cluster for distributed computation",
     )
     parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="verifies every ballot proof as it's generated (default: False); note, this slows the process significantly",
+    )
+    parser.add_argument(
         "cvr_file",
         type=str,
         nargs=1,
@@ -58,6 +63,7 @@ if __name__ == "__main__":
     cvrfile = args.cvr_file[0]
     tallydir = validate_directory_input(args.tallies, "tally", error_if_exists=True)
     use_cluster = args.cluster
+    should_verify_proofs = args.verify
 
     admin_state: Optional[ElectionAdmin] = make_file_ref_from_path(keyfile).read_json(
         ElectionAdmin
@@ -91,7 +97,7 @@ if __name__ == "__main__":
         verbose=False,
         secret_key=admin_state.keypair.secret_key,
         root_dir=tallydir,
-        should_verify_proofs=False   # makes it run a lot faster
+        should_verify_proofs=should_verify_proofs,
     )
     tally_end = time.perf_counter()
     print(f"Tally rate:    {rows / (tally_end - tally_start): .3f} ballots/sec")

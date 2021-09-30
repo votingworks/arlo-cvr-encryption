@@ -185,7 +185,7 @@ class TestTallyPublishing(unittest.TestCase):
             secret_key=keypair.secret_key,
             verbose=True,
             root_dir=TALLY_TESTING_DIR,
-            should_verify_proofs=True
+            should_verify_proofs=False,
         )
 
         self.assertTrue(results.all_proofs_valid())
