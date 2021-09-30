@@ -106,10 +106,10 @@ decryptions.
 
 - A single encrypted ballot can easily become a megabyte of JSON. We write each ballot
   out to its own file. We map the ballot's unique id to a file within a subdirectory
-  of prefixes (e.g., `b0001283` becomes `ballots/b0001/b0001283.json`). This ensures
-  that we have no more than 1000 ballots per subdirectory. This sort of structure
+  of prefixes (e.g., `b0001283` becomes `ballots/b00012/b0001283.json`). This ensures
+  that we have no more than 100 ballots per subdirectory. This sort of structure
   generally improves performance, because subdirectories with large numbers of entries
-  can be slow to traverse.
+  can be slow.
 
 - Each subdirectory also includes a file called `MANIFEST.json`, which includes the SHA256 hashes
   of its contents, as well as the hash of every subdirectory's manifest. This creates a Merkle-tree
@@ -166,7 +166,7 @@ optional arguments:
 This commands allows a desired set of ballots to be decrypted, and then written into
 a separate subdirectory. This is something an election official would do after ballots
 have been selected for an audit. The `ballot_id` names are the internal names used by
-arlo-cvr-encryption (e.g., `b0001283` for the ballot in `ballots/b0001/b0001283.json`).
+arlo-cvr-encryption (e.g., `b0001283` for the ballot in `ballots/b00012/b0001283.json`).
 
 ### arlo_decrypt_ballot_batch
 ```
@@ -305,7 +305,7 @@ optional arguments:
                         tampered, an error is indicated
 ```
 
-Given some arlo-cvr-encryption ballot identifiers (e.g., `b0001283` for the ballot in `ballots/b0001/b0001283.json`),
+Given some arlo-cvr-encryption ballot identifiers (e.g., `b0001283` for the ballot in `ballots/b00012/b0001283.json`),
 prints everything we know about those ballots. If they were previously decrypted, this will print their
 decryptions and verify their equivalence proofs. If the proofs don't check out, this tool flags the issue.
 For ballots that were never decrypted, we at least print the available metadata for the ballot.

@@ -5,6 +5,7 @@ import random
 from abc import abstractmethod, ABC
 from asyncio import Event
 from base64 import b64encode
+from botocore.config import Config
 from dataclasses import dataclass
 from os import stat
 from pathlib import PurePath, Path
@@ -63,8 +64,15 @@ def _s3_client() -> S3Client:
     """Gets S3 client resource. Initializes and caches as necessary."""
     global _s3_client_handle
 
+    config = Config(
+        retries={
+            'max_attempts': 20,
+            'mode': 'standard'
+        }
+    )
+
     if _s3_client_handle is None:
-        _s3_client_handle = boto3.client("s3")
+        _s3_client_handle = boto3.client("s3", config=config)
     return _s3_client_handle
 
 
