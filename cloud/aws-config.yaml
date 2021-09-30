@@ -53,7 +53,6 @@ available_node_types:
                       VolumeSize: 100
 
         resources: {"CPU": 48}
-        max_workers: 100
     worker_x64_amd:
         node_config:
             InstanceType: c5a.16xlarge
@@ -71,7 +70,6 @@ available_node_types:
                       VolumeSize: 100
 
         resources: {"CPU": 64}
-        max_workers: 100
         min_workers: 19
     head_x64:
         node_config:
