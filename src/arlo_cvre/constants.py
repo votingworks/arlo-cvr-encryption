@@ -11,8 +11,8 @@ NUM_WRITE_RETRIES: Final = 10
 
 # These constants define how we shard up the ballot processing for the map-reduce pipeline
 MAX_CONCURRENT_TASKS: Final = 3000
-BALLOTS_PER_SHARD: Final = 4
-PARTIAL_TALLIES_PER_SHARD: Final = 10
+BALLOTS_PER_SHARD: Final = 20
+PARTIAL_TALLIES_PER_SHARD: Final = 50
 
 # These define the various filenames that we're going to use when writing out an election
 ELECTION_METADATA: Final[str] = "election_metadata.json"
