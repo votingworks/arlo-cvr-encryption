@@ -21,7 +21,7 @@ hypothesis = "==6.23.0"
 typish = '==1.9.3'
 jsons = '==1.5.1'
 tqdm = "==4.62.3"
-cryptography = "==3.4.8"
+cryptography = "==39.0.1"
 # modin = '==0.8.3'
 flask = "==2.0.1"
 pillow = "==8.3.2"
